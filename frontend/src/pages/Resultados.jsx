@@ -12,6 +12,15 @@ async function req(url, opts = {}) {
   return data
 }
 
+async function abrirPdf(ordenId) {
+  const token = localStorage.getItem('token')
+  const res = await fetch(`/api/lab/ordenes/${ordenId}/pdf`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error('No se pudo generar el PDF')
+  const url = URL.createObjectURL(await res.blob())
+  window.open(url, '_blank')
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
 const fmt = (n) => Number(n || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
 const hoy = () => new Date().toISOString().split('T')[0]
 
@@ -342,6 +351,11 @@ export default function Resultados() {
     finally { setGuardandoPlantilla(false) }
   }
 
+  async function verPdf(ordenId) {
+    try { await abrirPdf(ordenId) }
+    catch (e) { setError(e.message) }
+  }
+
   async function eliminarPlantilla(id) {
     if (!window.confirm('¿Eliminar esta plantilla?')) return
     try { await req(`/api/lab/plantillas/${id}`, { method: 'DELETE' }); await cargarPlantillas() }
@@ -461,10 +475,9 @@ export default function Resultados() {
                             <button style={S.btn('primary')} onClick={() => cambiarEstadoOrden(o.id, 'entregado')}>Entregar</button>
                           )}
                           {['completado', 'entregado'].includes(o.estado) && (
-                            <a href={`/api/lab/ordenes/${o.id}/pdf`} target="_blank" rel="noreferrer"
-                               style={{ ...S.btn('success'), textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+                            <button style={S.btn('success')} onClick={() => verPdf(o.id)}>
                               PDF
-                            </a>
+                            </button>
                           )}
                         </div>
                       </td>
@@ -489,24 +502,14 @@ export default function Resultados() {
                 <button style={S.btn('primary')} onClick={() => cambiarEstadoOrden(ordenDetalle.id, 'entregado')}>Marcar como entregado</button>
               )}
               {['completado', 'entregado'].includes(ordenDetalle.estado) && (
-                <a
-                  href={`/api/lab/ordenes/${ordenDetalle.id}/pdf`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ ...S.btn('success'), textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                >
+                <button style={S.btn('success')} onClick={() => verPdf(ordenDetalle.id)}>
                   ↓ Descargar PDF
-                </a>
+                </button>
               )}
               {['en_proceso', 'pendiente'].includes(ordenDetalle.estado) && (
-                <a
-                  href={`/api/lab/ordenes/${ordenDetalle.id}/pdf`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ ...S.btn('ghost'), textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6, color: '#334155' }}
-                >
+                <button style={{ ...S.btn('ghost'), color: '#334155' }} onClick={() => verPdf(ordenDetalle.id)}>
                   Vista previa PDF
-                </a>
+                </button>
               )}
             </div>
           </div>
