@@ -21,6 +21,7 @@ const NAV_GROUPS = [
       { to: '/catalogo',     label: 'Catálogo'     },
       { to: '/cotizaciones', label: 'Cotizaciones' },
       { to: '/pedidos',      label: 'Pedidos'      },
+      { to: '/facturacion',  label: 'Facturación'  },
     ],
   },
   {

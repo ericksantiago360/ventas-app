@@ -6,7 +6,7 @@ import os
 
 from .core.config import settings
 from .core.database import connect_db, close_db
-from .routers import (auth, crm, catalogo, cotizaciones, pedidos, finanzas, contabilidad, inventario, reportes, personal, pacientes, lab, )
+from .routers import (auth, crm, catalogo, cotizaciones, pedidos, finanzas, contabilidad, inventario, reportes, personal, pacientes, lab, facturacion, )
 
 
 @asynccontextmanager
@@ -55,6 +55,7 @@ app.include_router(reportes.router, prefix="/api")
 app.include_router(personal.router, prefix="/api")
 app.include_router(pacientes.router, prefix="/api")
 app.include_router(lab.router,      prefix="/api")
+app.include_router(facturacion.router, prefix="/api")
 
 @app.get("/api/health", tags=["system"])
 async def health():

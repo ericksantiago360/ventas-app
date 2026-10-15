@@ -5,6 +5,7 @@ import CRM       from './pages/CRM'
 import Catalogo   from './pages/Catalogo'
 import Cotizaciones from './pages/Cotizaciones'
 import Pedidos from './pages/Pedidos'
+import Facturacion from './pages/Facturacion'
 import Finanzas from './pages/Finanzas'
 import Contabilidad from './pages/Contabilidad'
 import Inventario from './pages/Inventario'
@@ -54,6 +55,11 @@ export default function App() {
             <Route
               path="pedidos/*"
               element={<Pedidos />}
+            />
+
+            <Route
+              path="facturacion/*"
+              element={<Facturacion />}
             />
 
             <Route
