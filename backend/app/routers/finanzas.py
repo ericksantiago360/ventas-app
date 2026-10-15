@@ -6,7 +6,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
-from ..services.contabilidad_integracion import crear_poliza_cobro
+from ..services.cobros import registrar_cobro
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -370,69 +370,12 @@ async def crear_cobro(
     if not cuenta:
         raise HTTPException(status_code=404, detail="Cuenta financiera no encontrada")
 
-    # --------------------------------------------------------
-    # Generar número de cobro
-    # --------------------------------------------------------
-    config = await db.config_negocios.find_one(
-        {"_id": datos.negocio_id},
-        {"prefijo_cobro": 1},
-    )
-    prefijo = "COB"
-    if config and config.get("prefijo_cobro"):
-        prefijo = config["prefijo_cobro"]
-
-    contador = await db.contadores_cobros.find_one_and_update(
-        {"_id": datos.negocio_id},
-        {"$inc": {"secuencia": 1}, "$set": {"updated_at": datetime.utcnow()}},
-        upsert=True,
-        return_document=ReturnDocument.AFTER,
-    )
-    numero = f"{prefijo}-{contador['secuencia']:06d}"
-
-    cobro = datos.model_dump()
-    cobro["numero"] = numero
-    cobro["estado"] = "confirmado"
-    cobro["created_by"] = str(user.get("_id", ""))
-    cobro["created_at"] = datetime.utcnow()
-
-    # --------------------------------------------------------
-    # Cobro + movimiento financiero.
-    # Mongo está configurado como servidor standalone,
-    # por lo que no usamos transacciones aquí.
-    # --------------------------------------------------------
-    result = await db.cobros.insert_one(cobro)
-    cobro_id = result.inserted_id
-
-    movimiento = {
-        "negocio_id": datos.negocio_id,
-        "cuenta_id": datos.cuenta_id,
-        "tipo": "ingreso",
-        "categoria": "cobro_cliente",
-        "importe": datos.importe,
-        "concepto": cobro["concepto"] or f"Cobro {numero}",
-        "referencia_tipo": "cobro",
-        "referencia_id": str(cobro_id),
-        "fecha": cobro["fecha"],
-        "estado": "confirmado",
-        "created_by": cobro["created_by"],
-        "created_at": datetime.utcnow(),
-    }
-
-    await db.movimientos_financieros.insert_one(movimiento)
-    cobro["_id"] = cobro_id
-
-    # ========================================================
-    # INTEGRACIÓN CONTABLE
-    # ========================================================
-    poliza_id = await crear_poliza_cobro(
+    cobro = await registrar_cobro(
         db,
-        cobro,
-        cuenta_financiera=cuenta,
+        datos.model_dump(),
+        cuenta,
         usuario_id=str(user.get("_id", "")),
     )
-
-    cobro["poliza_id"] = poliza_id
-
     return serializar(cobro)
     
 

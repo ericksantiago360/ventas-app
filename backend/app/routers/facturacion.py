@@ -31,6 +31,8 @@ from reportlab.platypus import (
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.services.cobros import registrar_cobro, cancelar_cobro
+from app.services.contabilidad_integracion import crear_poliza_cobro
 
 router = APIRouter(prefix="/facturacion", tags=["Facturación"])
 
@@ -39,6 +41,11 @@ METODOS    = Literal["PUE", "PPD"]
 ESTADOS_ACTIVOS = ["borrador", "emitida", "pagada"]
 
 RFC_PUBLICO_GENERAL = "XAXX010101000"
+
+FORMAS_PAGO = {
+    "01": "Efectivo", "02": "Cheque", "03": "Transferencia", "04": "Tarjeta de crédito",
+    "28": "Tarjeta de débito", "99": "Por definir",
+}
 
 
 # ── Modelos ───────────────────────────────────────────────────────────────────
@@ -85,6 +92,7 @@ class FacturaCreate(FacturaBase):
 
 class PagoCreate(BaseModel):
     monto:      float = Field(..., gt=0)
+    cuenta_id:  str = Field(..., min_length=1)   # cuenta financiera donde entra el dinero
     forma_pago: str = "01"
     fecha:      str = ""
     referencia: str = ""
@@ -507,19 +515,36 @@ async def cancelar(
 # ── Pagos ─────────────────────────────────────────────────────────────────────
 
 async def _recalcular_pagos(db, factura: dict, pagos: list[dict], accion: dict) -> dict:
+    """
+    Reescribe la lista de pagos y recalcula saldo/estado. El filtro exige que
+    los pagos sigan siendo los que se leyeron, para que dos pagos simultáneos
+    no se pisen entre sí.
+    """
     total_pagado = round(sum(float(p["monto"]) for p in pagos), 2)
     saldo = round(max(float(factura["total"]) - total_pagado, 0), 2)
     estado = "pagada" if saldo <= 0 else "emitida"
     now = datetime.now(timezone.utc)
     actualizada = await db.facturas.find_one_and_update(
-        {"_id": factura["_id"]},
+        {"_id": factura["_id"], "pagos": factura.get("pagos", [])},
         {
             "$set": {"pagos": pagos, "total_pagado": total_pagado, "saldo": saldo, "estado": estado, "updated_at": now},
             "$push": {"historial": {**accion, "fecha": now}},
         },
         return_document=ReturnDocument.AFTER,
     )
-    return serializar(actualizada)
+    if not actualizada:
+        raise HTTPException(409, "La factura cambió mientras se guardaba; recárgala e intenta de nuevo")
+    return actualizada
+
+
+def _fecha_cobro(fecha: str) -> datetime:
+    """Los cobros de Finanzas guardan datetime UTC sin zona."""
+    if not fecha or fecha == hoy_iso():
+        return datetime.utcnow()
+    try:
+        return datetime.fromisoformat(fecha)
+    except ValueError:
+        raise HTTPException(400, "Fecha de pago inválida")
 
 
 @router.post("/facturas/{id}/pagos", status_code=201)
@@ -529,25 +554,96 @@ async def registrar_pago(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
+    """
+    Registra el pago en la factura y, en Finanzas, el cobro con su
+    movimiento de ingreso en la cuenta elegida. La póliza del cobro
+    (Caja/Bancos contra Clientes) solo se genera cuando la factura viene
+    de un pedido, porque solo los pedidos tienen póliza de venta que
+    abra la cuenta por cobrar.
+    """
     factura = await obtener_factura(db, id, user)
     if factura["estado"] != "emitida":
         raise HTTPException(400, "Solo se registran pagos en facturas emitidas con saldo")
     saldo = float(factura.get("saldo", 0))
     if body.monto > saldo + 0.009:
         raise HTTPException(400, f"El pago excede el saldo pendiente ({saldo:,.2f})")
+
+    cuenta = None
+    if ObjectId.is_valid(body.cuenta_id):
+        cuenta = await db.cuentas_financieras.find_one({
+            "_id": ObjectId(body.cuenta_id), "negocio_id": factura["negocio_id"], "activo": True,
+        })
+    if not cuenta:
+        raise HTTPException(404, "Cuenta financiera no encontrada o inactiva")
+
+    usuario_id = str(user.get("_id", ""))
+    fecha = body.fecha or hoy_iso()
     pago = {
-        "id":         uuid.uuid4().hex[:8],
-        "monto":      round(body.monto, 2),
-        "forma_pago": body.forma_pago,
-        "fecha":      body.fecha or hoy_iso(),
-        "referencia": body.referencia.strip(),
-        "usuario":    user.get("nombre", ""),
+        "id":            uuid.uuid4().hex[:8],
+        "monto":         round(body.monto, 2),
+        "forma_pago":    body.forma_pago,
+        "fecha":         fecha,
+        "referencia":    body.referencia.strip(),
+        "usuario":       user.get("nombre", ""),
+        "cuenta_id":     body.cuenta_id,
+        "cuenta_nombre": cuenta.get("nombre", ""),
+        "cobro_id":      None,
+        "cobro_numero":  None,
+        "poliza_id":     None,
     }
-    pagos = factura.get("pagos", []) + [pago]
-    return await _recalcular_pagos(
-        db, factura, pagos,
+
+    # 1. Apartar el pago en la factura (falla si otro pago entró antes).
+    factura_nueva = await _recalcular_pagos(
+        db, factura, factura.get("pagos", []) + [pago],
         {"accion": "pago", "usuario": user.get("nombre", ""), "nota": f"{pago['monto']:,.2f}"},
     )
+
+    # 2. Cobro + movimiento financiero. Si falla, se retira el pago.
+    try:
+        cobro = await registrar_cobro(
+            db,
+            {
+                "negocio_id":    factura["negocio_id"],
+                "cuenta_id":     body.cuenta_id,
+                "importe":       pago["monto"],
+                "pedido_id":     factura["origen_id"] if factura.get("origen_tipo") == "pedido" else None,
+                "cliente_id":    factura.get("cliente_id") or None,
+                "factura_id":    id,
+                "factura_folio": factura.get("folio", ""),
+                "metodo_pago":   FORMAS_PAGO.get(body.forma_pago, "otro").lower().replace(" ", "_"),
+                "referencia":    pago["referencia"],
+                "concepto":      f"Pago factura {factura.get('folio', '')} · {factura['receptor'].get('nombre', '')}".strip(" ·"),
+                "fecha":         _fecha_cobro(fecha),
+            },
+            cuenta,
+            usuario_id=usuario_id,
+            generar_poliza=False,
+        )
+    except Exception:
+        await _recalcular_pagos(
+            db, factura_nueva, factura.get("pagos", []),
+            {"accion": "pago_revertido", "usuario": user.get("nombre", ""), "nota": "Error al registrar el cobro en Finanzas"},
+        )
+        raise
+
+    cambios = {"pagos.$.cobro_id": str(cobro["_id"]), "pagos.$.cobro_numero": cobro["numero"]}
+
+    # 3. Póliza contable (no bloquea el pago si falta el catálogo de cuentas).
+    if factura.get("origen_tipo") == "pedido":
+        try:
+            poliza_id = await crear_poliza_cobro(db, cobro, cuenta_financiera=cuenta, usuario_id=usuario_id)
+            cambios["pagos.$.poliza_id"] = poliza_id
+            if poliza_id:
+                await db.cobros.update_one({"_id": cobro["_id"]}, {"$set": {"poliza_id": poliza_id}})
+        except RuntimeError as e:
+            cambios["pagos.$.poliza_error"] = str(e)
+
+    actualizada = await db.facturas.find_one_and_update(
+        {"_id": factura["_id"], "pagos.id": pago["id"]},
+        {"$set": cambios},
+        return_document=ReturnDocument.AFTER,
+    )
+    return serializar(actualizada)
 
 
 @router.delete("/facturas/{id}/pagos/{pago_id}")
@@ -557,16 +653,23 @@ async def eliminar_pago(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
+    """Quita el pago de la factura y cancela su cobro, movimiento y póliza."""
     factura = await obtener_factura(db, id, user)
     if factura["estado"] not in ("emitida", "pagada"):
         raise HTTPException(400, "La factura no admite cambios en pagos")
-    pagos = [p for p in factura.get("pagos", []) if p["id"] != pago_id]
-    if len(pagos) == len(factura.get("pagos", [])):
+    pago = next((p for p in factura.get("pagos", []) if p["id"] == pago_id), None)
+    if not pago:
         raise HTTPException(404, "Pago no encontrado")
-    return await _recalcular_pagos(
+    pagos = [p for p in factura["pagos"] if p["id"] != pago_id]
+    actualizada = await _recalcular_pagos(
         db, factura, pagos,
-        {"accion": "pago_eliminado", "usuario": user.get("nombre", ""), "nota": pago_id},
+        {"accion": "pago_eliminado", "usuario": user.get("nombre", ""), "nota": f"{pago['monto']:,.2f}"},
     )
+    await cancelar_cobro(
+        db, pago.get("cobro_id"), str(user.get("_id", "")),
+        motivo=f"Pago eliminado de la factura {factura.get('folio', '')}",
+    )
+    return serializar(actualizada)
 
 
 # ── Facturación en un clic ────────────────────────────────────────────────────
@@ -674,11 +777,6 @@ async def facturar_orden(
 
 
 # ── PDF ───────────────────────────────────────────────────────────────────────
-
-FORMAS_PAGO = {
-    "01": "Efectivo", "02": "Cheque", "03": "Transferencia", "04": "Tarjeta de crédito",
-    "28": "Tarjeta de débito", "99": "Por definir",
-}
 
 
 def _money(n) -> str:

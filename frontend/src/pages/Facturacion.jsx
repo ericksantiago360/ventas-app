@@ -96,7 +96,8 @@ export default function Facturacion() {
   const [procesando, setProcesando] = useState('')     // origen_id en proceso
 
   const [detalle, setDetalle] = useState(null)
-  const [pago, setPago] = useState({ monto: '', forma_pago: '01', fecha: '', referencia: '' })
+  const [pago, setPago] = useState({ monto: '', forma_pago: '01', fecha: '', referencia: '', cuenta_id: '' })
+  const [cuentas, setCuentas] = useState([])
 
   const [modal, setModal] = useState(false)
   const [editandoId, setEditandoId] = useState(null)
@@ -135,6 +136,14 @@ export default function Facturacion() {
   }, [vista, negocioId])
 
   useEffect(() => {
+    if (!negocioId) return
+    setCuentas([])
+    req(`/api/finanzas/cuentas?negocio_id=${encodeURIComponent(negocioId)}&activo=true`)
+      .then((data) => setCuentas(Array.isArray(data) ? data : []))
+      .catch(() => setCuentas([]))
+  }, [negocioId])
+
+  useEffect(() => {
     if (negocioId && vista === 'facturas') cargarFacturas()
   }, [vista, negocioId, filtroEstado, busqueda])
 
@@ -163,7 +172,7 @@ export default function Facturacion() {
     setError('')
     try {
       setDetalle(await req(`/api/facturacion/facturas/${id}`))
-      setPago({ monto: '', forma_pago: '01', fecha: '', referencia: '' })
+      setPago((p) => ({ ...p, monto: '', fecha: '', referencia: '' }))
     } catch (e) { setError(e.message) }
   }
 
@@ -199,13 +208,17 @@ export default function Facturacion() {
     ev.preventDefault()
     const monto = Number(pago.monto)
     if (!monto || monto <= 0) { setError('Captura un monto válido'); return }
-    await accion(`/api/facturacion/facturas/${detalle.id}/pagos`, { body: JSON.stringify({ ...pago, monto }) }, (r) =>
+    if (!cuentaPago) { setError('Elige la cuenta donde entra el dinero'); return }
+    await accion(`/api/facturacion/facturas/${detalle.id}/pagos`, { body: JSON.stringify({ ...pago, monto, cuenta_id: cuentaPago }) }, (r) =>
       r.estado === 'pagada' ? 'Factura liquidada' : `Pago registrado · saldo ${money(r.saldo)}`)
-    setPago({ monto: '', forma_pago: pago.forma_pago, fecha: '', referencia: '' })
+    setPago((p) => ({ ...p, monto: '', fecha: '', referencia: '' }))
   }
 
+  // Cuenta elegida, o la primera activa si aún no se elige ninguna
+  const cuentaPago = cuentas.some((c) => c.id === pago.cuenta_id) ? pago.cuenta_id : (cuentas[0]?.id || '')
+
   async function eliminarPago(p) {
-    if (!window.confirm(`¿Eliminar el pago de ${money(p.monto)}?`)) return
+    if (!window.confirm(`¿Eliminar el pago de ${money(p.monto)}? También se cancelará su cobro en Finanzas.`)) return
     setError('')
     try {
       setDetalle(await req(`/api/facturacion/facturas/${detalle.id}/pagos/${p.id}`, { method: 'DELETE' }))
@@ -540,6 +553,11 @@ export default function Facturacion() {
                       <tr key={p.id}>
                         <td style={s.td}>{p.fecha}</td>
                         <td style={s.td}>{Object.fromEntries(FORMAS_PAGO)[p.forma_pago] || p.forma_pago}</td>
+                        <td style={s.td}>
+                          {p.cuenta_nombre || '—'}
+                          {p.cobro_numero && <div style={{ fontSize: 11, color: '#94a3b8' }}>Cobro {p.cobro_numero}</div>}
+                          {p.poliza_error && <div style={{ fontSize: 11, color: '#b45309' }} title={p.poliza_error}>Sin póliza contable</div>}
+                        </td>
                         <td style={{ ...s.td, color: '#64748b' }}>{p.referencia}</td>
                         <td style={{ ...s.td, ...s.num, fontWeight: 600 }}>{money(p.monto)}</td>
                         <td style={{ ...s.td, width: 40 }}>
@@ -550,11 +568,22 @@ export default function Facturacion() {
                   </tbody>
                 </table>
               )}
-              {detalle.estado === 'emitida' && (
+              {detalle.estado === 'emitida' && cuentas.length === 0 && (
+                <div style={{ fontSize: 13, color: '#b45309', background: '#fffbeb', borderRadius: 6, padding: '8px 12px' }}>
+                  Para registrar pagos crea primero una cuenta (caja o banco) en Finanzas.
+                </div>
+              )}
+              {detalle.estado === 'emitida' && cuentas.length > 0 && (
                 <form onSubmit={registrarPago} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                   <div style={{ ...s.fg, width: 140 }}>
                     <label style={s.lbl}>Monto</label>
                     <input style={s.input} type="number" step="0.01" min="0" value={pago.monto} onChange={(e) => setPago({ ...pago, monto: e.target.value })} />
+                  </div>
+                  <div style={{ ...s.fg, width: 170 }}>
+                    <label style={s.lbl}>Cuenta destino</label>
+                    <select style={s.input} value={cuentaPago} onChange={(e) => setPago({ ...pago, cuenta_id: e.target.value })}>
+                      {cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                    </select>
                   </div>
                   <div style={{ ...s.fg, width: 170 }}>
                     <label style={s.lbl}>Forma</label>

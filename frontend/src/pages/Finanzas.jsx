@@ -1010,6 +1010,16 @@ export default function Finanzas() {
                         key={
                           movimiento.id
                         }
+                        title={
+                          movimiento.estado === 'cancelado'
+                            ? 'Movimiento cancelado: no suma al saldo'
+                            : undefined
+                        }
+                        style={
+                          movimiento.estado === 'cancelado'
+                            ? { opacity: 0.45, textDecoration: 'line-through' }
+                            : undefined
+                        }
                       >
                         <td
                           style={{
