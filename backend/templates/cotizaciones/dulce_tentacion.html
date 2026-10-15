@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block contenido %}
+
+<div style="background:#3b1400;color:#fff;padding:16px 20px;margin:-18mm -16mm 20pt;display:flex;justify-content:space-between;align-items:flex-start;">
+  <div>
+    <div style="font-size:18pt;font-weight:bold;">Dulce Tentación</div>
+    <div style="font-size:9pt;opacity:.65;margin-top:3pt;">Distribución artesanal de chocolates · Teotihuacán</div>
+  </div>
+  <div style="text-align:right;">
+    <div style="font-size:15pt;font-weight:bold;color:#fed7aa;">Cotización</div>
+    <div style="font-size:12pt;font-weight:bold;margin-top:2pt;">#{{ cotizacion.numero }}</div>
+    <div style="font-size:8.5pt;opacity:.65;margin-top:2pt;">Emitida: {{ cotizacion.fecha_emision }}</div>
+    <div style="font-size:8.5pt;opacity:.65;">Vigencia: {{ cotizacion.fecha_vencimiento }}</div>
+  </div>
+</div>
+
+<div style="display:flex;justify-content:space-between;margin-bottom:16pt;font-size:10pt;">
+  <div>
+    <div style="font-size:8pt;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3pt;">Punto de consignación</div>
+    <strong>{{ cotizacion.cliente_snapshot.nombre }}</strong><br>
+    {{ cotizacion.cliente_snapshot.telefono or '' }}
+  </div>
+  <div style="text-align:right;">
+    <div style="font-size:8pt;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3pt;">Modalidad</div>
+    <strong>Consignación · liquidación quincenal</strong>
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Producto</th>
+      <th>Variante</th>
+      <th>Pzas</th>
+      <th>P. consignación</th>
+      <th>P. público</th>
+      <th>Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in cotizacion.items %}
+    <tr>
+      <td>
+        <strong>{{ item.descripcion_custom or item.producto_snapshot.nombre }}</strong>
+        <div class="td-sub">SKU: {{ item.variante_sku or item.producto_snapshot.get('sku', '') }}</div>
+      </td>
+      <td>{{ item.detalle.get('variante_nombre', '—') }}</td>
+      <td>{{ item.cantidad }}</td>
+      <td>${{ "%.2f"|format(item.precio_unitario) }}</td>
+      <td style="color:#94a3b8">${{ "%.2f"|format(item.detalle.get('precio_publico', 0)) }}</td>
+      <td><strong>${{ "%.2f"|format(item.precio_total) }}</strong></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="totals">
+  <div>Total piezas: {{ cotizacion.items | sum(attribute='cantidad') }}</div>
+  <div>Valor público estimado: ${{ "%.2f"|format(cotizacion.subtotal * 1.4) }}</div>
+  <div class="total-final">Total a liquidar: ${{ "%.2f"|format(cotizacion.total) }}</div>
+</div>
+
+<div class="footer-doc">
+  Modalidad consignación: se liquida lo vendido cada quincena. Producto no vendido
+  devuelto en buen estado. Sin IVA en la operación de consignación.
+</div>
+
+{% endblock %}

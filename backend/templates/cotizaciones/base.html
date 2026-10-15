@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @page {
+    size: letter;
+    margin: 18mm 16mm;
+    @bottom-right {
+      content: "Pág. " counter(page) " / " counter(pages);
+      font-size: 8pt;
+      color: #94a3b8;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 11pt;
+    color: #1e293b;
+    margin: 0;
+    line-height: 1.4;
+  }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 14pt; }
+  th {
+    padding: 6px 8px;
+    font-size: 8.5pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    color: #64748b;
+    background: #f8fafc;
+    border-bottom: 1pt solid #e2e8f0;
+    text-align: right;
+  }
+  th:first-child { text-align: left; }
+  td {
+    padding: 7px 8px;
+    border-bottom: .5pt solid #f1f5f9;
+    font-size: 10.5pt;
+    text-align: right;
+    vertical-align: top;
+  }
+  td:first-child { text-align: left; }
+  .td-sub { font-size: 8.5pt; color: #94a3b8; margin-top: 2px; }
+  .totals { text-align: right; margin-top: 10pt; }
+  .totals div { padding: 2pt 0; font-size: 10.5pt; color: #64748b; }
+  .total-final {
+    font-size: 13pt;
+    font-weight: bold;
+    color: #1e293b;
+    border-top: 1pt solid #1e293b;
+    padding-top: 6pt;
+    margin-top: 4pt;
+  }
+  .firmas {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 36pt;
+  }
+  .firma-linea {
+    width: 200pt;
+    border-top: .5pt solid #e2e8f0;
+    padding-top: 6pt;
+    text-align: center;
+    font-size: 8.5pt;
+    color: #94a3b8;
+  }
+  .footer-doc {
+    font-size: 8.5pt;
+    color: #94a3b8;
+    margin-top: 20pt;
+    border-top: .5pt solid #e2e8f0;
+    padding-top: 8pt;
+  }
+</style>
+</head>
+<body>
+{% block contenido %}{% endblock %}
+</body>
+</html>

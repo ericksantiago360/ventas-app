@@ -1,0 +1,57 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: ventas
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    env_file: .env
+    volumes:
+      - storage:/app/storage
+    networks:
+      - app_net
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    networks:
+      - app_net
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - app_net
+
+  # NOTA Coolify: elimina el servicio nginx de arriba.
+  # Coolify maneja su propio reverse proxy (Traefik) y SSL automatico.
+
+volumes:
+  mongo_data:
+  storage:
+
+networks:
+  app_net:
+    driver: bridge

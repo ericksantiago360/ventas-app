@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block contenido %}
+
+<div style="background:#0f2340;color:#fff;padding:16px 20px;margin:-18mm -16mm 20pt;display:flex;justify-content:space-between;align-items:flex-start;">
+  <div>
+    <div style="font-size:18pt;font-weight:bold;">Erick Santiago · Bienes Raíces</div>
+    <div style="font-size:9pt;opacity:.65;margin-top:3pt;">Corredor independiente · Plaza Comercial Quetzal, Teotihuacán</div>
+  </div>
+  <div style="text-align:right;">
+    <div style="font-size:15pt;font-weight:bold;color:#bfdbfe;">Propuesta</div>
+    <div style="font-size:12pt;font-weight:bold;margin-top:2pt;">#{{ cotizacion.numero }}</div>
+    <div style="font-size:8.5pt;opacity:.65;margin-top:2pt;">Emitida: {{ cotizacion.fecha_emision }}</div>
+    <div style="font-size:8.5pt;opacity:.65;">Vigencia: {{ cotizacion.fecha_vencimiento }}</div>
+  </div>
+</div>
+
+<div style="display:flex;justify-content:space-between;margin-bottom:16pt;font-size:10pt;">
+  <div>
+    <div style="font-size:8pt;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3pt;">Prospecto</div>
+    <strong>{{ cotizacion.cliente_snapshot.nombre }}</strong><br>
+    {{ cotizacion.cliente_snapshot.email or '' }}<br>
+    {{ cotizacion.cliente_snapshot.telefono or '' }}
+  </div>
+  <div style="text-align:right;">
+    <div style="font-size:8pt;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3pt;">Operación</div>
+    <strong>Arrendamiento</strong>
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Inmueble</th>
+      <th>Superficie</th>
+      <th>Disponible</th>
+      <th>Depósito</th>
+      <th>Renta mensual</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in cotizacion.items %}
+    <tr>
+      <td>
+        <strong>{{ item.descripcion_custom or item.producto_snapshot.nombre }}</strong>
+        <div class="td-sub">{{ item.detalle.get('ubicacion', '') }}</div>
+      </td>
+      <td>{{ item.detalle.get('superficie_m2', '—') }} m²</td>
+      <td>{{ item.detalle.get('disponible_desde', '—') }}</td>
+      <td>${{ "%.2f"|format(item.detalle.get('deposito', 0)) }}</td>
+      <td><strong>${{ "%.2f"|format(item.precio_unitario) }}/mes</strong></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="totals">
+  <div>Renta mensual: ${{ "%.2f"|format(cotizacion.subtotal) }}</div>
+  <div>Depósito (2 meses): ${{ "%.2f"|format(cotizacion.subtotal * 2) }}</div>
+  <div>Comisión corredor (5%): ${{ "%.2f"|format(cotizacion.subtotal * 0.05) }}</div>
+  <div class="total-final">Primer mes total: ${{ "%.2f"|format(cotizacion.total) }}</div>
+</div>
+
+<div class="firmas">
+  <div class="firma-linea">Firma del arrendatario</div>
+  <div class="firma-linea">Erick Santiago · Corredor</div>
+</div>
+
+<div class="footer-doc">
+  Propuesta sujeta a verificación de documentos y aprobación del arrendador.
+  Contrato mínimo 12 meses. Incremento anual conforme a INPC. Visita con cita previa.
+</div>
+
+{% endblock %}

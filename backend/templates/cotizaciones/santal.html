@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block contenido %}
+
+<div style="background:#0f172a;color:#fff;padding:16px 20px;margin:-18mm -16mm 20pt;display:flex;justify-content:space-between;align-items:flex-start;">
+  <div>
+    <div style="font-size:18pt;font-weight:bold;">Santal Machinery</div>
+    <div style="font-size:9pt;opacity:.65;margin-top:3pt;">San Juan Teotihuacán, Estado de México</div>
+    <div style="font-size:9pt;opacity:.65;">contacto@santal.mx</div>
+  </div>
+  <div style="text-align:right;">
+    <div style="font-size:15pt;font-weight:bold;color:#7dd3fc;">Cotización</div>
+    <div style="font-size:12pt;font-weight:bold;margin-top:2pt;">#{{ cotizacion.numero }}</div>
+    <div style="font-size:8.5pt;opacity:.65;margin-top:2pt;">Emitida: {{ cotizacion.fecha_emision }}</div>
+    <div style="font-size:8.5pt;opacity:.65;">Vigencia: {{ cotizacion.fecha_vencimiento }}</div>
+  </div>
+</div>
+
+<div style="display:flex;justify-content:space-between;margin-bottom:16pt;font-size:10pt;">
+  <div>
+    <div style="font-size:8pt;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3pt;">Facturar a</div>
+    <strong>{{ cotizacion.cliente_snapshot.nombre }}</strong><br>
+    {% if cotizacion.cliente_snapshot.rfc %}RFC: {{ cotizacion.cliente_snapshot.rfc }}<br>{% endif %}
+    {{ cotizacion.cliente_snapshot.email or '' }}
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Descripción</th>
+      <th>Material</th>
+      <th>Pzas</th>
+      <th>Min</th>
+      <th>$/min</th>
+      <th>Subtotal</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in cotizacion.items %}
+    <tr>
+      <td>
+        <strong>{{ item.descripcion_custom or item.producto_snapshot.nombre }}</strong>
+        {% if item.notas %}<div class="td-sub">{{ item.notas }}</div>{% endif %}
+      </td>
+      <td>{{ item.detalle.get('material', '—') }}</td>
+      <td>{{ item.cantidad }}</td>
+      <td>{{ item.detalle.get('tiempo_total_min', '—') }}</td>
+      <td>${{ "%.2f"|format(item.detalle.get('tarifa_por_minuto', 0)) }}</td>
+      <td><strong>${{ "%.2f"|format(item.precio_total) }}</strong></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="totals">
+  <div>Subtotal: ${{ "%.2f"|format(cotizacion.subtotal) }}</div>
+  {% if cotizacion.descuento_monto > 0 %}
+  <div>Descuento: -${{ "%.2f"|format(cotizacion.descuento_monto) }}</div>
+  {% endif %}
+  <div>IVA {{ cotizacion.iva_pct }}%: ${{ "%.2f"|format(cotizacion.iva_monto) }}</div>
+  <div class="total-final">Total MXN: ${{ "%.2f"|format(cotizacion.total) }}</div>
+</div>
+
+<div class="firmas">
+  <div class="firma-linea">Firma del cliente · Vo. Bo.</div>
+  <div class="firma-linea">Santal Machinery · Erick Santiago</div>
+</div>
+
+<div class="footer-doc">
+  {{ cotizacion.notas_generales or
+     'Cotización válida hasta ' + cotizacion.fecha_vencimiento +
+     '. Precios en MXN con IVA incluido. Pedido inicia al recibir anticipo del 50%.' }}
+</div>
+
+{% endblock %}
