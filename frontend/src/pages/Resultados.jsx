@@ -136,6 +136,11 @@ export default function Resultados() {
   const [formCaptura, setFormCaptura] = useState({ analitos: [], observaciones: '', tecnico_nombre: '' })
   const [guardandoCaptura, setGuardandoCaptura] = useState(false)
 
+  const [modalCorreo, setModalCorreo] = useState(null)   // orden a enviar
+  const [formCorreo, setFormCorreo] = useState({ email: '', mensaje: '', marcar_entregado: true })
+  const [enviandoCorreo, setEnviandoCorreo] = useState(false)
+  const [correoConfigurado, setCorreoConfigurado] = useState(true)
+
   // Búsqueda de paciente (autocomplete)
   const [busquedaPac, setBusquedaPac] = useState('')
   const [sugerencias, setSugerencias] = useState([])
@@ -351,6 +356,37 @@ export default function Resultados() {
     finally { setGuardandoPlantilla(false) }
   }
 
+  // ── Envío por correo ─────────────────────────────────────────────────────
+
+  async function abrirEnvioCorreo(orden) {
+    setError('')
+    let email = ''
+    try {
+      const [pac, estado] = await Promise.all([
+        req(`/api/pacientes/pacientes/${orden.paciente_id}`),
+        req('/api/lab/correo/estado'),
+      ])
+      email = pac.email || ''
+      setCorreoConfigurado(estado.configurado)
+    } catch (e) { setError(e.message) }
+    setFormCorreo({ email, mensaje: '', marcar_entregado: true })
+    setModalCorreo(orden)
+  }
+
+  async function enviarCorreo(ev) {
+    ev.preventDefault()
+    setEnviandoCorreo(true); setError('')
+    try {
+      await req(`/api/lab/ordenes/${modalCorreo.id}/enviar-correo`, { method: 'POST', body: JSON.stringify(formCorreo) })
+      const id = modalCorreo.id
+      setModalCorreo(null)
+      await cargarOrdenes()
+      if (ordenDetalle?.id === id) await cargarOrdenDetalle(id)
+      alert(`Resultados enviados a ${formCorreo.email}`)
+    } catch (e) { setError(e.message) }
+    finally { setEnviandoCorreo(false) }
+  }
+
   async function verPdf(ordenId) {
     try { await abrirPdf(ordenId) }
     catch (e) { setError(e.message) }
@@ -479,6 +515,11 @@ export default function Resultados() {
                               PDF
                             </button>
                           )}
+                          {['completado', 'entregado'].includes(o.estado) && (
+                            <button style={S.btn('ghost')} title="Enviar por correo" onClick={() => abrirEnvioCorreo(o)}>
+                              ✉
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -506,6 +547,11 @@ export default function Resultados() {
                   ↓ Descargar PDF
                 </button>
               )}
+              {['completado', 'entregado'].includes(ordenDetalle.estado) && (
+                <button style={S.btn('primary')} onClick={() => abrirEnvioCorreo(ordenDetalle)}>
+                  ✉ Enviar por correo
+                </button>
+              )}
               {['en_proceso', 'pendiente'].includes(ordenDetalle.estado) && (
                 <button style={{ ...S.btn('ghost'), color: '#334155' }} onClick={() => verPdf(ordenDetalle.id)}>
                   Vista previa PDF
@@ -530,6 +576,16 @@ export default function Resultados() {
               ))}
             </div>
             {ordenDetalle.observaciones && <div style={{ marginTop: 10, fontSize: 13, color: '#64748b' }}>Obs: {ordenDetalle.observaciones}</div>}
+            {ordenDetalle.envios?.length > 0 && (
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #f1f5f9' }}>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Envíos al paciente</div>
+                {[...ordenDetalle.envios].reverse().map((e, i) => (
+                  <div key={i} style={{ fontSize: 12, color: e.ok ? '#475569' : '#b91c1c' }}>
+                    {e.ok ? '✓' : '✗'} {new Date(e.fecha).toLocaleString('es-MX')} · {e.destinatario}{e.usuario ? ` · por ${e.usuario}` : ''}{!e.ok && e.error ? ` · ${e.error}` : ''}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Resultados por estudio */}
@@ -987,6 +1043,45 @@ export default function Resultados() {
                 <button type="submit" style={S.btn()} disabled={guardandoPlantilla}>
                   {guardandoPlantilla ? 'Guardando…' : editPlantilla ? 'Guardar cambios' : 'Crear plantilla'}
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL ENVÍO POR CORREO ─────────────────────────────────────────── */}
+      {modalCorreo && (
+        <div style={S.overlay} onClick={e => e.target === e.currentTarget && setModalCorreo(null)}>
+          <div style={S.modal(480)}>
+            <div style={S.mh}>
+              <h2 style={S.mTitle}>Enviar resultados por correo</h2>
+              <button style={{ ...S.btn('ghost'), fontSize: 18, padding: '2px 10px' }} onClick={() => setModalCorreo(null)}>×</button>
+            </div>
+            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 14 }}>
+              {modalCorreo.folio} · {modalCorreo.paciente_nombre}. Se adjunta el PDF y un enlace al portal del paciente.
+            </div>
+            {!correoConfigurado && (
+              <div style={S.err}>El servidor no tiene configurado el correo saliente (variables SMTP_*). El envío fallará hasta configurarlo.</div>
+            )}
+            {error && <div style={S.err}>{error}</div>}
+            <form onSubmit={enviarCorreo} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={S.fg}>
+                <label style={S.lbl}>Correo del paciente *</label>
+                <input style={S.input} type="email" required value={formCorreo.email} onChange={e => setFormCorreo(f => ({ ...f, email: e.target.value }))} placeholder="paciente@correo.com" />
+              </div>
+              <div style={S.fg}>
+                <label style={S.lbl}>Mensaje adicional (opcional)</label>
+                <textarea style={{ ...S.input, minHeight: 70, resize: 'vertical' }} value={formCorreo.mensaje} onChange={e => setFormCorreo(f => ({ ...f, mensaje: e.target.value }))} />
+              </div>
+              {modalCorreo.estado === 'completado' && (
+                <label style={{ fontSize: 13, display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input type="checkbox" checked={formCorreo.marcar_entregado} onChange={e => setFormCorreo(f => ({ ...f, marcar_entregado: e.target.checked }))} />
+                  Marcar la orden como entregada
+                </label>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
+                <button type="button" style={S.btn('ghost')} onClick={() => setModalCorreo(null)}>Cancelar</button>
+                <button type="submit" style={S.btn()} disabled={enviandoCorreo}>{enviandoCorreo ? 'Enviando…' : 'Enviar'}</button>
               </div>
             </form>
           </div>

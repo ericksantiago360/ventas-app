@@ -2,11 +2,13 @@ from datetime import datetime, timezone, date
 from typing import Optional, Literal
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.services.correo import CorreoError
+from app.services.notificaciones_lab import enlace_portal, enviar_acceso_portal, url_publica
 
 router = APIRouter(prefix="/pacientes", tags=["Pacientes"])
 
@@ -208,6 +210,63 @@ async def desactivar_paciente(
     )
     if not doc:
         raise HTTPException(404, "Paciente no encontrado")
+    return {"ok": True}
+
+
+# ── Portal del paciente ───────────────────────────────────────────────────────
+
+async def _paciente_portal(db, user: dict, id: str) -> dict:
+    doc = await db.pacientes.find_one({"_id": validar_oid(id)})
+    if not doc:
+        raise HTTPException(404, "Paciente no encontrado")
+    check_negocio(user, doc["negocio_id"])
+    if not doc.get("activo", True):
+        raise HTTPException(400, "El paciente está dado de baja")
+    return doc
+
+
+@router.post("/pacientes/{id}/portal/enlace")
+async def generar_enlace_portal(
+    id: str,
+    request: Request,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Enlace de acceso para compartir por otro medio (WhatsApp, impreso)."""
+    paciente = await _paciente_portal(db, user, id)
+    url, expira = enlace_portal(url_publica(request), paciente)
+    return {"url": url, "expira": expira}
+
+
+@router.post("/pacientes/{id}/portal/enviar")
+async def enviar_enlace_portal(
+    id: str,
+    request: Request,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    paciente = await _paciente_portal(db, user, id)
+    if "@" not in (paciente.get("email") or ""):
+        raise HTTPException(400, "El paciente no tiene un correo válido registrado")
+    try:
+        await enviar_acceso_portal(db, paciente, url_publica(request))
+    except CorreoError as e:
+        raise HTTPException(502, str(e))
+    return {"ok": True, "email": paciente["email"]}
+
+
+@router.post("/pacientes/{id}/portal/revocar")
+async def revocar_accesos_portal(
+    id: str,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Invalida todos los enlaces de portal emitidos hasta ahora para el paciente."""
+    paciente = await _paciente_portal(db, user, id)
+    await db.pacientes.update_one(
+        {"_id": paciente["_id"]},
+        {"$inc": {"portal_version": 1}, "$set": {"updated_at": datetime.now(timezone.utc)}},
+    )
     return {"ok": True}
 
 

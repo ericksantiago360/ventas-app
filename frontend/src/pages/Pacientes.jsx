@@ -49,6 +49,7 @@ export default function Pacientes() {
   const [editando, setEditando] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [guardando, setGuardando] = useState(false)
+  const [portalMsg, setPortalMsg] = useState('')
 
   // ── Loaders ────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,38 @@ export default function Pacientes() {
   useEffect(() => {
     if (vista === 'lista') cargarPacientes()
   }, [busqueda, soloActivos])
+
+  // ── Portal del paciente ────────────────────────────────────────────────────
+
+  async function copiarEnlacePortal(p) {
+    setError(''); setPortalMsg('')
+    try {
+      const r = await req(`/api/pacientes/pacientes/${p.id}/portal/enlace`, { method: 'POST' })
+      try {
+        await navigator.clipboard.writeText(r.url)
+        setPortalMsg(`Enlace copiado (vence el ${r.expira}). Compártelo solo con el paciente.`)
+      } catch {
+        window.prompt(`Enlace del portal (vence el ${r.expira}):`, r.url)
+      }
+    } catch (e) { setError(e.message) }
+  }
+
+  async function enviarAccesoPortal(p) {
+    setError(''); setPortalMsg('')
+    try {
+      const r = await req(`/api/pacientes/pacientes/${p.id}/portal/enviar`, { method: 'POST' })
+      setPortalMsg(`Enlace de acceso enviado a ${r.email}.`)
+    } catch (e) { setError(e.message) }
+  }
+
+  async function revocarPortal(p) {
+    if (!window.confirm('¿Invalidar todos los enlaces de portal enviados a este paciente? Tendrá que recibir uno nuevo para entrar.')) return
+    setError(''); setPortalMsg('')
+    try {
+      await req(`/api/pacientes/pacientes/${p.id}/portal/revocar`, { method: 'POST' })
+      setPortalMsg('Accesos anteriores revocados.')
+    } catch (e) { setError(e.message) }
+  }
 
   // ── CRUD ───────────────────────────────────────────────────────────────────
 
@@ -133,7 +166,7 @@ export default function Pacientes() {
   }
 
   function verDetalle(p) {
-    setPaciente(p); setVista('detalle')
+    setPaciente(p); setPortalMsg(''); setVista('detalle')
   }
 
   // ── Estilos ────────────────────────────────────────────────────────────────
@@ -415,6 +448,20 @@ export default function Pacientes() {
                   <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>Cédula: {paciente.medico_cedula}</div>
                 )}
               </div>
+              {paciente.activo && (
+                <div style={s.card}>
+                  <div style={s.sect}>Portal del paciente</div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10, lineHeight: 1.5 }}>
+                    El paciente consulta sus resultados validados en <strong>/portal</strong> con un enlace personal.
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    <button style={s.btn('ghost')} onClick={() => copiarEnlacePortal(paciente)}>Copiar enlace</button>
+                    {paciente.email && <button style={s.btn()} onClick={() => enviarAccesoPortal(paciente)}>Enviar por correo</button>}
+                    <button style={{ ...s.btn('ghost'), color: '#b91c1c' }} onClick={() => revocarPortal(paciente)}>Revocar</button>
+                  </div>
+                  {portalMsg && <div style={{ fontSize: 12, color: '#15803d', marginTop: 8 }}>{portalMsg}</div>}
+                </div>
+              )}
               {paciente.alergias && (
                 <div style={{ ...s.card, background: '#fef2f2', border: '1px solid #fecaca' }}>
                   <div style={{ fontWeight: 700, fontSize: 12, color: '#b91c1c', marginBottom: 6 }}>⚠ ALERGIAS</div>

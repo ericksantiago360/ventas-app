@@ -14,6 +14,7 @@ import Reportes  from './pages/Reportes'
 import Personal   from './pages/Personal'
 import Pacientes   from './pages/Pacientes'
 import Resultados  from './pages/Resultados'
+import Portal, { PortalAcceso } from './pages/Portal'
 import Layout    from './components/Layout'
 import { NegocioProvider } from './context/NegocioContext'
 
@@ -32,6 +33,8 @@ export default function App() {
 
           <Route path="/inicio" element={<Landing />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/portal" element={<Portal />} />
+          <Route path="/portal/acceso" element={<PortalAcceso />} />
 
           <Route
             path="/"

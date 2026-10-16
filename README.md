@@ -41,6 +41,21 @@ Accede a: **http://localhost**
 ### 4. API docs (modo debug)
 Activa `DEBUG=true` en `.env` y visita `http://localhost/api/docs`
 
+### 5. Envío de resultados por correo y portal del paciente
+Configura en `.env` la URL pública y un servidor SMTP:
+
+```
+APP_URL=https://lab.midominio.com     # base de los enlaces del portal
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587                         # 465 → SMTP_SSL=true
+SMTP_USER=resultados@midominio.com
+SMTP_PASSWORD=contraseña-de-aplicacion
+SMTP_FROM_NAME=Laboratorio Diagnóstico Plus
+```
+
+- **Resultados → orden completada → "✉ Enviar por correo"**: manda el PDF (solo estudios validados) y un enlace al portal; queda registrado en la orden.
+- **Portal del paciente** en `/portal`: el paciente entra con un enlace personal (sin contraseña) que recibe por correo o que el personal copia desde la ficha del paciente. Los enlaces vencen a los `PORTAL_TOKEN_DAYS` días (30 por defecto) y se pueden revocar desde la ficha.
+
 ---
 
 ## Desarrollo local (sin Docker)

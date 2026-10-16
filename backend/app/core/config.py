@@ -20,5 +20,20 @@ class Settings(BaseSettings):
     # Almacenamiento (PDFs, uploads)
     STORAGE_PATH: str = "/app/storage"
 
+    # URL pública de la app (para enlaces en correos, ej. https://lab.midominio.com)
+    APP_URL: str = ""
+
+    # Correo saliente (SMTP)
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""            # remitente; si se omite se usa SMTP_USER
+    SMTP_FROM_NAME: str = ""       # nombre visible; si se omite, el del laboratorio
+    SMTP_SSL: bool = False         # True para puerto 465 (SSL directo); False usa STARTTLS
+
+    # Portal del paciente
+    PORTAL_TOKEN_DAYS: int = 30
+
 
 settings = Settings()
