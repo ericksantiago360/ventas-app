@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import Landing   from './pages/Landing'
 import Login     from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import CRM       from './pages/CRM'
@@ -17,9 +18,10 @@ import Layout    from './components/Layout'
 import { NegocioProvider } from './context/NegocioContext'
 
 function RequireAuth({ children }) {
-  return localStorage.getItem('token')
-    ? children
-    : <Navigate to="/login" replace />
+  const { pathname } = useLocation()
+  if (localStorage.getItem('token')) return children
+  // Visitantes sin sesión en la raíz ven la landing; en rutas internas, el login
+  return <Navigate to={pathname === '/' ? '/inicio' : '/login'} replace />
 }
 
 export default function App() {
@@ -28,6 +30,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
 
+          <Route path="/inicio" element={<Landing />} />
           <Route path="/login" element={<Login />} />
 
           <Route

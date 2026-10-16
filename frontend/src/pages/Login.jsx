@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { authApi } from '../api/client'
 
 const s = {
@@ -54,6 +55,9 @@ export default function Login() {
             {loading ? 'Entrando…' : 'Entrar'}
           </button>
         </form>
+        <Link to="/inicio" style={{ display:'block', textAlign:'center', marginTop:16, fontSize:13, color:'#64748b', textDecoration:'none' }}>
+          ← Volver al inicio
+        </Link>
       </div>
     </div>
   )
