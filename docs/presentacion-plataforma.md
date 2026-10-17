@@ -190,7 +190,6 @@ Factura ──► Pago ──► Cobro en Finanzas ──► Ingreso en la cuent
 3. Evitar cobros duplicados entre Pedidos y Facturación
 4. Envío de facturas por correo al cliente
 5. Timbrado de recibos de nómina (CFDI de nómina)
-6. Revisión de permisos por negocio en los módulos restantes
 
 ---
 
