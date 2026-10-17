@@ -37,6 +37,10 @@ export const authApi = {
   me: () => api.get('/auth/me'),
 }
 
+export const negociosApi = {
+  listar: () => api.get('/api/negocios'),
+}
+
 export const crmApi = {
   resumen: (params) =>
     api.get('/api/crm/resumen', { params }),

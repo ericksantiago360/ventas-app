@@ -163,3 +163,18 @@ def test_verificar_acceso(negocios, negocio, permitido):
         assert permitido
     except HTTPException as e:
         assert not permitido and e.status_code == 403
+
+
+def test_listar_negocios_del_usuario(client, admin, solo_santal):
+    r = client.get("/api/negocios", headers=admin)
+    assert r.status_code == 200, r.text
+    negocios = r.json()
+    assert {n["id"] for n in negocios} == set(NEGOCIOS)
+    lab = next(n for n in negocios if n["id"] == "diagnostico_plus")
+    assert lab["tipo"] == "laboratorio_clinico" and lab["nombre"]
+
+    # Un usuario solo ve los negocios que tiene asignados
+    r = client.get("/api/negocios", headers=solo_santal)
+    assert [n["id"] for n in r.json()] == ["santal"]
+
+    assert client.get("/api/negocios").status_code == 401

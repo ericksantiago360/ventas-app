@@ -20,6 +20,7 @@ SIN_NEGOCIO = {
     ("auth.py", "login"): "inicio de sesión, aún no hay usuario",
     ("auth.py", "me"): "datos del propio usuario",
     ("lab.py", "estado_correo"): "solo dice si el SMTP del servidor está configurado",
+    ("negocios.py", "listar_negocios"): "solo lista los negocios del propio usuario",
     ("portal.py", "solicitar_acceso"): "portal del paciente: acceso por enlace firmado",
     ("portal.py", "mis_datos"): "portal del paciente: solo sus propios datos",
     ("portal.py", "mis_ordenes"): "portal del paciente: solo sus propias órdenes",

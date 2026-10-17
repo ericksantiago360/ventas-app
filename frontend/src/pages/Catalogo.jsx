@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import VariantesProducto from '../components/VariantesProducto'
 import Categorias from '../components/Categorias'
+import { useNegocio } from '../context/NegocioContext'
 
 const api = axios.create({
   baseURL: '',
@@ -38,9 +39,7 @@ const TIPOS = [
 ]
 
 export default function Catalogo() {
-  const [negocioId, setNegocioId] = useState(
-    localStorage.getItem('negocio_id') || 'santal'
-  )
+  const { negocioId, setNegocioId, negociosDisponibles } = useNegocio()
 
   const [productos, setProductos] = useState([])
   const [categorias, setCategorias] = useState([])
@@ -274,16 +273,12 @@ export default function Catalogo() {
         <div style={styles.headerActions}>
           <select
             value={negocioId}
-            onChange={(e) => {
-              setNegocioId(e.target.value)
-              localStorage.setItem('negocio_id', e.target.value)
-            }}
+            onChange={(e) => setNegocioId(e.target.value)}
             style={styles.select}
           >
-            <option value="santal">Santal Machinery</option>
-            <option value="dulce_tentacion">Dulce Tentación</option>
-            <option value="bienes_raices">Bienes Raíces</option>
-            <option value="diagnostico_plus">Diagnostico Plus Laboratorio Clinico</option>
+            {negociosDisponibles.map(n => (
+              <option key={n.id} value={n.id}>{n.nombre}</option>
+            ))}
           </select>
 
           <button

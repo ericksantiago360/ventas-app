@@ -1,12 +1,6 @@
 import { useEffect, useState } from 'react'
 import { crmApi } from '../api/client'
-
-const NEGOCIOS = [
-  { id: 'santal', label: 'Santal Machinery' },
-  { id: 'dulce_tentacion', label: 'Dulce Tentación' },
-  { id: 'bienes_raices', label: 'Bienes Raíces' },
-  { id: 'diagnostico_plus', label: 'Diagnostico Plus Laboratorio Clinico' },
-]
+import { useNegocio } from '../context/NegocioContext'
 
 const ETAPAS = [
   ['nuevo', 'Nuevo'],
@@ -40,7 +34,7 @@ const emptyLead = {
 }
 
 export default function CRM() {
-  const [negocio, setNegocio] = useState('santal')
+  const { negocioId: negocio, setNegocioId: setNegocio, negociosDisponibles } = useNegocio()
   const [tab, setTab] = useState('clientes')
 
   const [clientes, setClientes] = useState([])
@@ -282,9 +276,9 @@ export default function CRM() {
           onChange={e => setNegocio(e.target.value)}
           style={styles.select}
         >
-          {NEGOCIOS.map(n => (
+          {negociosDisponibles.map(n => (
             <option key={n.id} value={n.id}>
-              {n.label}
+              {n.nombre}
             </option>
           ))}
         </select>

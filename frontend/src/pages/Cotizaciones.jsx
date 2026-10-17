@@ -1,12 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { cotizacionesApi } from '../api/client'
 import axios from 'axios'
-const NEGOCIOS = [
-{ id: 'santal', label: 'Santal Machinery' },
-{ id: 'dulce_tentacion', label: 'Dulce Tentación' },
-{ id: 'bienes_raices', label: 'Bienes Raíces' },
-{ id: 'diagnostico_plus', label: 'Diagnostico Plus Laboratorio Clinico' },
-]
+import { useNegocio } from '../context/NegocioContext'
 const ESTADOS = [
 ['borrador', 'Borrador'],
 ['enviada', 'Enviada'],
@@ -35,9 +30,12 @@ descuento_pct: 0,
 notas: '',
 }
 export default function Cotizaciones() {
-const [negocio, setNegocio] = useState(
-localStorage.getItem('negocio_id') || 'santal'
-)
+const {
+negocioId: negocio,
+setNegocioId: setNegocio,
+negocioActual,
+negociosDisponibles,
+} = useNegocio()
 const [cotizaciones, setCotizaciones] = useState([])
 const [clientes, setClientes] = useState([])
 const [productos, setProductos] = useState([])
@@ -636,19 +634,15 @@ alignItems: 'center',
 value={negocio}
 onChange={e => {
 setNegocio(e.target.value)
-localStorage.setItem(
-'negocio_id',
-e.target.value
-)
 }}
 style={styles.input}
 >
-{NEGOCIOS.map(n => (
+{negociosDisponibles.map(n => (
 <option
 key={n.id}
 value={n.id}
 >
-{n.label}
+{n.nombre}
 </option>
 ))}
 </select>
@@ -872,11 +866,7 @@ color: '#64748b',
 fontSize: 13,
 }}
 >
-{
-NEGOCIOS.find(
-n => n.id === negocio
-)?.label
-}
+{negocioActual?.nombre}
 </div>
 </div>
 <button

@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { useNegocio } from '../context/NegocioContext'
 
 const MODULOS = [
   { ruta: '/crm',          label: 'CRM',           desc: 'Clientes y leads'       },
@@ -17,6 +18,7 @@ const MODULOS = [
 export default function Dashboard() {
   const user = JSON.parse(localStorage.getItem('user') || '{}')
   const navigate = useNavigate()
+  const { negocioId, negociosDisponibles } = useNegocio()
 
   return (
     <div>
@@ -29,13 +31,14 @@ export default function Dashboard() {
 
       {/* Negocios activos */}
       <div style={{ display:'flex', gap:8, marginBottom:'2rem' }}>
-        {(user.negocios || []).map(neg => (
-          <span key={neg} style={{
-            background:'#f1f5f9', color:'#475569',
+        {negociosDisponibles.map(neg => (
+          <span key={neg.id} style={{
+            background: neg.id === negocioId ? '#dbeafe' : '#f1f5f9',
+            color:      neg.id === negocioId ? '#1d4ed8' : '#475569',
             fontSize:12, padding:'3px 10px', borderRadius:100,
             border:'1px solid #e2e8f0',
           }}>
-            {neg.replace('_', ' ')}
+            {neg.nombre}
           </span>
         ))}
       </div>

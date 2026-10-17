@@ -1,4 +1,13 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { useNegocio } from '../context/NegocioContext'
+
+// Subtítulo del menú según el giro del negocio (config_negocios.tipo)
+const GIROS = {
+  laboratorio_clinico: 'Laboratorio clínico',
+  fabricacion_cnc:     'Fabricación',
+  distribucion:        'Distribución',
+  inmobiliario:        'Inmobiliaria',
+}
 
 const NAV_GROUPS = [
   {
@@ -44,6 +53,7 @@ const NAV_GROUPS = [
 export default function Layout() {
   const navigate = useNavigate()
   const user = JSON.parse(localStorage.getItem('user') || '{}')
+  const { negocioActual, cargandoNegocios, errorNegocios } = useNegocio()
 
   const logout = () => {
     localStorage.removeItem('token')
@@ -63,8 +73,10 @@ export default function Layout() {
       }}>
         {/* Logo */}
         <div style={{ padding: '1.25rem 1.25rem 1rem', borderBottom: '1px solid #1e293b' }}>
-          <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>Diagnóstico Plus</div>
-          <div style={{ color: '#475569', fontSize: 11, marginTop: 2 }}>Sistema de laboratorio</div>
+          <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>{negocioActual?.nombre || 'Gestión'}</div>
+          <div style={{ color: '#475569', fontSize: 11, marginTop: 2 }}>
+            {GIROS[negocioActual?.tipo] || 'Plataforma multi-negocio'}
+          </div>
         </div>
 
         {/* Nav scrollable */}
@@ -121,7 +133,18 @@ export default function Layout() {
       {/* ── Contenido ── */}
       <main style={{ flex: 1, overflow: 'auto', background: '#f8fafc' }}>
         <div style={{ padding: '2rem' }}>
-          <Outlet />
+          {/* Las páginas esperan la lista de negocios para no pedir datos de uno no asignado */}
+          {cargandoNegocios ? (
+            <div style={{ color: '#94a3b8' }}>Cargando…</div>
+          ) : errorNegocios ? (
+            <div style={{ background: '#fef2f2', color: '#b91c1c', borderRadius: 6, padding: '8px 12px', fontSize: 13 }}>
+              {errorNegocios}
+            </div>
+          ) : !negocioActual ? (
+            <div style={{ color: '#64748b' }}>Tu usuario no tiene negocios asignados.</div>
+          ) : (
+            <Outlet />
+          )}
         </div>
       </main>
 
