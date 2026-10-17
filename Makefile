@@ -1,4 +1,4 @@
-.PHONY: up down build logs init-db shell-backend shell-mongo dev-backend dev-frontend test
+.PHONY: up down build logs init-db init-contabilidad shell-backend shell-mongo dev-backend dev-frontend test
 
 up:
 	docker compose up -d
@@ -14,6 +14,10 @@ logs:
 
 init-db:
 	docker compose exec backend python init_db.py
+
+# Catálogo de cuentas y periodo del mes para todos los negocios (idempotente)
+init-contabilidad:
+	docker compose exec backend python init_contabilidad.py
 
 shell-backend:
 	docker compose exec backend bash

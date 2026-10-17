@@ -3,7 +3,8 @@ Catálogo de cuentas contables base y periodo contable de un negocio.
 
 Lo usan init_contabilidad.py (negocios sembrados) y el alta de negocios.
 """
-from datetime import datetime
+import calendar
+from datetime import date, datetime
 
 
 CUENTAS_BASE = [
@@ -466,3 +467,14 @@ async def abrir_periodo(db, negocio_id: str, periodo: str, fecha_inicio: str, fe
         "updated_at": datetime.utcnow(),
     })
     return True
+
+
+async def abrir_periodo_actual(db, negocio_id: str) -> tuple[str, bool]:
+    """Abre el periodo del mes en curso si no existe. Devuelve (periodo, creado)."""
+    hoy = date.today()
+    ultimo_dia = calendar.monthrange(hoy.year, hoy.month)[1]
+    periodo = hoy.strftime("%Y-%m")
+    creado = await abrir_periodo(
+        db, negocio_id, periodo, hoy.replace(day=1).isoformat(), hoy.replace(day=ultimo_dia).isoformat(),
+    )
+    return periodo, creado

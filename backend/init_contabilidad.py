@@ -3,18 +3,11 @@ import os
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from app.services.catalogo_contable import abrir_periodo, sembrar_catalogo_cuentas
+from app.services.catalogo_contable import abrir_periodo_actual, sembrar_catalogo_cuentas
 
 
 MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://mongo:27017")
 MONGODB_DB = os.getenv("MONGODB_DB", "ventas")
-
-
-NEGOCIOS = [
-    "santal",
-    "dulce_tentacion",
-    "bienes_raices",
-]
 
 
 async def main():
@@ -24,7 +17,10 @@ async def main():
 
     print("Inicializando contabilidad...")
 
-    for negocio_id in NEGOCIOS:
+    # Todos los negocios dados de alta, no una lista fija: antes faltaba diagnostico_plus
+    negocios = [n["_id"] for n in await db.config_negocios.find({}, {"_id": 1}).sort("_id", 1).to_list(500)]
+
+    for negocio_id in negocios:
 
         print(
             f"\nNegocio: {negocio_id}"
@@ -40,9 +36,7 @@ async def main():
             f"  Existentes: {existentes}"
         )
 
-        periodo_actual = "2026-09"
-
-        creado = await abrir_periodo(db, negocio_id, periodo_actual, "2026-09-01", "2026-09-30")
+        periodo_actual, creado = await abrir_periodo_actual(db, negocio_id)
 
         if creado:
 

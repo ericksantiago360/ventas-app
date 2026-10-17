@@ -1,5 +1,4 @@
-import calendar
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from typing import Literal, Optional
 
 from bson import ObjectId
@@ -9,7 +8,7 @@ from pydantic import BaseModel, Field
 from app.core.database import get_db
 from app.core.negocios import negocios_del_usuario, verificar_acceso
 from app.core.security import get_current_user, require_admin
-from app.services.catalogo_contable import abrir_periodo, sembrar_catalogo_cuentas
+from app.services.catalogo_contable import abrir_periodo_actual, sembrar_catalogo_cuentas
 
 router = APIRouter(prefix="/negocios", tags=["Negocios"])
 
@@ -96,12 +95,7 @@ async def crear_negocio(
     await db.config_negocios.insert_one(doc)
 
     await sembrar_catalogo_cuentas(db, body.id)
-    hoy = date.today()
-    ultimo_dia = calendar.monthrange(hoy.year, hoy.month)[1]
-    await abrir_periodo(
-        db, body.id, hoy.strftime("%Y-%m"),
-        hoy.replace(day=1).isoformat(), hoy.replace(day=ultimo_dia).isoformat(),
-    )
+    await abrir_periodo_actual(db, body.id)
 
     await db.usuarios.update_one({"_id": ObjectId(user["_id"])}, {"$addToSet": {"negocios": body.id}})
     return a_respuesta(doc)
