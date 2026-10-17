@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Literal, Optional, List
 
 from bson import ObjectId
@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.modules.nomina.constants import (
-    SALARIO_MINIMO_DIARIO, cuota_obrera_imss, retener_isr_mensual,
+    SALARIO_MINIMO_DIARIO, SBC_TOPE_DIARIO, cuota_obrera_imss, factor_integracion,
+    retener_isr_mensual,
 )
 
 router = APIRouter(prefix="/personal", tags=["Personal"])
@@ -26,21 +27,38 @@ def serializar(doc: dict) -> dict:
     return doc
 
 
-def calcular_deducciones(salario_diario: float, dias: int, tipo_contrato: str = "planta") -> dict:
+def calcular_anio_servicio(fecha_ingreso: str, fecha: str) -> int:
+    """Año de servicio en curso a la fecha dada (1 = primer año)."""
+    try:
+        ingreso = date.fromisoformat(fecha_ingreso[:10])
+        ref     = date.fromisoformat(fecha[:10])
+    except (TypeError, ValueError):
+        return 1
+    cumplidos = ref.year - ingreso.year - ((ref.month, ref.day) < (ingreso.month, ingreso.day))
+    return max(0, cumplidos) + 1
+
+
+def calcular_deducciones(
+    salario_diario: float, dias: int, tipo_contrato: str = "planta", anio_servicio: int = 1,
+) -> dict:
     """IMSS obrero e ISR del período, proporcionales a las tarifas mensuales."""
     # Honorarios no es relación laboral: no cotiza al IMSS ni lleva ISR de sueldos.
+    if tipo_contrato == "honorarios":
+        return {"sbc_diario": 0.0, "imss": 0.0, "isr": 0.0}
+
+    sbc_diario = round(min(salario_diario * factor_integracion(anio_servicio), SBC_TOPE_DIARIO), 2)
+
     # Salario mínimo: sin retención de ISR (Art. 96 LISR) y la cuota obrera
     # IMSS la cubre el patrón (Art. 36 LSS), así que no se descuenta.
-    if tipo_contrato == "honorarios" or salario_diario <= SALARIO_MINIMO_DIARIO:
-        return {"imss": 0.0, "isr": 0.0}
+    if salario_diario <= SALARIO_MINIMO_DIARIO:
+        return {"sbc_diario": sbc_diario, "imss": 0.0, "isr": 0.0}
 
     # Escalar el resultado mensual por dias/30.4 equivale a usar la tarifa
-    # proporcional al período. Se toma el salario diario como SBC (sin integrar).
-    factor  = dias / DIAS_MES
-    mensual = salario_diario * DIAS_MES
-    imss = cuota_obrera_imss(mensual)["total"] * factor
-    isr  = retener_isr_mensual(mensual)["isr_retener"] * factor
-    return {"imss": round(imss, 2), "isr": round(isr, 2)}
+    # proporcional al período. El IMSS va sobre el SBC; el ISR, sobre el salario.
+    factor = dias / DIAS_MES
+    imss = cuota_obrera_imss(sbc_diario * DIAS_MES)["total"] * factor
+    isr  = retener_isr_mensual(salario_diario * DIAS_MES)["isr_retener"] * factor
+    return {"sbc_diario": sbc_diario, "imss": round(imss, 2), "isr": round(isr, 2)}
 
 
 def validar_oid(id: str) -> ObjectId:
@@ -267,7 +285,10 @@ async def calcular_nomina(
 
         salario_diario = float(emp.get("salario_diario", 0))
         salario = round(salario_diario * dias, 2)
-        ded     = calcular_deducciones(salario_diario, dias, emp.get("tipo_contrato", "planta"))
+        ded     = calcular_deducciones(
+            salario_diario, dias, emp.get("tipo_contrato", "planta"),
+            calcular_anio_servicio(emp.get("fecha_ingreso", ""), periodo["fecha_inicio"]),
+        )
         deducciones = [
             {"concepto": concepto, "monto": ded[clave]}
             for concepto, clave in (("IMSS", "imss"), ("ISR", "isr"))
@@ -284,6 +305,7 @@ async def calcular_nomina(
             "departamento":     emp.get("departamento", ""),
             "tipo_contrato":    emp.get("tipo_contrato", "planta"),
             "salario_diario":   emp.get("salario_diario", 0),
+            "sbc_diario":       ded["sbc_diario"],
             "percepciones":     [{"concepto": "Salario", "monto": salario}],
             "deducciones":      deducciones,
             "total_percepciones": salario,

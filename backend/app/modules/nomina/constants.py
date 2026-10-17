@@ -10,6 +10,8 @@ Reemplaza el bloque de constantes en backend/app/modules/nomina/constants.py
 (o donde estén definidas actualmente).
 """
 
+import math
+
 # ─── UMA 2026 ──────────────────────────────────────────────────────────────
 # Vigente desde el 1 de febrero de 2026 (INEGI)
 UMA_DIARIA   = 117.31
@@ -72,6 +74,28 @@ CEAV_OBRERO = 0.01125  # 1.125% sobre SBC total
 
 # Retiro (RCV) — exclusivo patronal, obrero = 0
 # Guarderías y Prestaciones Sociales — exclusivo patronal, obrero = 0
+
+
+# ─── Factor de integración del SBC (Art. 27 LSS) ──────────────────────────
+# Prestaciones mínimas de ley: aguinaldo de 15 días (Art. 87 LFT) y prima
+# vacacional de 25% (Art. 80 LFT) sobre las vacaciones del Art. 76 LFT
+# (reforma 2023: 12 días el primer año, +2 por año hasta 20, luego +2 cada 5 años).
+AGUINALDO_DIAS   = 15
+PRIMA_VACACIONAL = 0.25
+
+
+def dias_vacaciones(anio_servicio: int) -> int:
+    """Días de vacaciones del año de servicio en curso (1 = primer año)."""
+    anio = max(1, anio_servicio)
+    if anio <= 5:
+        return 10 + 2 * anio
+    return 20 + 2 * math.ceil((anio - 5) / 5)
+
+
+def factor_integracion(anio_servicio: int) -> float:
+    """Factor SBC / salario diario con prestaciones mínimas de ley (1.0493 el primer año)."""
+    vacaciones = dias_vacaciones(anio_servicio)
+    return round(1 + (AGUINALDO_DIAS + vacaciones * PRIMA_VACACIONAL) / 365, 4)
 
 
 # ─── Función: calcular cuota obrera IMSS mensual ──────────────────────────
