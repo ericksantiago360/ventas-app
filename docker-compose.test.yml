@@ -1,0 +1,23 @@
+# Pruebas aisladas: Mongo propio y efímero, no toca los datos del stack normal.
+#   make test
+services:
+  mongo-test:
+    image: mongo:7
+    tmpfs:
+      - /data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  tests:
+    build: ./backend
+    depends_on:
+      mongo-test:
+        condition: service_healthy
+    environment:
+      MONGODB_URL: mongodb://mongo-test:27017
+    volumes:
+      - ./backend:/app
+    command: sh -c "pip install -q --root-user-action=ignore -r requirements-dev.txt && pytest $${PYTEST_ARGS}"

@@ -81,6 +81,27 @@ make dev-frontend            # Vite en http://localhost:5173
 
 ---
 
+## Pruebas
+
+Suite de pytest en `backend/tests/` (~230 pruebas: acceso por negocio, CRM, catálogo,
+cotizaciones, pedidos, facturación, inventario, nómina, contabilidad, laboratorio y portal).
+Corre la app en proceso contra un MongoDB real, en una base temporal que se borra al terminar.
+
+```bash
+make test                       # levanta un Mongo efímero en Docker y corre todo
+make test ARGS="-k catalogo -x" # filtrar / detener en el primer fallo
+```
+
+Sin Docker (requiere un MongoDB accesible y las dependencias de WeasyPrint):
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+MONGODB_URL=mongodb://localhost:27017 pytest
+```
+
+---
+
 ## Comandos útiles
 
 ```bash
