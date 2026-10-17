@@ -191,6 +191,11 @@ async def actualizar_plantilla(
     user=Depends(get_current_user),
 ):
     oid = validar_oid(id)
+    plantilla = await db.plantillas_estudios.find_one({"_id": oid})
+    if not plantilla:
+        raise HTTPException(404, "Plantilla no encontrada")
+    check_negocio(user, plantilla["negocio_id"])
+
     campos = {k: v for k, v in body.model_dump(exclude_none=True).items()}
     if "analitos" in campos:
         campos["analitos"] = [a.model_dump() for a in body.analitos]
@@ -200,8 +205,6 @@ async def actualizar_plantilla(
     doc = await db.plantillas_estudios.find_one_and_update(
         {"_id": oid}, {"$set": campos}, return_document=True
     )
-    if not doc:
-        raise HTTPException(404, "Plantilla no encontrada")
     return serializar(doc)
 
 
@@ -212,12 +215,14 @@ async def desactivar_plantilla(
     user=Depends(get_current_user),
 ):
     oid = validar_oid(id)
-    doc = await db.plantillas_estudios.find_one_and_update(
+    plantilla = await db.plantillas_estudios.find_one({"_id": oid})
+    if not plantilla:
+        raise HTTPException(404, "Plantilla no encontrada")
+    check_negocio(user, plantilla["negocio_id"])
+    await db.plantillas_estudios.update_one(
         {"_id": oid},
         {"$set": {"activo": False, "updated_at": datetime.now(timezone.utc)}},
     )
-    if not doc:
-        raise HTTPException(404, "Plantilla no encontrada")
     return {"ok": True}
 
 

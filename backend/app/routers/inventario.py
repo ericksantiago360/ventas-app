@@ -174,6 +174,10 @@ async def actualizar_producto(
     user=Depends(get_current_user),
 ):
     oid = validar_oid(item_id)
+    item = await db.inventario.find_one({"_id": oid})
+    if not item:
+        raise HTTPException(404, "Producto no encontrado")
+    check_negocio(user, item["negocio_id"])
 
     campos = {k: v for k, v in body.model_dump(exclude_none=True).items()}
     if not campos:
@@ -186,9 +190,6 @@ async def actualizar_producto(
         {"$set": campos},
         return_document=True,
     )
-    if not doc:
-        raise HTTPException(404, "Producto no encontrado")
-
     return serializar(doc)
 
 
@@ -199,13 +200,14 @@ async def desactivar_producto(
     user=Depends(get_current_user),
 ):
     oid = validar_oid(item_id)
-    doc = await db.inventario.find_one_and_update(
+    item = await db.inventario.find_one({"_id": oid})
+    if not item:
+        raise HTTPException(404, "Producto no encontrado")
+    check_negocio(user, item["negocio_id"])
+    await db.inventario.update_one(
         {"_id": oid},
         {"$set": {"activo": False, "updated_at": datetime.now(timezone.utc)}},
-        return_document=True,
     )
-    if not doc:
-        raise HTTPException(404, "Producto no encontrado")
     return {"ok": True}
 
 
@@ -225,6 +227,7 @@ async def registrar_movimiento(
     item = await db.inventario.find_one({"_id": oid})
     if not item:
         raise HTTPException(404, "Producto no encontrado")
+    check_negocio(user, item["negocio_id"])
 
     stock_anterior = float(item["stock_actual"])
 

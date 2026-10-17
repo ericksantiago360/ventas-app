@@ -183,6 +183,11 @@ async def actualizar_paciente(
     user=Depends(get_current_user),
 ):
     oid = validar_oid(id)
+    paciente = await db.pacientes.find_one({"_id": oid})
+    if not paciente:
+        raise HTTPException(404, "Paciente no encontrado")
+    check_negocio(user, paciente["negocio_id"])
+
     campos = {k: v for k, v in body.model_dump(exclude_none=True).items()}
     if not campos:
         raise HTTPException(400, "Sin campos a actualizar")
@@ -190,8 +195,6 @@ async def actualizar_paciente(
     doc = await db.pacientes.find_one_and_update(
         {"_id": oid}, {"$set": campos}, return_document=True
     )
-    if not doc:
-        raise HTTPException(404, "Paciente no encontrado")
     doc = serializar(doc)
     doc["edad"] = calcular_edad(doc.get("fecha_nacimiento", ""))
     return doc
@@ -204,12 +207,14 @@ async def desactivar_paciente(
     user=Depends(get_current_user),
 ):
     oid = validar_oid(id)
-    doc = await db.pacientes.find_one_and_update(
+    paciente = await db.pacientes.find_one({"_id": oid})
+    if not paciente:
+        raise HTTPException(404, "Paciente no encontrado")
+    check_negocio(user, paciente["negocio_id"])
+    await db.pacientes.update_one(
         {"_id": oid},
         {"$set": {"activo": False, "updated_at": datetime.now(timezone.utc)}},
     )
-    if not doc:
-        raise HTTPException(404, "Paciente no encontrado")
     return {"ok": True}
 
 
