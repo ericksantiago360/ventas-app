@@ -178,3 +178,12 @@ def test_config_nomina(client, admin):
 def test_config_nomina_sin_acceso(client, solo_santal):
     r = client.get("/api/personal/nomina/config", headers=solo_santal, params={"negocio_id": "dulce_tentacion"})
     assert r.status_code == 403
+
+
+def test_config_nomina_solo_admin(client, solo_santal):
+    # Un usuario no administrador puede ver las prestaciones de su negocio, pero no cambiarlas
+    url = "/api/personal/nomina/config"
+    assert client.get(url, headers=solo_santal, params=N).status_code == 200
+    r = client.put(url, headers=solo_santal, json={**N, "aguinaldo_dias": 30})
+    assert r.status_code == 403
+    assert client.get(url, headers=solo_santal, params=N).json()["aguinaldo_dias"] == 15

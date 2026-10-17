@@ -65,6 +65,15 @@ async def get_current_user(
     return user
 
 
+async def require_admin(user=Depends(get_current_user)):
+    if user.get("rol") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo un administrador puede hacer esto",
+        )
+    return user
+
+
 # ── Portal del paciente ───────────────────────────────────────────────────────
 # Acceso sin contraseña: el paciente recibe por correo un enlace con un token
 # firmado. `pv` (portal_version del paciente) permite revocar los enlaces

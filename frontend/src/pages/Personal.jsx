@@ -56,6 +56,7 @@ const factorPrimerAnio = (c) =>
 
 export default function Personal() {
   const { negocioId } = useNegocio()
+  const esAdmin = JSON.parse(localStorage.getItem('user') || '{}').rol === 'admin'
   const [vista, setVista] = useState('dashboard')
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState('')
@@ -579,35 +580,42 @@ export default function Personal() {
             Prestaciones que da el negocio. Se usan para integrar el salario base de cotización del IMSS
             y no pueden ser menores a las de ley.
           </div>
-          <div style={s.row3}>
-            <div style={s.fgroup}>
-              <label style={s.label}>Aguinaldo (días)</label>
-              <input style={s.input} type="number" min={15} max={365} step="0.5" required
-                value={formCfg.aguinaldo_dias}
-                onChange={e => setFormCfg(f => ({ ...f, aguinaldo_dias: e.target.value }))} />
+          {!esAdmin && (
+            <div style={{ ...s.err, background: '#f1f5f9', color: '#475569' }}>
+              Solo un administrador puede modificar las prestaciones.
             </div>
-            <div style={s.fgroup}>
-              <label style={s.label}>Prima vacacional (%)</label>
-              <input style={s.input} type="number" min={25} max={100} step="0.01" required
-                value={formCfg.prima_pct}
-                onChange={e => setFormCfg(f => ({ ...f, prima_pct: e.target.value }))} />
+          )}
+          <fieldset disabled={!esAdmin} style={{ border: 'none', padding: 0, margin: 0 }}>
+            <div style={s.row3}>
+              <div style={s.fgroup}>
+                <label style={s.label}>Aguinaldo (días)</label>
+                <input style={s.input} type="number" min={15} max={365} step="0.5" required
+                  value={formCfg.aguinaldo_dias}
+                  onChange={e => setFormCfg(f => ({ ...f, aguinaldo_dias: e.target.value }))} />
+              </div>
+              <div style={s.fgroup}>
+                <label style={s.label}>Prima vacacional (%)</label>
+                <input style={s.input} type="number" min={25} max={100} step="0.01" required
+                  value={formCfg.prima_pct}
+                  onChange={e => setFormCfg(f => ({ ...f, prima_pct: e.target.value }))} />
+              </div>
+              <div style={s.fgroup}>
+                <label style={s.label}>Días extra de vacaciones</label>
+                <input style={s.input} type="number" min={0} max={60} step="1" required
+                  value={formCfg.vacaciones_extra}
+                  onChange={e => setFormCfg(f => ({ ...f, vacaciones_extra: e.target.value }))} />
+              </div>
             </div>
-            <div style={s.fgroup}>
-              <label style={s.label}>Días extra de vacaciones</label>
-              <input style={s.input} type="number" min={0} max={60} step="1" required
-                value={formCfg.vacaciones_extra}
-                onChange={e => setFormCfg(f => ({ ...f, vacaciones_extra: e.target.value }))} />
+            <div style={{ fontSize: 13, color: '#64748b', marginTop: 16 }}>
+              Factor en el primer año: <b style={{ color: '#1e293b' }}>{factorPrimerAnio(formCfg).toFixed(4)}</b>
+              &nbsp;(de ley: 1.0493). Los días extra se suman a la tabla de vacaciones de ley en cada año de antigüedad.
             </div>
-          </div>
-          <div style={{ fontSize: 13, color: '#64748b', marginTop: 16 }}>
-            Factor en el primer año: <b style={{ color: '#1e293b' }}>{factorPrimerAnio(formCfg).toFixed(4)}</b>
-            &nbsp;(de ley: 1.0493). Los días extra se suman a la tabla de vacaciones de ley en cada año de antigüedad.
-          </div>
-          {msgCfg && <div style={{ fontSize: 13, color: '#15803d', marginTop: 12 }}>{msgCfg}</div>}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
-            <button type="button" style={s.btn('ghost')} onClick={() => setFormCfg(PRESTACIONES_LEY)}>Restablecer a ley</button>
-            <button type="submit" style={s.btn()} disabled={guardandoCfg}>{guardandoCfg ? 'Guardando…' : 'Guardar'}</button>
-          </div>
+            {msgCfg && <div style={{ fontSize: 13, color: '#15803d', marginTop: 12 }}>{msgCfg}</div>}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+              <button type="button" style={s.btn('ghost')} onClick={() => setFormCfg(PRESTACIONES_LEY)}>Restablecer a ley</button>
+              <button type="submit" style={s.btn()} disabled={guardandoCfg}>{guardandoCfg ? 'Guardando…' : 'Guardar'}</button>
+            </div>
+          </fieldset>
         </form>
       )}
 

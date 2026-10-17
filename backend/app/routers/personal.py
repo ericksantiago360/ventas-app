@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_admin
 from app.modules.nomina.constants import (
     AGUINALDO_DIAS, PRIMA_VACACIONAL, SALARIO_MINIMO_DIARIO, SBC_TOPE_DIARIO,
     cuota_obrera_imss, factor_integracion, retener_isr_mensual,
@@ -264,7 +264,7 @@ async def obtener_config_nomina(
 async def guardar_config_nomina(
     body: NominaConfig,
     db=Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_admin),
 ):
     check_negocio(user, body.negocio_id)
     prestaciones = body.model_dump(exclude={"negocio_id"})
