@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..core.database import get_db
 from ..core.security import get_current_user
-from ..core.negocios import validar_referencia
+from ..core.negocios import validar_referencia, verificar_acceso
 from ..models.base import serialize_list
 
 
@@ -44,30 +44,6 @@ def clean_body(body: dict):
     return body
 
 
-def user_businesses(user: dict):
-    """
-    Obtiene los negocios autorizados para el usuario.
-    Compatible con la estructura actual del sistema.
-    """
-    negocios = user.get("negocios") or user.get("businesses") or []
-
-    if isinstance(negocios, str):
-        negocios = [negocios]
-
-    return set(negocios)
-
-
-def check_business(user: dict, negocio_id: str):
-    """
-    Impide consultar o modificar información de otro negocio.
-    """
-    if negocio_id not in user_businesses(user):
-        raise HTTPException(
-            status_code=403,
-            detail="No tienes acceso a este negocio",
-        )
-
-
 def ensure_business(body: dict, user: dict):
     negocio_id = body.get("negocio_id")
 
@@ -77,7 +53,7 @@ def ensure_business(body: dict, user: dict):
             detail="negocio_id es obligatorio",
         )
 
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     return negocio_id
 
 
@@ -98,7 +74,7 @@ async def listar_categorias(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     filtro = {
         "negocio_id": negocio_id,
@@ -168,7 +144,7 @@ async def obtener_categoria(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     doc = await db.categorias.find_one({
         "_id": oid(id),
@@ -260,7 +236,7 @@ async def eliminar_categoria(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     result = await db.categorias.update_one(
         {
@@ -300,7 +276,7 @@ async def listar_productos(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     filtro: dict[str, Any] = {
         "negocio_id": negocio_id,
@@ -457,7 +433,7 @@ async def obtener_producto(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     doc = await db.productos.find_one({
         "_id": oid(id),
@@ -563,7 +539,7 @@ async def eliminar_producto(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     product_id = oid(id)
 
@@ -621,7 +597,7 @@ async def listar_variantes(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     product_id = oid(producto_id)
 
@@ -802,7 +778,7 @@ async def eliminar_variante(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     result = await db.variantes_producto.update_one(
         {
@@ -837,7 +813,7 @@ async def listar_listas_precios(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     filtro = {
         "negocio_id": negocio_id,
@@ -941,7 +917,7 @@ async def listar_precios_producto(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     product_id = oid(producto_id)
 
@@ -1055,7 +1031,7 @@ async def listar_atributos(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     filtro = {
         "negocio_id": negocio_id,
@@ -1200,7 +1176,7 @@ async def eliminar_atributo(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     result = await db.atributos.update_one(
         {

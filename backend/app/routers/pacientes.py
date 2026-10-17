@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.negocios import verificar_acceso
 from app.services.correo import CorreoError
 from app.services.notificaciones_lab import enlace_portal, enviar_acceso_portal, url_publica
 
@@ -28,12 +29,6 @@ def validar_oid(id: str) -> ObjectId:
         return ObjectId(id)
     except Exception:
         raise HTTPException(status_code=400, detail="ID inválido")
-
-
-def check_negocio(user: dict, negocio_id: str):
-    negocios = user.get("negocios") or user.get("businesses") or []
-    if negocio_id not in list(negocios):
-        raise HTTPException(status_code=403, detail="Sin acceso a este negocio")
 
 
 def calcular_edad(fecha_nacimiento: str) -> int:
@@ -108,7 +103,7 @@ async def listar_pacientes(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     filtro: dict = {"negocio_id": negocio_id}
     if solo_activos:
         filtro["activo"] = True
@@ -142,7 +137,7 @@ async def crear_paciente(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, body.negocio_id)
+    verificar_acceso(user, body.negocio_id)
     now = datetime.now(timezone.utc)
     folio = await siguiente_folio(db, body.negocio_id)
     doc = {
@@ -169,7 +164,7 @@ async def obtener_paciente(
     doc = await db.pacientes.find_one({"_id": oid})
     if not doc:
         raise HTTPException(404, "Paciente no encontrado")
-    check_negocio(user, doc["negocio_id"])
+    verificar_acceso(user, doc["negocio_id"])
     doc = serializar(doc)
     doc["edad"] = calcular_edad(doc.get("fecha_nacimiento", ""))
     return doc
@@ -186,7 +181,7 @@ async def actualizar_paciente(
     paciente = await db.pacientes.find_one({"_id": oid})
     if not paciente:
         raise HTTPException(404, "Paciente no encontrado")
-    check_negocio(user, paciente["negocio_id"])
+    verificar_acceso(user, paciente["negocio_id"])
 
     campos = {k: v for k, v in body.model_dump(exclude_none=True).items()}
     if not campos:
@@ -210,7 +205,7 @@ async def desactivar_paciente(
     paciente = await db.pacientes.find_one({"_id": oid})
     if not paciente:
         raise HTTPException(404, "Paciente no encontrado")
-    check_negocio(user, paciente["negocio_id"])
+    verificar_acceso(user, paciente["negocio_id"])
     await db.pacientes.update_one(
         {"_id": oid},
         {"$set": {"activo": False, "updated_at": datetime.now(timezone.utc)}},
@@ -224,7 +219,7 @@ async def _paciente_portal(db, user: dict, id: str) -> dict:
     doc = await db.pacientes.find_one({"_id": validar_oid(id)})
     if not doc:
         raise HTTPException(404, "Paciente no encontrado")
-    check_negocio(user, doc["negocio_id"])
+    verificar_acceso(user, doc["negocio_id"])
     if not doc.get("activo", True):
         raise HTTPException(400, "El paciente está dado de baja")
     return doc
@@ -281,7 +276,7 @@ async def dashboard(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     filtro = {"negocio_id": negocio_id, "activo": True}
     pacientes = await db.pacientes.find(filtro).to_list(5000)
 

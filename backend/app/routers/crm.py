@@ -1,45 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
-from bson import ObjectId
 from ..core.security import get_current_user
+from ..core.negocios import obtener_del_negocio, verificar_acceso
 from ..core.database import get_db
 from ..models.base import serialize_list
 
 router = APIRouter()
-
-
-def user_businesses(user: dict):
-    negocios = user.get("negocios") or user.get("businesses") or []
-
-    if isinstance(negocios, str):
-        negocios = [negocios]
-
-    return set(negocios)
-
-
-def check_business(user: dict, negocio_id: str):
-    if negocio_id not in user_businesses(user):
-        raise HTTPException(
-            status_code=403,
-            detail="No tienes acceso a este negocio",
-        )
-
-
-async def obtener_doc(coleccion, id: str, user: dict, nombre: str) -> dict:
-    try:
-        oid = ObjectId(id)
-    except Exception:
-        raise HTTPException(status_code=400, detail="ID inválido")
-
-    doc = await coleccion.find_one({"_id": oid})
-
-    if not doc:
-        raise HTTPException(
-            status_code=404,
-            detail=f"{nombre} no encontrado"
-        )
-
-    check_business(user, doc.get("negocio_id"))
-    return doc
 
 
 # ============================================================
@@ -56,7 +21,7 @@ async def listar_clientes(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     filtro = {
         "negocio_id": negocio_id,
@@ -107,7 +72,7 @@ async def crear_cliente(
             detail="negocio_id es obligatorio"
         )
 
-    check_business(user, body["negocio_id"])
+    verificar_acceso(user, body["negocio_id"])
 
     if not body.get("nombre"):
         raise HTTPException(
@@ -131,7 +96,7 @@ async def obtener_cliente(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    doc = await obtener_doc(db.clientes, id, user, "Cliente")
+    doc = await obtener_del_negocio(db.clientes, id, user, "Cliente")
 
     return {
         "data": serialize_list([doc])[0]
@@ -145,7 +110,7 @@ async def editar_cliente(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    doc = await obtener_doc(db.clientes, id, user, "Cliente")
+    doc = await obtener_del_negocio(db.clientes, id, user, "Cliente")
     oid = doc["_id"]
 
     body.pop("_id", None)
@@ -172,7 +137,7 @@ async def cambiar_estado_cliente(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    doc = await obtener_doc(db.clientes, id, user, "Cliente")
+    doc = await obtener_del_negocio(db.clientes, id, user, "Cliente")
     oid = doc["_id"]
 
     activo = bool(body.get("activo", True))
@@ -215,7 +180,7 @@ async def listar_leads(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     filtro = {
         "negocio_id": negocio_id,
@@ -268,7 +233,7 @@ async def crear_lead(
             detail="negocio_id es obligatorio"
         )
 
-    check_business(user, body["negocio_id"])
+    verificar_acceso(user, body["negocio_id"])
 
     if not body.get("nombre"):
         raise HTTPException(
@@ -300,7 +265,7 @@ async def eliminar_lead(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    doc = await obtener_doc(db.leads, id, user, "Lead")
+    doc = await obtener_del_negocio(db.leads, id, user, "Lead")
     oid = doc["_id"]
 
     result = await db.leads.delete_one({
@@ -327,7 +292,7 @@ async def avanzar_etapa_lead(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    doc = await obtener_doc(db.leads, id, user, "Lead")
+    doc = await obtener_del_negocio(db.leads, id, user, "Lead")
     oid = doc["_id"]
 
     etapa = body.get("etapa")
@@ -359,7 +324,7 @@ async def editar_lead(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    doc = await obtener_doc(db.leads, id, user, "Lead")
+    doc = await obtener_del_negocio(db.leads, id, user, "Lead")
     oid = doc["_id"]
 
     body.pop("_id", None)

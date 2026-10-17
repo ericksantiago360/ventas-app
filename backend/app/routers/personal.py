@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.database import get_db
+from app.core.negocios import verificar_acceso
 from app.core.security import get_current_user, require_admin
 from app.modules.nomina.constants import (
     AGUINALDO_DIAS, PRIMA_VACACIONAL, SALARIO_MINIMO_DIARIO, SBC_TOPE_DIARIO,
@@ -73,12 +74,6 @@ def validar_oid(id: str) -> ObjectId:
         return ObjectId(id)
     except Exception:
         raise HTTPException(status_code=400, detail="ID inválido")
-
-
-def check_negocio(user: dict, negocio_id: str):
-    negocios = user.get("negocios") or user.get("businesses") or []
-    if negocio_id not in list(negocios):
-        raise HTTPException(status_code=403, detail="Sin acceso a este negocio")
 
 
 async def obtener_prestaciones(db, negocio_id: str) -> dict:
@@ -256,7 +251,7 @@ async def listar_empleados(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     filtro: dict = {"negocio_id": negocio_id}
     if solo_activos:
         filtro["activo"] = True
@@ -277,7 +272,7 @@ async def crear_empleado(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, body.negocio_id)
+    verificar_acceso(user, body.negocio_id)
     now = datetime.now(timezone.utc)
     doc = {**body.model_dump(), "activo": True, "created_at": now, "updated_at": now}
     result = await db.empleados.insert_one(doc)
@@ -296,7 +291,7 @@ async def actualizar_empleado(
     antes = await db.empleados.find_one({"_id": oid})
     if not antes:
         raise HTTPException(404, "Empleado no encontrado")
-    check_negocio(user, antes["negocio_id"])
+    verificar_acceso(user, antes["negocio_id"])
 
     campos = {k: v for k, v in body.model_dump(exclude_none=True).items()}
     if not campos:
@@ -322,7 +317,7 @@ async def desactivar_empleado(
     doc = await db.empleados.find_one({"_id": oid})
     if not doc:
         raise HTTPException(404, "Empleado no encontrado")
-    check_negocio(user, doc["negocio_id"])
+    verificar_acceso(user, doc["negocio_id"])
     await db.empleados.update_one(
         {"_id": oid},
         {"$set": {"activo": False, "updated_at": datetime.now(timezone.utc)}},
@@ -338,7 +333,7 @@ async def obtener_config_nomina(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     prestaciones = await obtener_prestaciones(db, negocio_id)
     return {
         "negocio_id": negocio_id,
@@ -353,7 +348,7 @@ async def guardar_config_nomina(
     db=Depends(get_db),
     user=Depends(require_admin),
 ):
-    check_negocio(user, body.negocio_id)
+    verificar_acceso(user, body.negocio_id)
     prestaciones = body.model_dump(exclude={"negocio_id"})
     await db.config_negocios.update_one(
         {"_id": body.negocio_id},
@@ -375,7 +370,7 @@ async def listar_periodos(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     items = await db.nomina_periodos.find({"negocio_id": negocio_id}).sort("fecha_inicio", -1).to_list(200)
     return [serializar(i) for i in items]
 
@@ -386,7 +381,7 @@ async def crear_periodo(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, body.negocio_id)
+    verificar_acceso(user, body.negocio_id)
     now = datetime.now(timezone.utc)
     doc = {
         **body.model_dump(),
@@ -412,7 +407,7 @@ async def calcular_nomina(
     periodo = await db.nomina_periodos.find_one({"_id": oid})
     if not periodo:
         raise HTTPException(404, "Período no encontrado")
-    check_negocio(user, periodo["negocio_id"])
+    verificar_acceso(user, periodo["negocio_id"])
     if periodo["estado"] == "cerrado":
         raise HTTPException(400, "El período está cerrado")
 
@@ -468,7 +463,7 @@ async def cerrar_periodo(
     periodo = await db.nomina_periodos.find_one({"_id": oid})
     if not periodo:
         raise HTTPException(404, "Período no encontrado")
-    check_negocio(user, periodo["negocio_id"])
+    verificar_acceso(user, periodo["negocio_id"])
     if periodo["estado"] == "borrador":
         raise HTTPException(400, "Calcula la nómina antes de cerrar el período")
     doc = await db.nomina_periodos.find_one_and_update(
@@ -489,7 +484,7 @@ async def reabrir_periodo(
     periodo = await db.nomina_periodos.find_one({"_id": oid})
     if not periodo:
         raise HTTPException(404, "Período no encontrado")
-    check_negocio(user, periodo["negocio_id"])
+    verificar_acceso(user, periodo["negocio_id"])
     doc = await db.nomina_periodos.find_one_and_update(
         {"_id": oid},
         {"$set": {"estado": "calculado", "updated_at": datetime.now(timezone.utc)}},
@@ -508,7 +503,7 @@ async def listar_recibos(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     filtro: dict = {"negocio_id": negocio_id}
     if periodo_id:
         filtro["periodo_id"] = periodo_id
@@ -529,7 +524,7 @@ async def actualizar_recibo(
     recibo = await db.nomina_recibos.find_one({"_id": oid})
     if not recibo:
         raise HTTPException(404, "Recibo no encontrado")
-    check_negocio(user, recibo["negocio_id"])
+    verificar_acceso(user, recibo["negocio_id"])
 
     periodo = await db.nomina_periodos.find_one({"_id": validar_oid(recibo["periodo_id"])})
     if periodo and periodo.get("estado") == "cerrado":
@@ -572,7 +567,7 @@ async def dashboard(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     empleados = await db.empleados.find({"negocio_id": negocio_id, "activo": True}).to_list(500)
 
     masa_diaria = sum(float(e.get("salario_diario", 0)) for e in empleados)

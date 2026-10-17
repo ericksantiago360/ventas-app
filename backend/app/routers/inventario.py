@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.negocios import validar_referencia
+from app.core.negocios import validar_referencia, verificar_acceso
 
 
 router = APIRouter(prefix="/inventario", tags=["Inventario"])
@@ -35,16 +35,6 @@ def validar_oid(id: str) -> ObjectId:
         return ObjectId(id)
     except Exception:
         raise HTTPException(status_code=400, detail="ID inválido")
-
-
-def user_businesses(user: dict) -> list[str]:
-    negocios = user.get("negocios") or user.get("businesses") or []
-    return list(negocios)
-
-
-def check_negocio(user: dict, negocio_id: str):
-    if negocio_id not in user_businesses(user):
-        raise HTTPException(status_code=403, detail="Sin acceso a este negocio")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -94,7 +84,7 @@ async def listar_stock(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     filtro: dict = {"negocio_id": negocio_id, "activo": {"$ne": False}}
 
@@ -117,7 +107,7 @@ async def crear_producto(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, body.negocio_id)
+    verificar_acceso(user, body.negocio_id)
     await validar_referencia(db.productos, body.producto_id, body.negocio_id, "Producto del catálogo")
 
     existente = await db.inventario.find_one({
@@ -179,7 +169,7 @@ async def actualizar_producto(
     item = await db.inventario.find_one({"_id": oid})
     if not item:
         raise HTTPException(404, "Producto no encontrado")
-    check_negocio(user, item["negocio_id"])
+    verificar_acceso(user, item["negocio_id"])
 
     campos = {k: v for k, v in body.model_dump(exclude_none=True).items()}
     if not campos:
@@ -205,7 +195,7 @@ async def desactivar_producto(
     item = await db.inventario.find_one({"_id": oid})
     if not item:
         raise HTTPException(404, "Producto no encontrado")
-    check_negocio(user, item["negocio_id"])
+    verificar_acceso(user, item["negocio_id"])
     await db.inventario.update_one(
         {"_id": oid},
         {"$set": {"activo": False, "updated_at": datetime.now(timezone.utc)}},
@@ -229,7 +219,7 @@ async def registrar_movimiento(
     item = await db.inventario.find_one({"_id": oid})
     if not item:
         raise HTTPException(404, "Producto no encontrado")
-    check_negocio(user, item["negocio_id"])
+    verificar_acceso(user, item["negocio_id"])
 
     stock_anterior = float(item["stock_actual"])
 
@@ -281,7 +271,7 @@ async def listar_movimientos(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     filtro: dict = {"negocio_id": negocio_id}
     if inventario_id:
@@ -303,7 +293,7 @@ async def dashboard(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     filtro = {"negocio_id": negocio_id, "activo": {"$ne": False}}
     items = await db.inventario.find(filtro).to_list(1000)

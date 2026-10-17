@@ -7,7 +7,7 @@ from pymongo import ReturnDocument
 
 from ..core.security import get_current_user
 from ..core.database import get_db
-from ..core.negocios import validar_referencia
+from ..core.negocios import validar_referencia, verificar_acceso
 from ..models.base import serialize_list
 from ..services.contabilidad_integracion import crear_poliza_venta_pedido
 from ..services.contabilidad_integracion import (
@@ -80,23 +80,6 @@ async def etapas_negocio(db, negocio_id: str) -> list[str]:
 # UTILIDADES
 # =========================================================
 
-def user_businesses(user: dict):
-    negocios = user.get("negocios") or user.get("businesses") or []
-
-    if isinstance(negocios, str):
-        negocios = [negocios]
-
-    return set(negocios)
-
-
-def check_business(user: dict, negocio_id: str):
-    if negocio_id not in user_businesses(user):
-        raise HTTPException(
-            status_code=403,
-            detail="No tienes acceso a este negocio",
-        )
-
-
 def validar_object_id(id: str):
     try:
         return ObjectId(id)
@@ -124,7 +107,7 @@ async def obtener_pedido(
             detail="Pedido no encontrado",
         )
 
-    check_business(
+    verificar_acceso(
         user,
         pedido.get("negocio_id"),
     )
@@ -193,7 +176,7 @@ async def listar_pedidos(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(
+    verificar_acceso(
         user,
         negocio_id,
     )
@@ -252,7 +235,7 @@ async def kanban(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(
+    verificar_acceso(
         user,
         negocio_id,
     )
@@ -295,7 +278,7 @@ async def listar_etapas(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(
+    verificar_acceso(
         user,
         negocio_id,
     )
@@ -349,7 +332,7 @@ async def crear_pedido(
             detail="negocio_id es obligatorio",
         )
 
-    check_business(
+    verificar_acceso(
         user,
         negocio_id,
     )

@@ -6,7 +6,7 @@ from pymongo import ReturnDocument
 
 from ..core.database import get_db
 from ..core.security import get_current_user
-from ..core.negocios import validar_referencia
+from ..core.negocios import validar_referencia, verificar_acceso
 from ..models.base import serialize_list
 
 from io import BytesIO
@@ -24,23 +24,6 @@ from reportlab.platypus import (
     TableStyle,
 )
 router = APIRouter()
-
-
-def user_businesses(user: dict):
-    negocios = user.get("negocios") or user.get("businesses") or []
-
-    if isinstance(negocios, str):
-        negocios = [negocios]
-
-    return set(negocios)
-
-
-def check_business(user: dict, negocio_id: str):
-    if negocio_id not in user_businesses(user):
-        raise HTTPException(
-            status_code=403,
-            detail="No tienes acceso a este negocio",
-        )
 
 
 async def generar_numero_cotizacion(db, negocio_id: str) -> str:
@@ -86,7 +69,7 @@ async def listar_cotizaciones(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     filtro = {"negocio_id": negocio_id}
 
@@ -139,7 +122,7 @@ async def obtener_cotizacion(
             detail="Cotización no encontrada",
         )
 
-    check_business(user, cotizacion["negocio_id"])
+    verificar_acceso(user, cotizacion["negocio_id"])
 
     return serialize_list([cotizacion])[0]
 
@@ -158,7 +141,7 @@ async def crear_cotizacion(
             detail="negocio_id es obligatorio",
         )
 
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     await validar_referencia(db.clientes, body.get("cliente_id"), negocio_id, "Cliente")
 
     numero = await generar_numero_cotizacion(
@@ -220,7 +203,7 @@ async def editar_cotizacion(
 
     negocio_id = cotizacion["negocio_id"]
 
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     # El folio, negocio y fechas de creación no se modifican.
     campos_permitidos = {
@@ -299,7 +282,7 @@ async def cambiar_estado(
             detail="Cotización no encontrada",
         )
 
-    check_business(
+    verificar_acceso(
         user,
         cotizacion["negocio_id"],
     )
@@ -367,7 +350,7 @@ async def eliminar_cotizacion(
             detail="Cotización no encontrada",
         )
 
-    check_business(
+    verificar_acceso(
         user,
         cotizacion["negocio_id"],
     )
@@ -413,7 +396,7 @@ async def generar_pdf_cotizacion(
 
     negocio_id = cotizacion.get("negocio_id")
 
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     # -------------------------------------------------
     # DATOS DEL NEGOCIO

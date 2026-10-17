@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.negocios import verificar_acceso
 
 
 router = APIRouter(prefix="/reportes", tags=["Reportes"])
@@ -13,15 +14,6 @@ MESES_ES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun",
              "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 ESTADOS = ["confirmado", "en_proceso", "listo", "entregado", "cobrado", "cancelado"]
-
-
-def user_businesses(user: dict) -> list[str]:
-    return list(user.get("negocios") or user.get("businesses") or [])
-
-
-def check_negocio(user: dict, negocio_id: str):
-    if negocio_id not in user_businesses(user):
-        raise HTTPException(403, "Sin acceso a este negocio")
 
 
 def rango_mes(mes: str):
@@ -51,7 +43,7 @@ async def resumen(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     inicio_dt, fin_dt, inicio_str, fin_str = rango_mes(mes)
 
     # pedidos.created_at is stored as ISO string — use string comparison
@@ -186,7 +178,7 @@ async def evolucion(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     hoy = date.today()
     rangos = []

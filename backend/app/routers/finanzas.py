@@ -10,7 +10,7 @@ from ..services.cobros import registrar_cobro
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.negocios import validar_referencia
+from app.core.negocios import negocio_autorizado, validar_referencia, verificar_acceso
 
 
 router = APIRouter(
@@ -24,27 +24,6 @@ TIPOS_CUENTA_VALIDOS = ["efectivo", "banco", "wallet", "otro"]
 # ============================================================
 # UTILIDADES
 # ============================================================
-
-def user_businesses(user: dict) -> list[str]:
-    negocios = user.get("negocios")
-    if negocios is None:
-        negocios = user.get("businesses")
-    if negocios is None:
-        negocios = []
-    return negocios
-
-
-async def negocio_autorizado(
-    negocio_id: str,
-    user=Depends(get_current_user),
-) -> str:
-    """Dependencia: valida acceso al negocio y lo devuelve ya verificado.
-    Reemplaza las llamadas manuales a check_business en cada endpoint —
-    imposible de olvidar porque FastAPI la resuelve antes de entrar a la función."""
-    if negocio_id not in user_businesses(user):
-        raise HTTPException(status_code=403, detail="No tienes acceso a este negocio")
-    return negocio_id
-
 
 def validar_object_id(id: str):
     """Convierte un ID a ObjectId cuando es posible.
@@ -164,8 +143,7 @@ async def crear_cuenta(
     user=Depends(get_current_user),
 ):
     # negocio_id viene en el body -> se valida aquí, no vía dependencia de query param
-    if datos.negocio_id not in user_businesses(user):
-        raise HTTPException(status_code=403, detail="No tienes acceso a este negocio")
+    verificar_acceso(user, datos.negocio_id)
 
     existente = await db.cuentas_financieras.find_one({
         "negocio_id": datos.negocio_id,
@@ -196,8 +174,7 @@ async def editar_cuenta(
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
 
     negocio_id = cuenta["negocio_id"]
-    if negocio_id not in user_businesses(user):
-        raise HTTPException(status_code=403, detail="No tienes acceso a este negocio")
+    verificar_acceso(user, negocio_id)
 
     cambios = datos.model_dump(exclude_unset=True)
     cambios["updated_at"] = datetime.utcnow()
@@ -221,8 +198,7 @@ async def desactivar_cuenta(
     if not cuenta:
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
 
-    if cuenta["negocio_id"] not in user_businesses(user):
-        raise HTTPException(status_code=403, detail="No tienes acceso a este negocio")
+    verificar_acceso(user, cuenta["negocio_id"])
 
     await db.cuentas_financieras.update_one(
         {"_id": oid},
@@ -264,8 +240,7 @@ async def crear_movimiento(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    if datos.negocio_id not in user_businesses(user):
-        raise HTTPException(status_code=403, detail="No tienes acceso a este negocio")
+    verificar_acceso(user, datos.negocio_id)
 
     cuenta = await db.cuentas_financieras.find_one({
         "_id": validar_object_id(datos.cuenta_id),
@@ -308,8 +283,7 @@ async def crear_metodo_pago(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    if datos.negocio_id not in user_businesses(user):
-        raise HTTPException(status_code=403, detail="No tienes acceso a este negocio")
+    verificar_acceso(user, datos.negocio_id)
 
     codigo = datos.codigo or datos.nombre.strip().lower().replace(" ", "_")
 
@@ -360,8 +334,7 @@ async def crear_cobro(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    if datos.negocio_id not in user_businesses(user):
-        raise HTTPException(status_code=403, detail="No tienes acceso a este negocio")
+    verificar_acceso(user, datos.negocio_id)
 
     cuenta = await db.cuentas_financieras.find_one({
         "_id": validar_object_id(datos.cuenta_id),

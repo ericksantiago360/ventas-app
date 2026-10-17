@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.negocios import verificar_acceso
 from pymongo import ReturnDocument
 
 router = APIRouter(
@@ -17,22 +18,6 @@ router = APIRouter(
 # ============================================================
 # UTILIDADES
 # ============================================================
-
-def user_businesses(user):
-    return (
-        user.get("negocios")
-        or user.get("businesses")
-        or []
-    )
-
-
-def check_business(user, negocio_id: str):
-    if negocio_id not in user_businesses(user):
-        raise HTTPException(
-            status_code=403,
-            detail="No tienes acceso a este negocio",
-        )
-
 
 def validar_object_id(id: str):
     try:
@@ -56,7 +41,7 @@ async def listar_cuentas(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     filtro = {
         "negocio_id": negocio_id,
@@ -91,7 +76,7 @@ async def obtener_cuenta(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     cuenta = await db.catalogo_cuentas.find_one({
         "_id": validar_object_id(id),
@@ -124,7 +109,7 @@ async def crear_cuenta(
             detail="negocio_id es obligatorio",
         )
 
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     codigo = str(
         datos.get("codigo", "")
@@ -241,7 +226,7 @@ async def editar_cuenta(
             detail="negocio_id es obligatorio",
         )
 
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     cuenta = await db.catalogo_cuentas.find_one({
         "_id": validar_object_id(id),
@@ -307,7 +292,7 @@ async def desactivar_cuenta(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     cuenta = await db.catalogo_cuentas.find_one({
         "_id": validar_object_id(id),
@@ -357,7 +342,7 @@ async def listar_periodos(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     filtro = {
         "negocio_id": negocio_id,
@@ -398,7 +383,7 @@ async def crear_periodo(
             detail="negocio_id es obligatorio",
         )
 
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     periodo = str(
         datos.get("periodo", "")
@@ -460,7 +445,7 @@ async def cambiar_estado_periodo(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_business(user, negocio_id)
+    verificar_acceso(user, negocio_id)
 
     estados_validos = [
         "abierto",
@@ -570,7 +555,7 @@ async def crear_poliza(
 ):
     negocio_id = datos.get("negocio_id")
 
-    check_business(usuario, negocio_id)
+    verificar_acceso(usuario, negocio_id)
 
     tipo = datos.get("tipo", "diario")
 
@@ -658,7 +643,7 @@ async def listar_polizas(
     db=Depends(get_db),
     usuario=Depends(get_current_user),
 ):
-    check_business(usuario, negocio_id)
+    verificar_acceso(usuario, negocio_id)
 
     filtro = {
         "negocio_id": negocio_id,
@@ -713,7 +698,7 @@ async def obtener_poliza(
             detail="Póliza no encontrada",
         )
 
-    check_business(
+    verificar_acceso(
         usuario,
         poliza["negocio_id"],
     )
@@ -761,7 +746,7 @@ async def agregar_movimiento_poliza(
             detail="Póliza no encontrada",
         )
 
-    check_business(
+    verificar_acceso(
         usuario,
         poliza["negocio_id"],
     )
@@ -922,7 +907,7 @@ async def eliminar_movimiento_poliza(
             detail="Póliza no encontrada",
         )
 
-    check_business(
+    verificar_acceso(
         usuario,
         poliza["negocio_id"],
     )
@@ -1019,7 +1004,7 @@ async def contabilizar_poliza(
             detail="Póliza no encontrada",
         )
 
-    check_business(
+    verificar_acceso(
         usuario,
         poliza["negocio_id"],
     )
@@ -1112,7 +1097,7 @@ async def cancelar_poliza(
             detail="Póliza no encontrada",
         )
 
-    check_business(
+    verificar_acceso(
         usuario,
         poliza["negocio_id"],
     )
@@ -1165,7 +1150,7 @@ async def balanza_comprobacion(
         Total Debe = Total Haber
     """
 
-    check_business(current_user, negocio_id)
+    verificar_acceso(current_user, negocio_id)
 
     match_movimientos = {
         "negocio_id": negocio_id,
@@ -1301,7 +1286,7 @@ async def estado_resultados(
     Ingresos - Costos - Gastos = Utilidad / Pérdida
     """
 
-    check_business(current_user, negocio_id)
+    verificar_acceso(current_user, negocio_id)
 
     pipeline = [
         {
@@ -1522,7 +1507,7 @@ async def balance_general(
         Activo = Pasivo + Capital + Resultado del ejercicio
     """
 
-    check_business(current_user, negocio_id)
+    verificar_acceso(current_user, negocio_id)
 
     pipeline = [
         {

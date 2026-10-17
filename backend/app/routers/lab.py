@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.negocios import validar_referencia
+from app.core.negocios import validar_referencia, verificar_acceso
 from app.services.reporte_lab import generar_pdf_resultados, nombre_archivo_pdf
 from app.services.correo import CorreoError, correo_configurado
 from app.services.notificaciones_lab import enviar_resultados, url_publica
@@ -32,12 +32,6 @@ def validar_oid(id: str) -> ObjectId:
         return ObjectId(id)
     except Exception:
         raise HTTPException(400, "ID inválido")
-
-
-def check_negocio(user: dict, negocio_id: str):
-    negocios = user.get("negocios") or user.get("businesses") or []
-    if negocio_id not in list(negocios):
-        raise HTTPException(403, "Sin acceso a este negocio")
 
 
 async def siguiente_folio(db, coleccion: str, negocio_id: str, prefijo: str) -> str:
@@ -150,7 +144,7 @@ async def listar_plantillas(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     filtro: dict = {"negocio_id": negocio_id, "activo": True}
     if categoria.strip():
         filtro["categoria"] = categoria.strip()
@@ -170,7 +164,7 @@ async def crear_plantilla(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, body.negocio_id)
+    verificar_acceso(user, body.negocio_id)
     now = datetime.now(timezone.utc)
     doc = {
         **body.model_dump(),
@@ -195,7 +189,7 @@ async def actualizar_plantilla(
     plantilla = await db.plantillas_estudios.find_one({"_id": oid})
     if not plantilla:
         raise HTTPException(404, "Plantilla no encontrada")
-    check_negocio(user, plantilla["negocio_id"])
+    verificar_acceso(user, plantilla["negocio_id"])
 
     campos = {k: v for k, v in body.model_dump(exclude_none=True).items()}
     if "analitos" in campos:
@@ -219,7 +213,7 @@ async def desactivar_plantilla(
     plantilla = await db.plantillas_estudios.find_one({"_id": oid})
     if not plantilla:
         raise HTTPException(404, "Plantilla no encontrada")
-    check_negocio(user, plantilla["negocio_id"])
+    verificar_acceso(user, plantilla["negocio_id"])
     await db.plantillas_estudios.update_one(
         {"_id": oid},
         {"$set": {"activo": False, "updated_at": datetime.now(timezone.utc)}},
@@ -233,7 +227,7 @@ async def seed_plantillas(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     now = datetime.now(timezone.utc)
     creados = 0
     for est in ESTUDIOS_SEED:
@@ -265,7 +259,7 @@ async def listar_ordenes(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     filtro: dict = {"negocio_id": negocio_id}
     if fecha.strip():
         filtro["fecha"] = fecha.strip()
@@ -289,7 +283,7 @@ async def crear_orden(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, body.negocio_id)
+    verificar_acceso(user, body.negocio_id)
     if not body.estudios:
         raise HTTPException(400, "Debe seleccionar al menos un estudio")
 
@@ -407,7 +401,7 @@ async def obtener_orden(
     orden = await db.ordenes_trabajo.find_one({"_id": oid})
     if not orden:
         raise HTTPException(404, "Orden no encontrada")
-    check_negocio(user, orden["negocio_id"])
+    verificar_acceso(user, orden["negocio_id"])
     orden = serializar(orden)
     resultados = await db.resultados_lab.find({"orden_id": id}).sort("estudio_nombre", 1).to_list(50)
     orden["resultados"] = [serializar(r) for r in resultados]
@@ -425,7 +419,7 @@ async def cambiar_estado_orden(
     orden = await db.ordenes_trabajo.find_one({"_id": oid})
     if not orden:
         raise HTTPException(404, "Orden no encontrada")
-    check_negocio(user, orden["negocio_id"])
+    verificar_acceso(user, orden["negocio_id"])
     doc = await db.ordenes_trabajo.find_one_and_update(
         {"_id": oid},
         {"$set": {"estado": estado, "updated_at": datetime.now(timezone.utc)}},
@@ -453,7 +447,7 @@ async def enviar_orden_por_correo(
     orden = await db.ordenes_trabajo.find_one({"_id": oid})
     if not orden:
         raise HTTPException(404, "Orden no encontrada")
-    check_negocio(user, orden["negocio_id"])
+    verificar_acceso(user, orden["negocio_id"])
     if orden.get("estado") not in ("completado", "entregado"):
         raise HTTPException(400, "Solo se pueden enviar órdenes con todos sus resultados validados")
 
@@ -505,7 +499,7 @@ async def capturar_resultado(
     resultado = await db.resultados_lab.find_one({"_id": oid})
     if not resultado:
         raise HTTPException(404, "Resultado no encontrado")
-    check_negocio(user, resultado["negocio_id"])
+    verificar_acceso(user, resultado["negocio_id"])
     if resultado.get("estado") == "validado":
         raise HTTPException(400, "El resultado ya está validado")
 
@@ -548,7 +542,7 @@ async def validar_resultado(
     resultado = await db.resultados_lab.find_one({"_id": oid})
     if not resultado:
         raise HTTPException(404, "Resultado no encontrado")
-    check_negocio(user, resultado["negocio_id"])
+    verificar_acceso(user, resultado["negocio_id"])
     if resultado.get("estado") != "capturado":
         raise HTTPException(400, "Solo se pueden validar resultados ya capturados")
 
@@ -586,7 +580,7 @@ async def dashboard(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     hoy = date.today().isoformat()
 
     ordenes_hoy      = await db.ordenes_trabajo.count_documents({"negocio_id": negocio_id, "fecha": hoy})
@@ -645,7 +639,7 @@ async def obtener_config(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     doc = await db.config_negocios.find_one({"_id": negocio_id}) or {}
     doc.pop("_id", None)
     return {"negocio_id": negocio_id, **doc}
@@ -657,7 +651,7 @@ async def guardar_config(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, body.negocio_id)
+    verificar_acceso(user, body.negocio_id)
     campos = {k: v for k, v in body.model_dump().items() if k != "negocio_id"}
     campos["updated_at"] = datetime.now(timezone.utc)
     await db.config_negocios.update_one(
@@ -678,7 +672,7 @@ async def pdf_orden(
     orden = await db.ordenes_trabajo.find_one({"_id": oid})
     if not orden:
         raise HTTPException(404, "Orden no encontrada")
-    check_negocio(user, orden["negocio_id"])
+    verificar_acceso(user, orden["negocio_id"])
 
     pdf = await generar_pdf_resultados(db, orden)
     return Response(

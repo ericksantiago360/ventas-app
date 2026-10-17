@@ -143,3 +143,23 @@ def test_movimiento_de_inventario_ajeno_403(client, admin, solo_santal):
 
     items = datos(client.get("/api/inventario/stock", headers=admin, params=neg).json())
     assert next(i for i in items if id_de(i) == item)["stock_actual"] == 10
+
+
+@pytest.mark.parametrize("negocios, negocio, permitido", [
+    (["santal", "dulce_tentacion"], "santal", True),
+    (["santal"], "dulce_tentacion", False),
+    ("santal", "santal", True),       # un texto suelto cuenta como un negocio
+    ("santal", "san", False),         # y no da acceso por subcadena
+    ([], "santal", False),
+    (["santal"], "", False),
+    (["santal"], None, False),
+])
+def test_verificar_acceso(negocios, negocio, permitido):
+    from fastapi import HTTPException
+    from app.core.negocios import verificar_acceso
+
+    try:
+        verificar_acceso({"negocios": negocios}, negocio)
+        assert permitido
+    except HTTPException as e:
+        assert not permitido and e.status_code == 403

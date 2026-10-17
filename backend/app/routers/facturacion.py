@@ -31,7 +31,7 @@ from reportlab.platypus import (
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.negocios import validar_referencia
+from app.core.negocios import validar_referencia, verificar_acceso
 from app.services.cobros import registrar_cobro, cancelar_cobro
 from app.services.contabilidad_integracion import crear_poliza_cobro
 
@@ -117,14 +117,6 @@ def validar_oid(id: str) -> ObjectId:
         raise HTTPException(400, "ID inválido")
 
 
-def check_negocio(user: dict, negocio_id: str):
-    negocios = user.get("negocios") or user.get("businesses") or []
-    if isinstance(negocios, str):
-        negocios = [negocios]
-    if negocio_id not in list(negocios):
-        raise HTTPException(403, "Sin acceso a este negocio")
-
-
 def hoy_iso() -> str:
     return date.today().isoformat()
 
@@ -182,7 +174,7 @@ async def obtener_factura(db, id: str, user: dict) -> dict:
     factura = await db.facturas.find_one({"_id": validar_oid(id)})
     if not factura:
         raise HTTPException(404, "Factura no encontrada")
-    check_negocio(user, factura["negocio_id"])
+    verificar_acceso(user, factura["negocio_id"])
     return factura
 
 
@@ -301,7 +293,7 @@ async def listar_facturas(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     filtro: dict = {"negocio_id": negocio_id}
     if estado.strip() == "vencida":
         filtro["estado"] = "emitida"
@@ -332,7 +324,7 @@ async def resumen(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     hoy = date.today()
     inicio_mes = hoy.replace(day=1).isoformat()
 
@@ -376,7 +368,7 @@ async def pendientes_de_facturar(
     user=Depends(get_current_user),
 ):
     """Pedidos y órdenes de laboratorio con importe que aún no tienen factura activa."""
-    check_negocio(user, negocio_id)
+    verificar_acceso(user, negocio_id)
     facturados = await db.facturas.find(
         {"negocio_id": negocio_id, "estado": {"$in": ESTADOS_ACTIVOS}, "origen_tipo": {"$ne": "manual"}},
         {"origen_tipo": 1, "origen_id": 1},
@@ -439,7 +431,7 @@ async def crear_factura(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    check_negocio(user, body.negocio_id)
+    verificar_acceso(user, body.negocio_id)
     await validar_receptor(db, body, body.negocio_id)
     doc = armar_documento(body, body.negocio_id)
     return await insertar_factura(db, doc, "manual", "", user, body.emitir)
@@ -692,7 +684,7 @@ async def facturar_pedido(
     pedido = await db.pedidos.find_one({"_id": validar_oid(pedido_id)})
     if not pedido or pedido.get("eliminado"):
         raise HTTPException(404, "Pedido no encontrado")
-    check_negocio(user, pedido["negocio_id"])
+    verificar_acceso(user, pedido["negocio_id"])
     if pedido.get("estado") == "cancelado":
         raise HTTPException(400, "No se puede facturar un pedido cancelado")
     await validar_origen_libre(db, pedido["negocio_id"], "pedido", pedido_id)
@@ -746,7 +738,7 @@ async def facturar_orden(
     orden = await db.ordenes_trabajo.find_one({"_id": validar_oid(orden_id)})
     if not orden:
         raise HTTPException(404, "Orden no encontrada")
-    check_negocio(user, orden["negocio_id"])
+    verificar_acceso(user, orden["negocio_id"])
     await validar_origen_libre(db, orden["negocio_id"], "orden_lab", orden_id)
 
     paciente = {}
