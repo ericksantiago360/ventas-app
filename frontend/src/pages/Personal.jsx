@@ -55,7 +55,7 @@ const factorPrimerAnio = (c) =>
   1 + (Number(c.aguinaldo_dias) + (12 + Number(c.vacaciones_extra)) * Number(c.prima_pct) / 100) / 365
 
 export default function Personal() {
-  const { negocioId } = useNegocio()
+  const { negocioId, setNegocioId, negociosDisponibles } = useNegocio()
   const esAdmin = JSON.parse(localStorage.getItem('user') || '{}').rol === 'admin'
   const [vista, setVista] = useState('dashboard')
   const [cargando, setCargando] = useState(false)
@@ -362,6 +362,15 @@ export default function Personal() {
     <div style={s.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1 style={s.h1}>Personal & Nómina</h1>
+        <select
+          value={negocioId}
+          onChange={e => { setError(''); setNegocioId(e.target.value) }}
+          style={{ ...s.select, width: 'auto', minWidth: 200, background: '#fff' }}
+        >
+          {negociosDisponibles.map(n => (
+            <option key={n.id} value={n.id}>{n.nombre}</option>
+          ))}
+        </select>
       </div>
 
       <div style={s.tabs}>
