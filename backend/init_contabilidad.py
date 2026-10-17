@@ -1,11 +1,12 @@
 import asyncio
+import os
 from datetime import datetime
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
 
-MONGODB_URL = "mongodb://mongo:27017"
-MONGODB_DB = "ventas"
+MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://mongo:27017")
+MONGODB_DB = os.getenv("MONGODB_DB", "ventas")
 
 
 CUENTAS_BASE = [

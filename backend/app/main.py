@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
+from pymongo.errors import DuplicateKeyError
 
 from .core.config import settings
 from .core.database import connect_db, close_db
@@ -37,6 +39,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Registros duplicados (índices únicos de MongoDB) → 409 ────────────────────
+@app.exception_handler(DuplicateKeyError)
+async def duplicado_handler(request: Request, exc: DuplicateKeyError):
+    campos = [
+        k for k in ((exc.details or {}).get("keyValue") or {})
+        if k != "negocio_id"
+    ]
+    detalle = "Ya existe un registro con ese valor"
+    if campos:
+        detalle += f" ({', '.join(campos)})"
+    return JSONResponse(status_code=409, content={"detail": detalle})
 
 # ── Archivos estáticos (PDFs generados) ───────────────────────────────────────
 os.makedirs(settings.STORAGE_PATH, exist_ok=True)

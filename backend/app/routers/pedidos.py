@@ -52,6 +52,29 @@ ETAPAS_INTERNAS = [
 ]
 
 
+async def etapas_negocio(db, negocio_id: str) -> list[str]:
+    """
+    Etapas internas del negocio según config_negocios.etapas_por_estado
+    (estados en_proceso y listo). Si no hay configuración se usan
+    ETAPAS_INTERNAS.
+    """
+    config = await db.config_negocios.find_one(
+        {"_id": negocio_id},
+        {"etapas_por_estado": 1},
+    ) or {}
+
+    por_estado = config.get("etapas_por_estado") or {}
+
+    etapas = ["recibido"]
+
+    for estado in ("en_proceso", "listo"):
+        for etapa in por_estado.get(estado, []):
+            if etapa not in etapas:
+                etapas.append(etapa)
+
+    return etapas if len(etapas) > 1 else ETAPAS_INTERNAS
+
+
 # =========================================================
 # UTILIDADES
 # =========================================================
@@ -259,6 +282,29 @@ async def kanban(
         ].append(doc)
 
     return resultado
+
+
+# =========================================================
+# ETAPAS INTERNAS DEL NEGOCIO
+# =========================================================
+
+@router.get("/etapas")
+async def listar_etapas(
+    negocio_id: str,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    check_business(
+        user,
+        negocio_id,
+    )
+
+    return {
+        "data": await etapas_negocio(
+            db,
+            negocio_id,
+        )
+    }
 
 
 # =========================================================
@@ -688,7 +734,10 @@ async def cambiar_estado(
     }
 
     if body.get("etapa_interna"):
-        if body["etapa_interna"] not in ETAPAS_INTERNAS:
+        if body["etapa_interna"] not in await etapas_negocio(
+            db,
+            pedido["negocio_id"],
+        ):
             raise HTTPException(
                 status_code=400,
                 detail="Etapa interna inválida",
@@ -734,7 +783,10 @@ async def cambiar_etapa(
         "etapa_interna"
     )
 
-    if etapa not in ETAPAS_INTERNAS:
+    if etapa not in await etapas_negocio(
+        db,
+        pedido["negocio_id"],
+    ):
         raise HTTPException(
             status_code=400,
             detail="Etapa interna inválida",

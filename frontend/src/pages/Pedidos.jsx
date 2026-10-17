@@ -55,7 +55,21 @@ const etapaLabel = {
   en_acabado: 'En acabado',
   control_calidad: 'Control de calidad',
   listo_para_recoger: 'Listo para recoger',
+  preparando: 'Preparando',
+  en_ruta: 'En ruta',
+  listo_para_entrega: 'Listo para entrega',
+  docs_pendientes: 'Documentos pendientes',
+  revisando_docs: 'Revisando documentos',
+  aprobado: 'Aprobado',
+  contrato_listo: 'Contrato listo',
+  registro: 'Registro',
+  procesamiento: 'Procesamiento',
+  validacion: 'Validación',
 }
+
+const nombreEtapa = (etapa) =>
+  etapaLabel[etapa] ||
+  etapa.charAt(0).toUpperCase() + etapa.slice(1).replace(/_/g, ' ')
 
 const estadoColor = {
   confirmado: '#2563eb',
@@ -114,6 +128,7 @@ export default function Pedidos() {
 
   const [clientes, setClientes] = useState([])
   const [productos, setProductos] = useState([])
+  const [etapas, setEtapas] = useState(ETAPAS)
 
   const [busqueda, setBusqueda] = useState('')
   const [estadoFiltro, setEstadoFiltro] = useState('')
@@ -222,9 +237,31 @@ export default function Pedidos() {
     cargarPedidos()
   }, [negocioId, estadoFiltro])
 
+  const cargarEtapas = async () => {
+    try {
+      const response = await api.get('/api/pedidos/etapas', {
+        params: {
+          negocio_id: negocioId,
+        },
+      })
+
+      const lista = response.data?.data
+
+      setEtapas(
+        Array.isArray(lista) && lista.length
+          ? lista
+          : ETAPAS
+      )
+    } catch (err) {
+      console.error('Error cargando etapas:', err)
+      setEtapas(ETAPAS)
+    }
+  }
+
   useEffect(() => {
     cargarClientes()
     cargarProductos()
+    cargarEtapas()
   }, [negocioId])
 
   const pedidosFiltrados = useMemo(() => {
@@ -1250,6 +1287,7 @@ export default function Pedidos() {
               cambiarEtapa={
                 cambiarEtapa
               }
+              etapas={etapas}
               registrarPago={
                 registrarPago
               }
@@ -1674,6 +1712,7 @@ function DetallePedido({
   pedido,
   cambiarEstado,
   cambiarEtapa,
+  etapas,
   registrarPago,
   pagoForm,
   setPagoForm,
@@ -1791,17 +1830,13 @@ function DetallePedido({
           }
           style={styles.select}
         >
-          {ETAPAS.map(
+          {etapas.map(
             (etapa) => (
               <option
                 key={etapa}
                 value={etapa}
               >
-                {
-                  etapaLabel[
-                    etapa
-                  ]
-                }
+                {nombreEtapa(etapa)}
               </option>
             )
           )}

@@ -11,13 +11,21 @@ def validate_object_id(v: Any) -> str:
     raise ValueError(f"ObjectId inválido: {v}")
 
 
+def _convertir_object_ids(valor: Any) -> Any:
+    if isinstance(valor, ObjectId):
+        return str(valor)
+    if isinstance(valor, dict):
+        return {k: _convertir_object_ids(v) for k, v in valor.items()}
+    if isinstance(valor, list):
+        return [_convertir_object_ids(v) for v in valor]
+    return valor
+
+
 def serialize_doc(doc: dict | None) -> dict | None:
-    """Convierte ObjectId a str para serialización JSON."""
+    """Convierte todos los ObjectId (incluidos anidados) a str para serialización JSON."""
     if not doc:
         return doc
-    if "_id" in doc:
-        doc["_id"] = str(doc["_id"])
-    return doc
+    return _convertir_object_ids(doc)
 
 
 def serialize_list(docs: list[dict]) -> list[dict]:
