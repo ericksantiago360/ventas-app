@@ -38,8 +38,9 @@ export const authApi = {
 }
 
 export const negociosApi = {
-  listar: () => api.get('/api/negocios'),
+  listar: (params) => api.get('/api/negocios', { params }),
   crear: (datos) => api.post('/api/negocios', datos),
+  actualizar: (id, datos) => api.put(`/api/negocios/${id}`, datos),
 }
 
 export const usuariosApi = {
