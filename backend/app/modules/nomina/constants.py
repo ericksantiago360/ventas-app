@@ -92,10 +92,19 @@ def dias_vacaciones(anio_servicio: int) -> int:
     return 20 + 2 * math.ceil((anio - 5) / 5)
 
 
-def factor_integracion(anio_servicio: int) -> float:
-    """Factor SBC / salario diario con prestaciones mínimas de ley (1.0493 el primer año)."""
-    vacaciones = dias_vacaciones(anio_servicio)
-    return round(1 + (AGUINALDO_DIAS + vacaciones * PRIMA_VACACIONAL) / 365, 4)
+def factor_integracion(
+    anio_servicio: int,
+    aguinaldo_dias: float = AGUINALDO_DIAS,
+    prima_vacacional: float = PRIMA_VACACIONAL,
+    vacaciones_extra: int = 0,
+) -> float:
+    """
+    Factor SBC / salario diario (1.0493 el primer año con prestaciones de ley).
+
+    vacaciones_extra son días que el patrón otorga por encima de la tabla de ley.
+    """
+    vacaciones = dias_vacaciones(anio_servicio) + vacaciones_extra
+    return round(1 + (aguinaldo_dias + vacaciones * prima_vacacional) / 365, 4)
 
 
 # ─── Función: calcular cuota obrera IMSS mensual ──────────────────────────

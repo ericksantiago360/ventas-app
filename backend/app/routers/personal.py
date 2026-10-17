@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.modules.nomina.constants import (
-    SALARIO_MINIMO_DIARIO, SBC_TOPE_DIARIO, cuota_obrera_imss, factor_integracion,
-    retener_isr_mensual,
+    AGUINALDO_DIAS, PRIMA_VACACIONAL, SALARIO_MINIMO_DIARIO, SBC_TOPE_DIARIO,
+    cuota_obrera_imss, factor_integracion, retener_isr_mensual,
 )
 
 router = APIRouter(prefix="/personal", tags=["Personal"])
@@ -18,6 +18,11 @@ TIPOS_CONTRATO = Literal["planta", "temporal", "honorarios", "confianza"]
 TIPOS_PERIODO  = Literal["semanal", "quincenal", "mensual"]
 DIAS_PERIODO   = {"semanal": 7, "quincenal": 15, "mensual": 30}
 DIAS_MES       = 30.4  # mes promedio usado por SAT/IMSS para tarifas mensuales
+PRESTACIONES_LEY = {
+    "aguinaldo_dias":   AGUINALDO_DIAS,
+    "prima_vacacional": PRIMA_VACACIONAL,
+    "vacaciones_extra": 0,
+}
 
 
 # ── Utilidades ────────────────────────────────────────────────────────────────
@@ -40,13 +45,15 @@ def calcular_anio_servicio(fecha_ingreso: str, fecha: str) -> int:
 
 def calcular_deducciones(
     salario_diario: float, dias: int, tipo_contrato: str = "planta", anio_servicio: int = 1,
+    prestaciones: Optional[dict] = None,
 ) -> dict:
     """IMSS obrero e ISR del período, proporcionales a las tarifas mensuales."""
     # Honorarios no es relación laboral: no cotiza al IMSS ni lleva ISR de sueldos.
     if tipo_contrato == "honorarios":
         return {"sbc_diario": 0.0, "imss": 0.0, "isr": 0.0}
 
-    sbc_diario = round(min(salario_diario * factor_integracion(anio_servicio), SBC_TOPE_DIARIO), 2)
+    factor_sbc = factor_integracion(anio_servicio, **(prestaciones or PRESTACIONES_LEY))
+    sbc_diario = round(min(salario_diario * factor_sbc, SBC_TOPE_DIARIO), 2)
 
     # Salario mínimo: sin retención de ISR (Art. 96 LISR) y la cuota obrera
     # IMSS la cubre el patrón (Art. 36 LSS), así que no se descuenta.
@@ -72,6 +79,11 @@ def check_negocio(user: dict, negocio_id: str):
     negocios = user.get("negocios") or user.get("businesses") or []
     if negocio_id not in list(negocios):
         raise HTTPException(status_code=403, detail="Sin acceso a este negocio")
+
+
+async def obtener_prestaciones(db, negocio_id: str) -> dict:
+    config = await db.config_negocios.find_one({"_id": negocio_id}, {"nomina": 1}) or {}
+    return {**PRESTACIONES_LEY, **(config.get("nomina") or {})}
 
 
 async def recalcular_totales_periodo(db, periodo_id: str):
@@ -146,6 +158,14 @@ class ReciboUpdate(BaseModel):
     percepciones: Optional[List[LineaConcepto]] = None
     deducciones: Optional[List[LineaConcepto]] = None
     estado: Optional[Literal["pendiente", "pagado"]] = None
+
+
+class NominaConfig(BaseModel):
+    """Prestaciones del negocio para el factor de integración; no pueden ser menores a las de ley."""
+    negocio_id: str
+    aguinaldo_dias:   float = Field(default=AGUINALDO_DIAS, ge=AGUINALDO_DIAS, le=365)
+    prima_vacacional: float = Field(default=PRIMA_VACACIONAL, ge=PRIMA_VACACIONAL, le=1)
+    vacaciones_extra: int   = Field(default=0, ge=0, le=60)
 
 
 # ── Empleados ─────────────────────────────────────────────────────────────────
@@ -225,6 +245,41 @@ async def desactivar_empleado(
 
 # ── Períodos de nómina ────────────────────────────────────────────────────────
 
+@router.get("/nomina/config")
+async def obtener_config_nomina(
+    negocio_id: str = Query(...),
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    check_negocio(user, negocio_id)
+    prestaciones = await obtener_prestaciones(db, negocio_id)
+    return {
+        "negocio_id": negocio_id,
+        **prestaciones,
+        "factor_primer_anio": factor_integracion(1, **prestaciones),
+    }
+
+
+@router.put("/nomina/config")
+async def guardar_config_nomina(
+    body: NominaConfig,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    check_negocio(user, body.negocio_id)
+    prestaciones = body.model_dump(exclude={"negocio_id"})
+    await db.config_negocios.update_one(
+        {"_id": body.negocio_id},
+        {"$set": {"nomina": prestaciones, "updated_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    return {
+        "negocio_id": body.negocio_id,
+        **prestaciones,
+        "factor_primer_anio": factor_integracion(1, **prestaciones),
+    }
+
+
 @router.get("/nomina/periodos")
 async def listar_periodos(
     negocio_id: str = Query(...),
@@ -274,6 +329,7 @@ async def calcular_nomina(
 
     negocio_id = periodo["negocio_id"]
     dias = DIAS_PERIODO[periodo["tipo_periodo"]]
+    prestaciones = await obtener_prestaciones(db, negocio_id)
     empleados = await db.empleados.find({"negocio_id": negocio_id, "activo": True}).to_list(500)
     now = datetime.now(timezone.utc)
     creados = 0
@@ -288,6 +344,7 @@ async def calcular_nomina(
         ded     = calcular_deducciones(
             salario_diario, dias, emp.get("tipo_contrato", "planta"),
             calcular_anio_servicio(emp.get("fecha_ingreso", ""), periodo["fecha_inicio"]),
+            prestaciones,
         )
         deducciones = [
             {"concepto": concepto, "monto": ded[clave]}

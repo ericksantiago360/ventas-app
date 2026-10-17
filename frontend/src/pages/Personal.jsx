@@ -47,6 +47,13 @@ const EMPTY_PERIODO = {
   nombre: '', tipo_periodo: 'quincenal', fecha_inicio: '', fecha_fin: '',
 }
 
+// Prestaciones mínimas de ley (LFT); la prima vacacional se edita en porcentaje
+const PRESTACIONES_LEY = { aguinaldo_dias: 15, prima_pct: 25, vacaciones_extra: 0 }
+
+// Mismo cálculo que factor_integracion() del backend, para el primer año (12 días de vacaciones)
+const factorPrimerAnio = (c) =>
+  1 + (Number(c.aguinaldo_dias) + (12 + Number(c.vacaciones_extra)) * Number(c.prima_pct) / 100) / 365
+
 export default function Personal() {
   const { negocioId } = useNegocio()
   const [vista, setVista] = useState('dashboard')
@@ -81,6 +88,11 @@ export default function Personal() {
   const [guardandoRec, setGuardandoRec] = useState(false)
   const [lineaP, setLineaP] = useState({ concepto: '', monto: '' })
   const [lineaD, setLineaD] = useState({ concepto: '', monto: '' })
+
+  // Prestaciones (factor de integración)
+  const [formCfg, setFormCfg] = useState(PRESTACIONES_LEY)
+  const [guardandoCfg, setGuardandoCfg] = useState(false)
+  const [msgCfg, setMsgCfg] = useState('')
 
   // ── Loaders ────────────────────────────────────────────────────────────────
 
@@ -124,10 +136,24 @@ export default function Personal() {
     } catch (e) { setError(e.message) }
   }, [negocioId])
 
+  const cargarConfig = useCallback(async () => {
+    if (!negocioId) return
+    setMsgCfg('')
+    try {
+      const c = await req(`/api/personal/nomina/config?negocio_id=${encodeURIComponent(negocioId)}`)
+      setFormCfg({
+        aguinaldo_dias: c.aguinaldo_dias,
+        prima_pct: Math.round(c.prima_vacacional * 10000) / 100,
+        vacaciones_extra: c.vacaciones_extra,
+      })
+    } catch (e) { setError(e.message) }
+  }, [negocioId])
+
   useEffect(() => {
     if (vista === 'dashboard') cargarDash()
     if (vista === 'empleados') cargarEmpleados()
     if (vista === 'nomina') cargarPeriodos()
+    if (vista === 'prestaciones') cargarConfig()
   }, [vista, negocioId])
 
   useEffect(() => {
@@ -267,6 +293,24 @@ export default function Personal() {
     finally { setGuardandoRec(false) }
   }
 
+  async function guardarConfig(ev) {
+    ev.preventDefault()
+    setGuardandoCfg(true); setError(''); setMsgCfg('')
+    try {
+      await req('/api/personal/nomina/config', {
+        method: 'PUT',
+        body: JSON.stringify({
+          negocio_id: negocioId,
+          aguinaldo_dias: Number(formCfg.aguinaldo_dias),
+          prima_vacacional: Number(formCfg.prima_pct) / 100,
+          vacaciones_extra: Number(formCfg.vacaciones_extra),
+        }),
+      })
+      setMsgCfg('Prestaciones guardadas. Aplican a los recibos que se calculen desde ahora.')
+    } catch (e) { setError(e.message) }
+    finally { setGuardandoCfg(false) }
+  }
+
   // ── Cálculos UI ────────────────────────────────────────────────────────────
 
   const totalP = formRecibo.percepciones.reduce((s, p) => s + Number(p.monto), 0)
@@ -319,7 +363,7 @@ export default function Personal() {
       </div>
 
       <div style={s.tabs}>
-        {[['dashboard','Resumen'],['empleados','Empleados'],['nomina','Nómina']].map(([k,l]) => (
+        {[['dashboard','Resumen'],['empleados','Empleados'],['nomina','Nómina'],['prestaciones','Prestaciones']].map(([k,l]) => (
           <button key={k} style={s.tab(vista === k)} onClick={() => { setError(''); setVista(k) }}>{l}</button>
         ))}
       </div>
@@ -525,6 +569,46 @@ export default function Personal() {
               </div>
             )}
         </div>
+      )}
+
+      {/* ── PRESTACIONES ──────────────────────────────────────────────── */}
+      {vista === 'prestaciones' && (
+        <form style={{ ...s.card, maxWidth: 560 }} onSubmit={guardarConfig}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Factor de integración del SBC</div>
+          <div style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>
+            Prestaciones que da el negocio. Se usan para integrar el salario base de cotización del IMSS
+            y no pueden ser menores a las de ley.
+          </div>
+          <div style={s.row3}>
+            <div style={s.fgroup}>
+              <label style={s.label}>Aguinaldo (días)</label>
+              <input style={s.input} type="number" min={15} max={365} step="0.5" required
+                value={formCfg.aguinaldo_dias}
+                onChange={e => setFormCfg(f => ({ ...f, aguinaldo_dias: e.target.value }))} />
+            </div>
+            <div style={s.fgroup}>
+              <label style={s.label}>Prima vacacional (%)</label>
+              <input style={s.input} type="number" min={25} max={100} step="0.01" required
+                value={formCfg.prima_pct}
+                onChange={e => setFormCfg(f => ({ ...f, prima_pct: e.target.value }))} />
+            </div>
+            <div style={s.fgroup}>
+              <label style={s.label}>Días extra de vacaciones</label>
+              <input style={s.input} type="number" min={0} max={60} step="1" required
+                value={formCfg.vacaciones_extra}
+                onChange={e => setFormCfg(f => ({ ...f, vacaciones_extra: e.target.value }))} />
+            </div>
+          </div>
+          <div style={{ fontSize: 13, color: '#64748b', marginTop: 16 }}>
+            Factor en el primer año: <b style={{ color: '#1e293b' }}>{factorPrimerAnio(formCfg).toFixed(4)}</b>
+            &nbsp;(de ley: 1.0493). Los días extra se suman a la tabla de vacaciones de ley en cada año de antigüedad.
+          </div>
+          {msgCfg && <div style={{ fontSize: 13, color: '#15803d', marginTop: 12 }}>{msgCfg}</div>}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+            <button type="button" style={s.btn('ghost')} onClick={() => setFormCfg(PRESTACIONES_LEY)}>Restablecer a ley</button>
+            <button type="submit" style={s.btn()} disabled={guardandoCfg}>{guardandoCfg ? 'Guardando…' : 'Guardar'}</button>
+          </div>
+        </form>
       )}
 
       {/* ── MODAL EMPLEADO ────────────────────────────────────────────── */}

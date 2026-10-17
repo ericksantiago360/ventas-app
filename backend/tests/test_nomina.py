@@ -118,3 +118,63 @@ def test_recibos_con_deducciones(client, admin):
         rec = recibos[empleados[clave]]
         assert rec["deducciones"] == []
         assert rec["total_neto"] == rec["total_percepciones"]
+
+
+def test_factor_integracion_con_prestaciones_superiores():
+    # 30 días de aguinaldo, prima de 50% y 2 días extra de vacaciones: 1 + (30 + 14 × 0.5) / 365
+    assert factor_integracion(1, 30, 0.5, 2) == 1.1014
+    ded = calcular_deducciones(500, 15, prestaciones={
+        "aguinaldo_dias": 30, "prima_vacacional": 0.5, "vacaciones_extra": 2,
+    })
+    assert ded["sbc_diario"] == 550.70
+
+
+def test_config_nomina(client, admin):
+    # Otro negocio para no alterar los cálculos de santal en las demás pruebas
+    neg = {"negocio_id": "dulce_tentacion"}
+    url = "/api/personal/nomina/config"
+
+    r = client.get(url, headers=admin, params=neg)
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        **neg, "aguinaldo_dias": 15, "prima_vacacional": 0.25, "vacaciones_extra": 0,
+        "factor_primer_anio": 1.0493,
+    }
+
+    # Menos que la ley se rechaza
+    for invalido in ({"aguinaldo_dias": 10}, {"prima_vacacional": 0.2}, {"vacaciones_extra": -1}):
+        assert client.put(url, headers=admin, json={**neg, **invalido}).status_code == 422
+
+    try:
+        r = client.put(url, headers=admin, json={
+            **neg, "aguinaldo_dias": 30, "prima_vacacional": 0.5, "vacaciones_extra": 2,
+        })
+        assert r.status_code == 200, r.text
+        assert r.json()["factor_primer_anio"] == 1.1014
+        assert client.get(url, headers=admin, params=neg).json()["aguinaldo_dias"] == 30
+
+        r = client.post("/api/personal/empleados", headers=admin, json={
+            **neg, "nombre": unico("Emp"), "salario_diario": 500, "fecha_ingreso": "2026-01-01",
+        })
+        assert r.status_code == 201, r.text
+        empleado = id_de(r.json())
+
+        r = client.post("/api/personal/nomina/periodos", headers=admin, json={
+            **neg, "nombre": unico("Q"), "tipo_periodo": "quincenal",
+            "fecha_inicio": "2026-11-01", "fecha_fin": "2026-11-15",
+        })
+        periodo = id_de(r.json())
+        assert client.patch(f"/api/personal/nomina/periodos/{periodo}/calcular", headers=admin).status_code == 200
+
+        recibos = datos(client.get("/api/personal/nomina/recibos", headers=admin,
+                                   params={**neg, "periodo_id": periodo}).json())
+        recibo = next(rec for rec in recibos if rec["empleado_id"] == empleado)
+        assert recibo["sbc_diario"] == 550.70
+        assert recibo["deducciones"][0] == {"concepto": "IMSS", "monto": 208.12}
+    finally:
+        client.put(url, headers=admin, json=neg)
+
+
+def test_config_nomina_sin_acceso(client, solo_santal):
+    r = client.get("/api/personal/nomina/config", headers=solo_santal, params={"negocio_id": "dulce_tentacion"})
+    assert r.status_code == 403
