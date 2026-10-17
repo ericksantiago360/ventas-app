@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..core.database import get_db
 from ..core.security import get_current_user
+from ..core.negocios import validar_referencia
 from ..models.base import serialize_list
 
 
@@ -353,6 +354,7 @@ async def crear_producto(
 ):
     body = clean_body(body)
     negocio_id = ensure_business(body, user)
+    await validar_referencia(db.categorias, body.get("categoria_id"), negocio_id, "Categoría")
 
     codigo = str(body.get("codigo", "")).strip()
     nombre = str(body.get("nombre", "")).strip()
@@ -493,6 +495,8 @@ async def editar_producto(
             status_code=404,
             detail="Producto no encontrado",
         )
+
+    await validar_referencia(db.categorias, body.get("categoria_id"), negocio_id, "Categoría")
 
     if "codigo" in body:
         codigo = str(body["codigo"]).strip()

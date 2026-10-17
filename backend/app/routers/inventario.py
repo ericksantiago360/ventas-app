@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.negocios import validar_referencia
 
 
 router = APIRouter(prefix="/inventario", tags=["Inventario"])
@@ -117,6 +118,7 @@ async def crear_producto(
     user=Depends(get_current_user),
 ):
     check_negocio(user, body.negocio_id)
+    await validar_referencia(db.productos, body.producto_id, body.negocio_id, "Producto del catálogo")
 
     existente = await db.inventario.find_one({
         "negocio_id": body.negocio_id,

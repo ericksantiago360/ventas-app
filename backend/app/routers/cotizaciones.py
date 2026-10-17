@@ -6,6 +6,7 @@ from pymongo import ReturnDocument
 
 from ..core.database import get_db
 from ..core.security import get_current_user
+from ..core.negocios import validar_referencia
 from ..models.base import serialize_list
 
 from io import BytesIO
@@ -158,6 +159,7 @@ async def crear_cotizacion(
         )
 
     check_business(user, negocio_id)
+    await validar_referencia(db.clientes, body.get("cliente_id"), negocio_id, "Cliente")
 
     numero = await generar_numero_cotizacion(
         db,
@@ -248,6 +250,8 @@ async def editar_cotizacion(
             status_code=400,
             detail="No hay datos para actualizar",
         )
+
+    await validar_referencia(db.clientes, cambios.get("cliente_id"), negocio_id, "Cliente")
 
     cambios["updated_at"] = datetime.utcnow()
 

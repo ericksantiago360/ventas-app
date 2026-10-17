@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.negocios import validar_referencia
 from app.services.reporte_lab import generar_pdf_resultados, nombre_archivo_pdf
 from app.services.correo import CorreoError, correo_configurado
 from app.services.notificaciones_lab import enviar_resultados, url_publica
@@ -293,14 +294,14 @@ async def crear_orden(
         raise HTTPException(400, "Debe seleccionar al menos un estudio")
 
     # Obtener datos del paciente
-    paciente = await db.pacientes.find_one({"_id": validar_oid(body.paciente_id)})
+    paciente = await validar_referencia(db.pacientes, body.paciente_id, body.negocio_id, "Paciente")
     if not paciente:
         raise HTTPException(404, "Paciente no encontrado")
 
     # Obtener plantillas
     plantilla_ids = [validar_oid(e.plantilla_id) for e in body.estudios]
     plantillas_docs = await db.plantillas_estudios.find(
-        {"_id": {"$in": plantilla_ids}, "activo": True}
+        {"_id": {"$in": plantilla_ids}, "negocio_id": body.negocio_id, "activo": True}
     ).to_list(50)
 
     if len(plantillas_docs) != len(body.estudios):

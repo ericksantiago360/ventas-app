@@ -31,6 +31,7 @@ from reportlab.platypus import (
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.negocios import validar_referencia
 from app.services.cobros import registrar_cobro, cancelar_cobro
 from app.services.contabilidad_integracion import crear_poliza_cobro
 
@@ -198,6 +199,11 @@ async def validar_origen_libre(db, negocio_id: str, origen_tipo: str, origen_id:
             f"Este {origen_tipo.replace('_', ' ')} ya tiene la factura "
             f"{existente.get('folio') or 'en borrador'}",
         )
+
+
+async def validar_receptor(db, body: FacturaBase, negocio_id: str):
+    await validar_referencia(db.clientes, body.cliente_id, negocio_id, "Cliente")
+    await validar_referencia(db.pacientes, body.paciente_id, negocio_id, "Paciente")
 
 
 def armar_documento(body: FacturaBase, negocio_id: str) -> dict:
@@ -434,6 +440,7 @@ async def crear_factura(
     user=Depends(get_current_user),
 ):
     check_negocio(user, body.negocio_id)
+    await validar_receptor(db, body, body.negocio_id)
     doc = armar_documento(body, body.negocio_id)
     return await insertar_factura(db, doc, "manual", "", user, body.emitir)
 
@@ -448,6 +455,7 @@ async def actualizar_factura(
     factura = await obtener_factura(db, id, user)
     if factura["estado"] != "borrador":
         raise HTTPException(400, "Solo se pueden editar facturas en borrador")
+    await validar_receptor(db, body, factura["negocio_id"])
     cambios = armar_documento(body, factura["negocio_id"])
     cambios["saldo"] = cambios["total"]
     cambios["updated_at"] = datetime.now(timezone.utc)
@@ -691,7 +699,9 @@ async def facturar_pedido(
 
     cliente = {}
     if pedido.get("cliente_id") and ObjectId.is_valid(pedido["cliente_id"]):
-        cliente = await db.clientes.find_one({"_id": ObjectId(pedido["cliente_id"])}) or {}
+        cliente = await db.clientes.find_one(
+            {"_id": ObjectId(pedido["cliente_id"]), "negocio_id": pedido["negocio_id"]}
+        ) or {}
 
     conceptos = []
     for it in pedido.get("items", []):
@@ -741,7 +751,9 @@ async def facturar_orden(
 
     paciente = {}
     if orden.get("paciente_id") and ObjectId.is_valid(orden["paciente_id"]):
-        paciente = await db.pacientes.find_one({"_id": ObjectId(orden["paciente_id"])}) or {}
+        paciente = await db.pacientes.find_one(
+            {"_id": ObjectId(orden["paciente_id"]), "negocio_id": orden["negocio_id"]}
+        ) or {}
 
     # Los análisis clínicos suelen estar exentos de IVA; el precio de la orden
     # ya es el total, por eso iva_tasa = 0 (editable mientras sea borrador).
