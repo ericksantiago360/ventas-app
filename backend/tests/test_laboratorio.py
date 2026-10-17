@@ -3,17 +3,37 @@ import re
 
 import pytest
 
-from .conftest import datos, es_pdf, id_de
+from .conftest import datos, es_pdf, id_de, unico
 
 L = {"negocio_id": "diagnostico_plus"}
 
 
 @pytest.fixture(scope="module")
 def plantilla(client, admin):
+    # Plantilla propia: no depende del orden del listado ni de lo que creen otras pruebas
+    r = client.post("/api/lab/plantillas", headers=admin, json={
+        **L, "codigo": unico("QA"), "nombre": "Estudio QA", "categoria": "QA", "precio": 250,
+        "analitos": [
+            {"nombre": "Glucosa", "unidad": "mg/dL",
+             "referencia_hombre_min": 70, "referencia_hombre_max": 100,
+             "referencia_mujer_min": 70, "referencia_mujer_max": 100},
+            {"nombre": "Urea", "unidad": "mg/dL",
+             "referencia_hombre_min": 15, "referencia_hombre_max": 45,
+             "referencia_mujer_min": 15, "referencia_mujer_max": 45},
+        ],
+    })
+    assert r.status_code == 201, r.text
+    return id_de(r.json())
+
+
+def test_seed_plantillas(client, admin):
+    assert client.post("/api/lab/plantillas/seed", headers=admin, params=L).status_code == 201
+    plantillas = datos(client.get("/api/lab/plantillas", headers=admin, params=L).json())
+    assert "BH" in {p["codigo"] for p in plantillas}
+    # Repetir el seed no duplica
     client.post("/api/lab/plantillas/seed", headers=admin, params=L)
     plantillas = datos(client.get("/api/lab/plantillas", headers=admin, params=L).json())
-    assert plantillas, "El seed no creó plantillas"
-    return plantillas[0].get("id") or plantillas[0].get("_id")
+    assert [p["codigo"] for p in plantillas].count("BH") == 1
 
 
 @pytest.fixture
