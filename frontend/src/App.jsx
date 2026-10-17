@@ -13,6 +13,7 @@ import Inventario from './pages/Inventario'
 import Reportes  from './pages/Reportes'
 import Personal   from './pages/Personal'
 import Negocios   from './pages/Negocios'
+import Usuarios   from './pages/Usuarios'
 import Pacientes   from './pages/Pacientes'
 import Resultados  from './pages/Resultados'
 import Portal, { PortalAcceso } from './pages/Portal'
@@ -95,6 +96,7 @@ export default function App() {
             />
 
             <Route path="negocios" element={<Negocios />} />
+            <Route path="usuarios" element={<Usuarios />} />
 
             <Route
               path="pacientes/*"

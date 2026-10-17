@@ -8,7 +8,7 @@ from pymongo.errors import DuplicateKeyError
 
 from .core.config import settings
 from .core.database import connect_db, close_db
-from .routers import (auth, crm, catalogo, cotizaciones, pedidos, finanzas, contabilidad, inventario, reportes, personal, pacientes, lab, facturacion, portal, negocios, )
+from .routers import (auth, crm, catalogo, cotizaciones, pedidos, finanzas, contabilidad, inventario, reportes, personal, pacientes, lab, facturacion, portal, negocios, usuarios, )
 
 
 @asynccontextmanager
@@ -72,6 +72,7 @@ app.include_router(lab.router,      prefix="/api")
 app.include_router(facturacion.router, prefix="/api")
 app.include_router(portal.router, prefix="/api")
 app.include_router(negocios.router, prefix="/api")
+app.include_router(usuarios.router, prefix="/api")
 
 @app.get("/api/health", tags=["system"])
 async def health():

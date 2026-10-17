@@ -42,6 +42,12 @@ export const negociosApi = {
   crear: (datos) => api.post('/api/negocios', datos),
 }
 
+export const usuariosApi = {
+  listar:     () => api.get('/api/usuarios'),
+  crear:      (datos) => api.post('/api/usuarios', datos),
+  actualizar: (id, datos) => api.put(`/api/usuarios/${id}`, datos),
+}
+
 export const crmApi = {
   resumen: (params) =>
     api.get('/api/crm/resumen', { params }),

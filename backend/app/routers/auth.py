@@ -18,7 +18,7 @@ async def login(
     db=Depends(get_db),
 ):
     user = await db.usuarios.find_one(
-        {"email": form.username, "activo": True}
+        {"email": form.username.strip().lower(), "activo": True}
     )
     if not user or not verify_password(form.password, user["password_hash"]):
         raise HTTPException(

@@ -42,6 +42,7 @@ const NAV_GROUPS = [
       { to: '/inventario',   label: 'Inventario'   },
       { to: '/personal',     label: 'Personal'     },
       { to: '/negocios',     label: 'Negocios', soloAdmin: true },
+      { to: '/usuarios',     label: 'Usuarios', soloAdmin: true },
     ],
   },
   {
