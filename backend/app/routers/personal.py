@@ -86,45 +86,74 @@ async def obtener_prestaciones(db, negocio_id: str) -> dict:
     return {**PRESTACIONES_LEY, **(config.get("nomina") or {})}
 
 
-async def recalcular_imss_recibos(db, negocio_id: str, prestaciones: dict) -> int:
-    """
-    Recalcula SBC e IMSS de los recibos pendientes en períodos abiertos.
+# Conceptos que genera el cálculo; cualquier otra línea del recibo es manual
+CONCEPTOS_AUTO = {"Salario", "IMSS", "ISR"}
 
-    Los períodos cerrados y los recibos pagados no se tocan. Solo se reemplaza la
-    línea IMSS; el ISR no depende del SBC y las líneas manuales se conservan.
+# Datos del empleado que alteran el cálculo de sus recibos
+CAMPOS_CALCULO = {"salario_diario", "tipo_contrato", "fecha_ingreso"}
+
+
+def calcular_recibo(emp: dict, periodo: dict, prestaciones: dict) -> dict:
+    """Líneas automáticas (Salario, IMSS, ISR) del recibo de un empleado en un período."""
+    dias = DIAS_PERIODO[periodo["tipo_periodo"]]
+    salario_diario = float(emp.get("salario_diario", 0))
+    ded = calcular_deducciones(
+        salario_diario, dias, emp.get("tipo_contrato", "planta"),
+        calcular_anio_servicio(emp.get("fecha_ingreso", ""), periodo["fecha_inicio"]),
+        prestaciones,
+    )
+    return {
+        "tipo_contrato":  emp.get("tipo_contrato", "planta"),
+        "salario_diario": emp.get("salario_diario", 0),
+        "sbc_diario":     ded["sbc_diario"],
+        "percepciones":   [{"concepto": "Salario", "monto": round(salario_diario * dias, 2)}],
+        "deducciones":    [
+            {"concepto": concepto, "monto": ded[clave]}
+            for concepto, clave in (("IMSS", "imss"), ("ISR", "isr"))
+            if ded[clave] > 0
+        ],
+    }
+
+
+async def recalcular_recibos_pendientes(db, negocio_id: str, empleado_id: Optional[str] = None) -> int:
     """
+    Recalcula las líneas automáticas de los recibos pendientes en períodos abiertos,
+    con los datos actuales del empleado y las prestaciones del negocio.
+
+    Los períodos cerrados y los recibos pagados no se tocan; las líneas manuales se conservan.
+    """
+    prestaciones = await obtener_prestaciones(db, negocio_id)
     periodos = await db.nomina_periodos.find(
         {"negocio_id": negocio_id, "estado": {"$ne": "cerrado"}}
     ).to_list(500)
+    filtro_recibos: dict = {"estado": {"$ne": "pagado"}}
+    if empleado_id:
+        filtro_recibos["empleado_id"] = empleado_id
     actualizados = 0
 
     for periodo in periodos:
         periodo_id = str(periodo["_id"])
-        dias = DIAS_PERIODO[periodo["tipo_periodo"]]
-        recibos = await db.nomina_recibos.find(
-            {"periodo_id": periodo_id, "estado": {"$ne": "pagado"}}
-        ).to_list(500)
+        recibos = await db.nomina_recibos.find({**filtro_recibos, "periodo_id": periodo_id}).to_list(500)
         cambio_periodo = False
 
         for recibo in recibos:
-            emp = await db.empleados.find_one({"_id": validar_oid(recibo["empleado_id"])}) or {}
-            ded = calcular_deducciones(
-                float(recibo.get("salario_diario", 0)), dias, recibo.get("tipo_contrato", "planta"),
-                calcular_anio_servicio(emp.get("fecha_ingreso", ""), periodo["fecha_inicio"]),
-                prestaciones,
-            )
-            otras = [d for d in recibo.get("deducciones", []) if d["concepto"] != "IMSS"]
-            deducciones = ([{"concepto": "IMSS", "monto": ded["imss"]}] if ded["imss"] > 0 else []) + otras
-            if deducciones == recibo.get("deducciones", []) and ded["sbc_diario"] == recibo.get("sbc_diario"):
+            emp = await db.empleados.find_one({"_id": validar_oid(recibo["empleado_id"])})
+            if not emp:
+                continue
+            auto = calcular_recibo(emp, periodo, prestaciones)
+            for tipo in ("percepciones", "deducciones"):
+                auto[tipo] += [l for l in recibo.get(tipo, []) if l["concepto"] not in CONCEPTOS_AUTO]
+            if all(auto[k] == recibo.get(k) for k in auto):
                 continue
 
-            total_d = round(sum(d["monto"] for d in deducciones), 2)
+            total_p = round(sum(l["monto"] for l in auto["percepciones"]), 2)
+            total_d = round(sum(l["monto"] for l in auto["deducciones"]), 2)
             await db.nomina_recibos.update_one({"_id": recibo["_id"]}, {"$set": {
-                "sbc_diario":        ded["sbc_diario"],
-                "deducciones":       deducciones,
-                "total_deducciones": total_d,
-                "total_neto":        round(recibo.get("total_percepciones", 0) - total_d, 2),
-                "updated_at":        datetime.now(timezone.utc),
+                **auto,
+                "total_percepciones": total_p,
+                "total_deducciones":  total_d,
+                "total_neto":         round(total_p - total_d, 2),
+                "updated_at":         datetime.now(timezone.utc),
             }})
             actualizados += 1
             cambio_periodo = True
@@ -268,12 +297,16 @@ async def actualizar_empleado(
     if not campos:
         raise HTTPException(400, "Sin campos a actualizar")
     campos["updated_at"] = datetime.now(timezone.utc)
-    doc = await db.empleados.find_one_and_update(
-        {"_id": oid}, {"$set": campos}, return_document=True
-    )
-    if not doc:
+    antes = await db.empleados.find_one_and_update({"_id": oid}, {"$set": campos})
+    if not antes:
         raise HTTPException(404, "Empleado no encontrado")
-    return serializar(doc)
+    doc = {**antes, **campos}
+
+    # El formulario manda todos los campos: recalcular solo si cambió algo del cálculo
+    recalculados = 0
+    if any(antes.get(k) != campos[k] for k in CAMPOS_CALCULO & campos.keys()):
+        recalculados = await recalcular_recibos_pendientes(db, doc["negocio_id"], id)
+    return {**serializar(doc), "recibos_recalculados": recalculados}
 
 
 @router.delete("/empleados/{id}")
@@ -322,7 +355,7 @@ async def guardar_config_nomina(
         {"$set": {"nomina": prestaciones, "updated_at": datetime.now(timezone.utc)}},
         upsert=True,
     )
-    recalculados = await recalcular_imss_recibos(db, body.negocio_id, prestaciones)
+    recalculados = await recalcular_recibos_pendientes(db, body.negocio_id)
     return {
         "negocio_id": body.negocio_id,
         **prestaciones,
@@ -379,7 +412,6 @@ async def calcular_nomina(
         raise HTTPException(400, "El período está cerrado")
 
     negocio_id = periodo["negocio_id"]
-    dias = DIAS_PERIODO[periodo["tipo_periodo"]]
     prestaciones = await obtener_prestaciones(db, negocio_id)
     empleados = await db.empleados.find({"negocio_id": negocio_id, "activo": True}).to_list(500)
     now = datetime.now(timezone.utc)
@@ -390,19 +422,9 @@ async def calcular_nomina(
         if await db.nomina_recibos.find_one({"periodo_id": id, "empleado_id": emp_id}):
             continue
 
-        salario_diario = float(emp.get("salario_diario", 0))
-        salario = round(salario_diario * dias, 2)
-        ded     = calcular_deducciones(
-            salario_diario, dias, emp.get("tipo_contrato", "planta"),
-            calcular_anio_servicio(emp.get("fecha_ingreso", ""), periodo["fecha_inicio"]),
-            prestaciones,
-        )
-        deducciones = [
-            {"concepto": concepto, "monto": ded[clave]}
-            for concepto, clave in (("IMSS", "imss"), ("ISR", "isr"))
-            if ded[clave] > 0
-        ]
-        total_ded = round(sum(d["monto"] for d in deducciones), 2)
+        auto      = calcular_recibo(emp, periodo, prestaciones)
+        salario   = auto["percepciones"][0]["monto"]
+        total_ded = round(sum(d["monto"] for d in auto["deducciones"]), 2)
 
         await db.nomina_recibos.insert_one({
             "negocio_id":       negocio_id,
@@ -411,11 +433,7 @@ async def calcular_nomina(
             "empleado_nombre":  f"{emp.get('nombre','')} {emp.get('apellido_paterno','')} {emp.get('apellido_materno','')}".strip(),
             "puesto":           emp.get("puesto", ""),
             "departamento":     emp.get("departamento", ""),
-            "tipo_contrato":    emp.get("tipo_contrato", "planta"),
-            "salario_diario":   emp.get("salario_diario", 0),
-            "sbc_diario":       ded["sbc_diario"],
-            "percepciones":     [{"concepto": "Salario", "monto": salario}],
-            "deducciones":      deducciones,
+            **auto,
             "total_percepciones": salario,
             "total_deducciones":  total_ded,
             "total_neto":         round(salario - total_ded, 2),

@@ -186,7 +186,8 @@ export default function Personal() {
     try {
       const payload = { ...formEmp, salario_diario: Number(formEmp.salario_diario) || 0 }
       if (editEmp) {
-        await req(`/api/personal/empleados/${editEmp.id}`, { method: 'PUT', body: JSON.stringify(payload) })
+        const r = await req(`/api/personal/empleados/${editEmp.id}`, { method: 'PUT', body: JSON.stringify(payload) })
+        if (r.recibos_recalculados > 0) alert(`Recibos pendientes recalculados: ${r.recibos_recalculados}`)
       } else {
         await req('/api/personal/empleados', { method: 'POST', body: JSON.stringify({ ...payload, negocio_id: negocioId }) })
       }

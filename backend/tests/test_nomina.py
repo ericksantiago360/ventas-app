@@ -259,3 +259,86 @@ def test_cambiar_prestaciones_recalcula_recibos_pendientes(client, admin):
             assert rec["deducciones"][0] == {"concepto": "IMSS", "monto": 197.27}
     finally:
         client.put(url, headers=admin, json=neg)
+
+
+def test_cambiar_salario_recalcula_recibos_pendientes(client, admin):
+    # Negocio propio para no mover los montos de las demás pruebas
+    neg = {"negocio_id": "diagnostico_plus"}
+    empleado_base = {**neg, "nombre": unico("Emp"), "salario_diario": 500, "fecha_ingreso": "2026-01-01"}
+
+    r = client.post("/api/personal/empleados", headers=admin, json=empleado_base)
+    assert r.status_code == 201, r.text
+    empleado = id_de(r.json())
+    url_emp = f"/api/personal/empleados/{empleado}"
+
+    def calcular_periodo(inicio, fin):
+        r = client.post("/api/personal/nomina/periodos", headers=admin, json={
+            **neg, "nombre": unico("Q"), "tipo_periodo": "quincenal",
+            "fecha_inicio": inicio, "fecha_fin": fin,
+        })
+        periodo = id_de(r.json())
+        assert client.patch(f"/api/personal/nomina/periodos/{periodo}/calcular", headers=admin).status_code == 200
+        return periodo
+
+    def recibo_de(periodo):
+        recibos = datos(client.get("/api/personal/nomina/recibos", headers=admin,
+                                   params={**neg, "periodo_id": periodo}).json())
+        return next(rec for rec in recibos if rec["empleado_id"] == empleado)
+
+    abierto = calcular_periodo("2026-11-01", "2026-11-15")
+    cerrado = calcular_periodo("2026-10-16", "2026-10-31")
+    assert client.patch(f"/api/personal/nomina/periodos/{cerrado}/cerrar", headers=admin).status_code == 200
+
+    # Líneas manuales que deben conservarse
+    rec = recibo_de(abierto)
+    r = client.put(f"/api/personal/nomina/recibos/{rec['id']}", headers=admin, json={
+        "percepciones": rec["percepciones"] + [{"concepto": "Bono", "monto": 200}],
+        "deducciones":  rec["deducciones"] + [{"concepto": "Préstamo", "monto": 100}],
+    })
+    assert r.status_code == 200, r.text
+
+    # Editar sin tocar datos del cálculo (el formulario manda todo) no recalcula
+    r = client.put(url_emp, headers=admin, json={**empleado_base, "telefono": "5512345678"})
+    assert r.status_code == 200, r.text
+    assert r.json()["recibos_recalculados"] == 0
+
+    r = client.put(url_emp, headers=admin, json={**empleado_base, "salario_diario": 600})
+    assert r.status_code == 200, r.text
+    assert r.json()["recibos_recalculados"] == 1
+
+    rec = recibo_de(abierto)
+    assert rec["salario_diario"] == 600
+    assert rec["sbc_diario"] == 629.58
+    assert rec["percepciones"] == [
+        {"concepto": "Salario", "monto": 9_000},
+        {"concepto": "Bono", "monto": 200},
+    ]
+    assert rec["deducciones"] == [
+        {"concepto": "IMSS", "monto": 240.95},
+        {"concepto": "ISR", "monto": 990.65},
+        {"concepto": "Préstamo", "monto": 100},
+    ]
+    assert rec["total_percepciones"] == 9_200
+    assert rec["total_deducciones"] == 1_331.60
+    assert rec["total_neto"] == 7_868.40
+
+    periodos = datos(client.get("/api/personal/nomina/periodos", headers=admin, params=neg).json())
+    assert next(p for p in periodos if p["id"] == abierto)["total_percepciones"] == round(sum(
+        x["total_percepciones"] for x in datos(client.get(
+            "/api/personal/nomina/recibos", headers=admin, params={**neg, "periodo_id": abierto}).json())
+    ), 2)
+
+    # El período cerrado conserva el salario anterior
+    rec = recibo_de(cerrado)
+    assert rec["salario_diario"] == 500
+    assert rec["total_percepciones"] == 7_500
+
+    # Pasar a honorarios quita IMSS e ISR, pero no las líneas manuales
+    r = client.put(url_emp, headers=admin, json={
+        **empleado_base, "salario_diario": 600, "tipo_contrato": "honorarios",
+    })
+    assert r.json()["recibos_recalculados"] == 1
+    rec = recibo_de(abierto)
+    assert rec["tipo_contrato"] == "honorarios"
+    assert rec["deducciones"] == [{"concepto": "Préstamo", "monto": 100}]
+    assert rec["total_neto"] == 9_100
