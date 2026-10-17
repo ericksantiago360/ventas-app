@@ -42,9 +42,9 @@ Una sola plataforma web que:
 |---|---|---|---|
 | Pacientes | CRM | Finanzas | Reportes |
 | Resultados | Catálogo | Contabilidad | |
-| | Cotizaciones | Inventario | |
-| | Pedidos | Personal | |
-| | **Facturación** | | |
+| **Portal del paciente** | Cotizaciones | Inventario | |
+| | Pedidos | **Personal y nómina** | |
+| | Facturación | | |
 
 ---
 
@@ -59,6 +59,18 @@ Una sola plataforma web que:
 - Captura de resultados con **señalamiento automático**: normal, alto, bajo, crítico
 - Flujo de validación: pendiente → capturado → validado
 - **Reporte PDF** con membrete del laboratorio, listo para entregar
+
+---
+
+## Resultados al paciente — *nuevo*
+
+**Envío por correo**
+- Los resultados validados se envían con el PDF adjunto y un enlace al portal
+- Historial de envíos en cada orden
+
+**Portal del paciente**
+- El paciente consulta y descarga sus resultados desde el navegador, sin contraseña
+- Acceso con enlace firmado que vence y se puede revocar desde la ficha del paciente
 
 ---
 
@@ -119,9 +131,23 @@ Factura ──► Pago ──► Cobro en Finanzas ──► Ingreso en la cuent
 
 **Personal**
 - Expediente de empleados, periodos de nómina, cálculo, cierre y recibos
+- Cálculo fiscal de la nómina (ver siguiente lámina)
 
 **Reportes**
 - Indicadores clave, evolución mensual de ventas y productos más vendidos
+
+---
+
+## Nómina con cálculo fiscal 2026 — *nuevo*
+
+- **Retención de ISR** con la tarifa del Art. 96 y el subsidio al empleo 2026
+- **Cuota obrera del IMSS** por ramo, sobre el salario base de cotización (SBC) topado en 25 UMA
+- **SBC integrado** con factor por antigüedad (aguinaldo, vacaciones y prima vacacional)
+- **Prestaciones por negocio**: aguinaldo, prima y días extra de vacaciones; solo un administrador las modifica
+- Sin deducciones para **salario mínimo** ni **honorarios**
+- **Recálculo automático** de recibos pendientes al cambiar salario, contrato o prestaciones; los periodos cerrados y los recibos pagados no cambian
+
+> Notas: las tablas 2026 (ISR, subsidio) deben cotejarse con el Anexo 8 de la RMF antes de usar los recibos de forma oficial.
 
 ---
 
@@ -134,17 +160,23 @@ Factura ──► Pago ──► Cobro en Finanzas ──► Ingreso en la cuent
 | Base de datos | MongoDB |
 | Documentos PDF | ReportLab · WeasyPrint |
 | Despliegue | Docker Compose · Nginx (listo para Coolify) |
+| Pruebas | pytest contra MongoDB real (270 pruebas automatizadas) |
 
 - Acceso con usuario y contraseña (tokens JWT con expiración)
 - Cada usuario solo ve los negocios que tiene asignados
+- Rol de administrador para configuraciones sensibles
+- Sitio público con landing y contacto directo por WhatsApp
 
 ---
 
 ## Estado actual
 
 **En operación**
-- Los 12 módulos del mapa, con integración pedido → cobro → contabilidad
+- Los 13 módulos del mapa, con integración pedido → cobro → contabilidad
 - Facturación conectada con Finanzas
+- Envío de resultados por correo y portal del paciente
+- Nómina con ISR, IMSS y SBC integrado
+- Suite de pruebas automatizadas que se corre con un solo comando
 
 **Pendiente de configurar por negocio**
 - Diagnóstico Plus: dar de alta cuentas financieras (caja / banco) y su catálogo contable
@@ -156,8 +188,9 @@ Factura ──► Pago ──► Cobro en Finanzas ──► Ingreso en la cuent
 1. **Timbrado CFDI 4.0** mediante un PAC (XML, UUID, cancelación ante el SAT)
 2. Póliza de venta para facturas de laboratorio y manuales
 3. Evitar cobros duplicados entre Pedidos y Facturación
-4. Envío de resultados y facturas por correo al paciente / cliente
-5. Portal para que el paciente consulte sus resultados
+4. Envío de facturas por correo al cliente
+5. Timbrado de recibos de nómina (CFDI de nómina)
+6. Revisión de permisos por negocio en los módulos restantes
 
 ---
 
