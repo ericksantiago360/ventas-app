@@ -293,13 +293,16 @@ async def actualizar_empleado(
     user=Depends(get_current_user),
 ):
     oid = validar_oid(id)
+    antes = await db.empleados.find_one({"_id": oid})
+    if not antes:
+        raise HTTPException(404, "Empleado no encontrado")
+    check_negocio(user, antes["negocio_id"])
+
     campos = {k: v for k, v in body.model_dump(exclude_none=True).items()}
     if not campos:
         raise HTTPException(400, "Sin campos a actualizar")
     campos["updated_at"] = datetime.now(timezone.utc)
-    antes = await db.empleados.find_one_and_update({"_id": oid}, {"$set": campos})
-    if not antes:
-        raise HTTPException(404, "Empleado no encontrado")
+    await db.empleados.update_one({"_id": oid}, {"$set": campos})
     doc = {**antes, **campos}
 
     # El formulario manda todos los campos: recalcular solo si cambió algo del cálculo
@@ -316,12 +319,14 @@ async def desactivar_empleado(
     user=Depends(get_current_user),
 ):
     oid = validar_oid(id)
-    doc = await db.empleados.find_one_and_update(
+    doc = await db.empleados.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(404, "Empleado no encontrado")
+    check_negocio(user, doc["negocio_id"])
+    await db.empleados.update_one(
         {"_id": oid},
         {"$set": {"activo": False, "updated_at": datetime.now(timezone.utc)}},
     )
-    if not doc:
-        raise HTTPException(404, "Empleado no encontrado")
     return {"ok": True}
 
 

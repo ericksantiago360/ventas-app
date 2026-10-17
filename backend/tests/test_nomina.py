@@ -342,3 +342,32 @@ def test_cambiar_salario_recalcula_recibos_pendientes(client, admin):
     assert rec["tipo_contrato"] == "honorarios"
     assert rec["deducciones"] == [{"concepto": "Préstamo", "monto": 100}]
     assert rec["total_neto"] == 9_100
+
+
+def test_acceso_a_empleados_de_otro_negocio(client, admin, solo_santal):
+    # solo_santal no tiene acceso a dulce_tentacion
+    r = client.post("/api/personal/empleados", headers=admin, json={
+        "negocio_id": "dulce_tentacion", "nombre": unico("Ajeno"), "salario_diario": 500,
+    })
+    assert r.status_code == 201, r.text
+    ajeno = id_de(r.json())
+    url = f"/api/personal/empleados/{ajeno}"
+
+    assert client.put(url, headers=solo_santal, json={"salario_diario": 1}).status_code == 403
+    assert client.delete(url, headers=solo_santal).status_code == 403
+
+    empleados = datos(client.get("/api/personal/empleados", headers=admin,
+                                 params={"negocio_id": "dulce_tentacion"}).json())
+    emp = next(e for e in empleados if e["id"] == ajeno)
+    assert emp["salario_diario"] == 500 and emp["activo"] is True
+
+    # En su propio negocio sí puede editar y dar de baja
+    r = client.post("/api/personal/empleados", headers=solo_santal, json={**N, "nombre": unico("Propio")})
+    assert r.status_code == 201, r.text
+    propio = f"/api/personal/empleados/{id_de(r.json())}"
+    assert client.put(propio, headers=solo_santal, json={"puesto": "Ventas"}).status_code == 200
+    assert client.delete(propio, headers=solo_santal).status_code == 200
+
+    # Un id inexistente sigue dando 404
+    assert client.put("/api/personal/empleados/000000000000000000000000", headers=admin,
+                      json={"puesto": "x"}).status_code == 404
