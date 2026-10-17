@@ -7,12 +7,16 @@ from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.modules.nomina.constants import (
+    SALARIO_MINIMO_DIARIO, cuota_obrera_imss, retener_isr_mensual,
+)
 
 router = APIRouter(prefix="/personal", tags=["Personal"])
 
 TIPOS_CONTRATO = Literal["planta", "temporal", "honorarios", "confianza"]
 TIPOS_PERIODO  = Literal["semanal", "quincenal", "mensual"]
 DIAS_PERIODO   = {"semanal": 7, "quincenal": 15, "mensual": 30}
+DIAS_MES       = 30.4  # mes promedio usado por SAT/IMSS para tarifas mensuales
 
 
 # ── Utilidades ────────────────────────────────────────────────────────────────
@@ -20,6 +24,23 @@ DIAS_PERIODO   = {"semanal": 7, "quincenal": 15, "mensual": 30}
 def serializar(doc: dict) -> dict:
     doc["id"] = str(doc.pop("_id"))
     return doc
+
+
+def calcular_deducciones(salario_diario: float, dias: int, tipo_contrato: str = "planta") -> dict:
+    """IMSS obrero e ISR del período, proporcionales a las tarifas mensuales."""
+    # Honorarios no es relación laboral: no cotiza al IMSS ni lleva ISR de sueldos.
+    # Salario mínimo: sin retención de ISR (Art. 96 LISR) y la cuota obrera
+    # IMSS la cubre el patrón (Art. 36 LSS), así que no se descuenta.
+    if tipo_contrato == "honorarios" or salario_diario <= SALARIO_MINIMO_DIARIO:
+        return {"imss": 0.0, "isr": 0.0}
+
+    # Escalar el resultado mensual por dias/30.4 equivale a usar la tarifa
+    # proporcional al período. Se toma el salario diario como SBC (sin integrar).
+    factor  = dias / DIAS_MES
+    mensual = salario_diario * DIAS_MES
+    imss = cuota_obrera_imss(mensual)["total"] * factor
+    isr  = retener_isr_mensual(mensual)["isr_retener"] * factor
+    return {"imss": round(imss, 2), "isr": round(isr, 2)}
 
 
 def validar_oid(id: str) -> ObjectId:
@@ -244,8 +265,15 @@ async def calcular_nomina(
         if await db.nomina_recibos.find_one({"periodo_id": id, "empleado_id": emp_id}):
             continue
 
-        salario = round(float(emp.get("salario_diario", 0)) * dias, 2)
-        imss    = round(salario * 0.06275, 2)  # cuota obrera IMSS aprox.
+        salario_diario = float(emp.get("salario_diario", 0))
+        salario = round(salario_diario * dias, 2)
+        ded     = calcular_deducciones(salario_diario, dias, emp.get("tipo_contrato", "planta"))
+        deducciones = [
+            {"concepto": concepto, "monto": ded[clave]}
+            for concepto, clave in (("IMSS", "imss"), ("ISR", "isr"))
+            if ded[clave] > 0
+        ]
+        total_ded = round(sum(d["monto"] for d in deducciones), 2)
 
         await db.nomina_recibos.insert_one({
             "negocio_id":       negocio_id,
@@ -257,10 +285,10 @@ async def calcular_nomina(
             "tipo_contrato":    emp.get("tipo_contrato", "planta"),
             "salario_diario":   emp.get("salario_diario", 0),
             "percepciones":     [{"concepto": "Salario", "monto": salario}],
-            "deducciones":      [{"concepto": "IMSS",    "monto": imss}],
+            "deducciones":      deducciones,
             "total_percepciones": salario,
-            "total_deducciones":  imss,
-            "total_neto":         round(salario - imss, 2),
+            "total_deducciones":  total_ded,
+            "total_neto":         round(salario - total_ded, 2),
             "estado":             "pendiente",
             "created_at":         now,
             "updated_at":         now,
