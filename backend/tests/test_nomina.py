@@ -187,3 +187,75 @@ def test_config_nomina_solo_admin(client, solo_santal):
     r = client.put(url, headers=solo_santal, json={**N, "aguinaldo_dias": 30})
     assert r.status_code == 403
     assert client.get(url, headers=solo_santal, params=N).json()["aguinaldo_dias"] == 15
+
+
+def test_cambiar_prestaciones_recalcula_recibos_pendientes(client, admin):
+    # Negocio propio para no mover los montos de las demás pruebas
+    neg = {"negocio_id": "bienes_raices"}
+    url = "/api/personal/nomina/config"
+
+    r = client.post("/api/personal/empleados", headers=admin, json={
+        **neg, "nombre": unico("Emp"), "salario_diario": 500, "fecha_ingreso": "2026-01-01",
+    })
+    assert r.status_code == 201, r.text
+    empleado = id_de(r.json())
+
+    def calcular_periodo(inicio, fin):
+        r = client.post("/api/personal/nomina/periodos", headers=admin, json={
+            **neg, "nombre": unico("Q"), "tipo_periodo": "quincenal",
+            "fecha_inicio": inicio, "fecha_fin": fin,
+        })
+        periodo = id_de(r.json())
+        assert client.patch(f"/api/personal/nomina/periodos/{periodo}/calcular", headers=admin).status_code == 200
+        return periodo
+
+    def recibo_de(periodo):
+        recibos = datos(client.get("/api/personal/nomina/recibos", headers=admin,
+                                   params={**neg, "periodo_id": periodo}).json())
+        return next(rec for rec in recibos if rec["empleado_id"] == empleado)
+
+    abierto = calcular_periodo("2026-11-01", "2026-11-15")
+    cerrado = calcular_periodo("2026-10-16", "2026-10-31")
+    pagado  = calcular_periodo("2026-10-01", "2026-10-15")
+    assert client.patch(f"/api/personal/nomina/periodos/{cerrado}/cerrar", headers=admin).status_code == 200
+    r = client.put(f"/api/personal/nomina/recibos/{recibo_de(pagado)['id']}", headers=admin, json={"estado": "pagado"})
+    assert r.status_code == 200, r.text
+
+    # Una deducción manual en el recibo abierto debe conservarse
+    rec = recibo_de(abierto)
+    r = client.put(f"/api/personal/nomina/recibos/{rec['id']}", headers=admin, json={
+        "deducciones": rec["deducciones"] + [{"concepto": "Préstamo", "monto": 100}],
+    })
+    assert r.status_code == 200, r.text
+
+    try:
+        r = client.put(url, headers=admin, json={
+            **neg, "aguinaldo_dias": 30, "prima_vacacional": 0.5, "vacaciones_extra": 2,
+        })
+        assert r.status_code == 200, r.text
+        assert r.json()["recibos_recalculados"] >= 1
+
+        rec = recibo_de(abierto)
+        assert rec["sbc_diario"] == 550.70
+        assert rec["deducciones"] == [
+            {"concepto": "IMSS", "monto": 208.12},
+            {"concepto": "ISR", "monto": 709.87},
+            {"concepto": "Préstamo", "monto": 100},
+        ]
+        assert rec["total_deducciones"] == 1_017.99
+        assert rec["total_neto"] == 6_482.01
+
+        # Los totales del período reflejan el recálculo
+        periodos = client.get("/api/personal/nomina/periodos", headers=admin, params=neg).json()
+        periodo = next(p for p in datos(periodos) if p["id"] == abierto)
+        recibos = datos(client.get("/api/personal/nomina/recibos", headers=admin,
+                                   params={**neg, "periodo_id": abierto}).json())
+        assert periodo["total_deducciones"] == round(sum(x["total_deducciones"] for x in recibos), 2)
+
+        # Período cerrado y recibo pagado no cambian
+        for periodo in (cerrado, pagado):
+            rec = recibo_de(periodo)
+            assert rec["sbc_diario"] == 524.65
+            assert rec["deducciones"][0] == {"concepto": "IMSS", "monto": 197.27}
+    finally:
+        client.put(url, headers=admin, json=neg)

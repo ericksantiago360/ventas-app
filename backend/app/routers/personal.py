@@ -86,6 +86,55 @@ async def obtener_prestaciones(db, negocio_id: str) -> dict:
     return {**PRESTACIONES_LEY, **(config.get("nomina") or {})}
 
 
+async def recalcular_imss_recibos(db, negocio_id: str, prestaciones: dict) -> int:
+    """
+    Recalcula SBC e IMSS de los recibos pendientes en períodos abiertos.
+
+    Los períodos cerrados y los recibos pagados no se tocan. Solo se reemplaza la
+    línea IMSS; el ISR no depende del SBC y las líneas manuales se conservan.
+    """
+    periodos = await db.nomina_periodos.find(
+        {"negocio_id": negocio_id, "estado": {"$ne": "cerrado"}}
+    ).to_list(500)
+    actualizados = 0
+
+    for periodo in periodos:
+        periodo_id = str(periodo["_id"])
+        dias = DIAS_PERIODO[periodo["tipo_periodo"]]
+        recibos = await db.nomina_recibos.find(
+            {"periodo_id": periodo_id, "estado": {"$ne": "pagado"}}
+        ).to_list(500)
+        cambio_periodo = False
+
+        for recibo in recibos:
+            emp = await db.empleados.find_one({"_id": validar_oid(recibo["empleado_id"])}) or {}
+            ded = calcular_deducciones(
+                float(recibo.get("salario_diario", 0)), dias, recibo.get("tipo_contrato", "planta"),
+                calcular_anio_servicio(emp.get("fecha_ingreso", ""), periodo["fecha_inicio"]),
+                prestaciones,
+            )
+            otras = [d for d in recibo.get("deducciones", []) if d["concepto"] != "IMSS"]
+            deducciones = ([{"concepto": "IMSS", "monto": ded["imss"]}] if ded["imss"] > 0 else []) + otras
+            if deducciones == recibo.get("deducciones", []) and ded["sbc_diario"] == recibo.get("sbc_diario"):
+                continue
+
+            total_d = round(sum(d["monto"] for d in deducciones), 2)
+            await db.nomina_recibos.update_one({"_id": recibo["_id"]}, {"$set": {
+                "sbc_diario":        ded["sbc_diario"],
+                "deducciones":       deducciones,
+                "total_deducciones": total_d,
+                "total_neto":        round(recibo.get("total_percepciones", 0) - total_d, 2),
+                "updated_at":        datetime.now(timezone.utc),
+            }})
+            actualizados += 1
+            cambio_periodo = True
+
+        if cambio_periodo:
+            await recalcular_totales_periodo(db, periodo_id)
+
+    return actualizados
+
+
 async def recalcular_totales_periodo(db, periodo_id: str):
     recibos = await db.nomina_recibos.find({"periodo_id": periodo_id}).to_list(500)
     t_p = round(sum(r.get("total_percepciones", 0) for r in recibos), 2)
@@ -273,10 +322,12 @@ async def guardar_config_nomina(
         {"$set": {"nomina": prestaciones, "updated_at": datetime.now(timezone.utc)}},
         upsert=True,
     )
+    recalculados = await recalcular_imss_recibos(db, body.negocio_id, prestaciones)
     return {
         "negocio_id": body.negocio_id,
         **prestaciones,
         "factor_primer_anio": factor_integracion(1, **prestaciones),
+        "recibos_recalculados": recalculados,
     }
 
 

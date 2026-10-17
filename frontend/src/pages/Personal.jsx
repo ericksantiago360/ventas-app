@@ -298,7 +298,7 @@ export default function Personal() {
     ev.preventDefault()
     setGuardandoCfg(true); setError(''); setMsgCfg('')
     try {
-      await req('/api/personal/nomina/config', {
+      const r = await req('/api/personal/nomina/config', {
         method: 'PUT',
         body: JSON.stringify({
           negocio_id: negocioId,
@@ -307,7 +307,7 @@ export default function Personal() {
           vacaciones_extra: Number(formCfg.vacaciones_extra),
         }),
       })
-      setMsgCfg('Prestaciones guardadas. Aplican a los recibos que se calculen desde ahora.')
+      setMsgCfg(`Prestaciones guardadas. Recibos pendientes recalculados: ${r.recibos_recalculados}.`)
     } catch (e) { setError(e.message) }
     finally { setGuardandoCfg(false) }
   }
