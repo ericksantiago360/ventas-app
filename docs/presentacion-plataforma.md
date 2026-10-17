@@ -177,9 +177,11 @@ Factura ──► Pago ──► Cobro en Finanzas ──► Ingreso en la cuent
 - Envío de resultados por correo y portal del paciente
 - Nómina con ISR, IMSS y SBC integrado
 - Suite de pruebas automatizadas que se corre con un solo comando
+- Catálogo contable listo en los cuatro negocios
+- Alta y edición de negocios y usuarios desde la app, con acceso por negocio
 
 **Pendiente de configurar por negocio**
-- Diagnóstico Plus: dar de alta cuentas financieras (caja / banco) y su catálogo contable
+- Diagnóstico Plus: dar de alta sus cuentas financieras (caja / banco)
 
 ---
 
