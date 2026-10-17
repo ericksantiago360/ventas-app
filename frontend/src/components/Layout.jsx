@@ -7,6 +7,7 @@ const GIROS = {
   fabricacion_cnc:     'Fabricación',
   distribucion:        'Distribución',
   inmobiliario:        'Inmobiliaria',
+  servicios:           'Servicios',
 }
 
 const NAV_GROUPS = [
@@ -40,6 +41,7 @@ const NAV_GROUPS = [
       { to: '/contabilidad', label: 'Contabilidad' },
       { to: '/inventario',   label: 'Inventario'   },
       { to: '/personal',     label: 'Personal'     },
+      { to: '/negocios',     label: 'Negocios', soloAdmin: true },
     ],
   },
   {
@@ -92,7 +94,7 @@ export default function Layout() {
                   {group.label}
                 </div>
               )}
-              {group.items.map(({ to, label, end }) => (
+              {group.items.filter(i => !i.soloAdmin || user.rol === 'admin').map(({ to, label, end }) => (
                 <NavLink key={to} to={to} end={end}
                   style={({ isActive }) => ({
                     display:        'flex',

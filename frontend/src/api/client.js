@@ -39,6 +39,7 @@ export const authApi = {
 
 export const negociosApi = {
   listar: () => api.get('/api/negocios'),
+  crear: (datos) => api.post('/api/negocios', datos),
 }
 
 export const crmApi = {

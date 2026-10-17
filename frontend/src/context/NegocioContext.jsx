@@ -12,15 +12,17 @@ export function NegocioProvider({ children }) {
   const [error, setError] = useState('')
   const [negocioId, setNegocioIdState] = useState(() => localStorage.getItem('negocio_id') || '')
 
-  useEffect(() => {
+  // seleccionar: negocio a dejar activo tras recargar (por ejemplo, uno recién creado)
+  const recargarNegocios = useCallback((seleccionar) => {
     // Sin sesión no hay negocios que pedir; el login recarga la página al entrar
-    if (!localStorage.getItem('token')) return
-    negociosApi.listar()
+    if (!localStorage.getItem('token')) return Promise.resolve()
+    return negociosApi.listar()
       .then(({ data }) => {
         setNegocios(data)
         // El negocio recordado puede no estar asignado a este usuario
         setNegocioIdState(actual => {
-          const valido = data.some(n => n.id === actual) ? actual : (data[0]?.id || '')
+          const preferido = seleccionar || actual
+          const valido = data.some(n => n.id === preferido) ? preferido : (data[0]?.id || '')
           if (valido) localStorage.setItem('negocio_id', valido)
           return valido
         })
@@ -28,6 +30,8 @@ export function NegocioProvider({ children }) {
       .catch(err => setError(err.response?.data?.detail || 'No se pudieron cargar los negocios'))
       .finally(() => setCargando(false))
   }, [])
+
+  useEffect(() => { recargarNegocios() }, [recargarNegocios])
 
   const setNegocioId = useCallback((id) => {
     if (!negocios.some(n => n.id === id)) return
@@ -46,6 +50,7 @@ export function NegocioProvider({ children }) {
         negociosDisponibles: negocios,
         cargandoNegocios: cargando,
         errorNegocios: error,
+        recargarNegocios,
       }}
     >
       {children}

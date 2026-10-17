@@ -21,6 +21,7 @@ SIN_NEGOCIO = {
     ("auth.py", "me"): "datos del propio usuario",
     ("lab.py", "estado_correo"): "solo dice si el SMTP del servidor está configurado",
     ("negocios.py", "listar_negocios"): "solo lista los negocios del propio usuario",
+    ("negocios.py", "crear_negocio"): "alta de un negocio nuevo; solo administradores (require_admin)",
     ("portal.py", "solicitar_acceso"): "portal del paciente: acceso por enlace firmado",
     ("portal.py", "mis_datos"): "portal del paciente: solo sus propios datos",
     ("portal.py", "mis_ordenes"): "portal del paciente: solo sus propias órdenes",

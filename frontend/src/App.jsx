@@ -12,6 +12,7 @@ import Contabilidad from './pages/Contabilidad'
 import Inventario from './pages/Inventario'
 import Reportes  from './pages/Reportes'
 import Personal   from './pages/Personal'
+import Negocios   from './pages/Negocios'
 import Pacientes   from './pages/Pacientes'
 import Resultados  from './pages/Resultados'
 import Portal, { PortalAcceso } from './pages/Portal'
@@ -92,6 +93,8 @@ export default function App() {
               path="personal/*"
               element={<Personal />}
             />
+
+            <Route path="negocios" element={<Negocios />} />
 
             <Route
               path="pacientes/*"

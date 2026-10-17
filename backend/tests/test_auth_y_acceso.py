@@ -169,7 +169,7 @@ def test_listar_negocios_del_usuario(client, admin, solo_santal):
     r = client.get("/api/negocios", headers=admin)
     assert r.status_code == 200, r.text
     negocios = r.json()
-    assert {n["id"] for n in negocios} == set(NEGOCIOS)
+    assert set(NEGOCIOS) <= {n["id"] for n in negocios}
     lab = next(n for n in negocios if n["id"] == "diagnostico_plus")
     assert lab["tipo"] == "laboratorio_clinico" and lab["nombre"]
 
