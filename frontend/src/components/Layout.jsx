@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useNegocio } from '../context/NegocioContext'
 import { req, qs } from '../modules/clinica/comun'
+import { PermisosProvider, usePermisosClinica } from '../modules/clinica/permisos'
 import useEsMovil from '../hooks/useEsMovil'
 
 // Subtítulo del menú según el giro del negocio (config_negocios.tipo)
@@ -24,17 +25,17 @@ const NAV_GROUPS = [
     label: 'Laboratorio',
     items: [
       { to: '/pacientes',  label: 'Pacientes'   },
-      { to: '/resultados', label: 'Resultados', badge: 'lab' },
+      { to: '/resultados', label: 'Resultados', badge: 'lab', permisoLab: 'lab:read' },
     ],
   },
   {
     label: 'Clínica',
     items: [
-      { to: '/clinica/agenda',      label: 'Agenda'      },
-      { to: '/clinica/expedientes', label: 'Expedientes' },
-      { to: '/clinica/recetas',     label: 'Recetas'     },
-      { to: '/clinica/farmacia',    label: 'Farmacia', badge: 'farmacia' },
-      { to: '/clinica/consentimientos', label: 'Consentimientos' },
+      { to: '/clinica/agenda',      label: 'Agenda',      permiso: 'citas:read' },
+      { to: '/clinica/expedientes', label: 'Expedientes', permiso: 'expedientes:read' },
+      { to: '/clinica/recetas',     label: 'Recetas',     permiso: 'recetas:read' },
+      { to: '/clinica/farmacia',    label: 'Farmacia',    permiso: 'farmacia:read', badge: 'farmacia' },
+      { to: '/clinica/consentimientos', label: 'Consentimientos', permiso: 'consentimientos:read' },
     ],
   },
   {
@@ -159,11 +160,12 @@ export default function Layout() {
   const enLinea = useEnLinea()
   const [menuAbierto, setMenuAbierto] = useState(false)
   const negocio = negocioActual?.id
+  const permisos = usePermisosClinica(negocio)
   const badges = {
     // Stock bajo, por caducar y caducados
-    farmacia: useConteo(negocio && `/api/clinica/farmacia/alertas?${qs({ negocio_id: negocio })}`, 'farmacia:cambio', a => a.total),
+    farmacia: useConteo(negocio && permisos.puede('farmacia:read') && `/api/clinica/farmacia/alertas?${qs({ negocio_id: negocio })}`, 'farmacia:cambio', a => a.total),
     // Órdenes con resultados críticos que el médico aún no conoce
-    lab: useConteo(negocio && `/api/lab/ordenes?${qs({ negocio_id: negocio, criticos: true })}`, 'lab:cambio', o => o.length),
+    lab: useConteo(negocio && permisos.puedeLab('lab:read') && `/api/lab/ordenes?${qs({ negocio_id: negocio, criticos: true })}`, 'lab:cambio', o => o.length),
   }
 
   // Al navegar desde el cajón del menú, se cierra solo
@@ -177,7 +179,14 @@ export default function Layout() {
 
   const titulo = negocioActual?.nombre || 'Gestión'
 
+  // Opciones del menú que el rol de clínica permite; un grupo sin opciones no se muestra
+  const grupos = NAV_GROUPS
+    .map(g => ({ ...g, items: g.items.filter(i => (!i.soloAdmin || user.rol === 'admin') && (!i.permiso || permisos.puede(i.permiso))
+        && (!i.permisoLab || permisos.puedeLab(i.permisoLab))) }))
+    .filter(g => g.items.length)
+
   return (
+    <PermisosProvider value={permisos}>
     <div style={{ display: 'flex', minHeight: '100vh' }}>
 
       {/* ── Barra superior (celular) ── */}
@@ -278,7 +287,7 @@ export default function Layout() {
 
         {/* Nav scrollable */}
         <nav style={{ flex: 1, overflowY: 'auto', padding: '0.75rem 0.75rem' }}>
-          {NAV_GROUPS.map((group, gi) => (
+          {grupos.map((group, gi) => (
             <div key={gi} style={{ marginBottom: 4 }}>
               {group.label && (
                 <div style={{
@@ -289,7 +298,7 @@ export default function Layout() {
                   {group.label}
                 </div>
               )}
-              {group.items.filter(i => !i.soloAdmin || user.rol === 'admin').map(({ to, label, end, badge }) => (
+              {group.items.map(({ to, label, end, badge }) => (
                 <NavLink key={to} to={to} end={end}
                   style={({ isActive }) => ({
                     display:        'flex',
@@ -368,5 +377,6 @@ export default function Layout() {
       </main>
 
     </div>
+    </PermisosProvider>
   )
 }

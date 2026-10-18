@@ -1,7 +1,7 @@
 """Clínica: consentimiento informado con firmas, plantillas, huella de integridad y revocación."""
 import pytest
 
-from .conftest import es_pdf, unico
+from .conftest import NEGOCIO_ROLES, es_pdf, unico, usuario_con_rol
 
 C = {"negocio_id": "diagnostico_plus"}
 URL = "/api/clinica/consentimientos"
@@ -105,8 +105,9 @@ def test_validaciones(client, admin, solo_santal, expediente):
     grande = "data:image/png;base64," + "A" * 1_500_000
     assert client.post(URL, headers=admin, json=cuerpo(expediente, firma_paciente_base64=grande)).status_code == 422
     # El médico necesita cédula en su perfil
-    exp = client.post("/api/clinica/expedientes", headers=solo_santal, json={"negocio_id": "santal", "paciente": {"nombre": unico("P")}}).json()
-    r = client.post(URL, headers=solo_santal, json=cuerpo(exp))
+    medico, _ = usuario_con_rol(client, admin, "medico")
+    exp = client.post("/api/clinica/expedientes", headers=admin, json={"negocio_id": NEGOCIO_ROLES, "paciente": {"nombre": unico("P")}}).json()
+    r = client.post(URL, headers=medico, json=cuerpo(exp))
     assert r.status_code == 400 and "cédula" in r.json()["detail"]
 
 

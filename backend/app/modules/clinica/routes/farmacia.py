@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.negocios import negocio_autorizado, obtener_del_negocio, verificar_acceso
+from app.core.negocios import obtener_del_negocio, verificar_acceso
+from app.core.permissions import con_permiso, exigir_permiso
 from app.core.security import get_current_user
 
 from ..models.farmacia import ArticuloCreate, ArticuloUpdate, Entrada, Salida
@@ -88,7 +89,7 @@ async def obtener_articulo(db, id: str, user: dict) -> dict:
 
 @router.get("/farmacia/alertas")
 async def alertas_farmacia(
-    negocio_id: str = Depends(negocio_autorizado),
+    negocio_id: str = Depends(con_permiso("farmacia:read")),
     db=Depends(get_db),
 ):
     """Stock en o bajo el mínimo, lotes que caducan en 30 días y lotes ya caducados con existencia."""
@@ -122,7 +123,7 @@ async def alertas_farmacia(
 
 @router.get("/farmacia/caducidades")
 async def caducidades(
-    negocio_id: str = Depends(negocio_autorizado),
+    negocio_id: str = Depends(con_permiso("farmacia:read")),
     dias: int = Query(90, ge=1, le=730),
     db=Depends(get_db),
 ):
@@ -154,7 +155,7 @@ async def caducidades(
 
 @router.get("/farmacia")
 async def listar_articulos(
-    negocio_id: str = Depends(negocio_autorizado),
+    negocio_id: str = Depends(con_permiso("farmacia:read")),
     q: str = Query(""),
     categoria: str = Query(""),
     solo_alertas: bool = Query(False),
@@ -191,6 +192,7 @@ async def crear_articulo(
 ):
     """Alta sin existencia; el stock entra por lotes con /entrada."""
     verificar_acceso(user, body.negocio_id)
+    exigir_permiso(user, body.negocio_id, "farmacia:create")
     now = datetime.now(timezone.utc)
     doc = {
         **body.model_dump(),
@@ -212,7 +214,9 @@ async def obtener_articulo_detalle(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    return a_articulo(await obtener_articulo(db, id, user))
+    articulo = await obtener_articulo(db, id, user)
+    exigir_permiso(user, articulo["negocio_id"], "farmacia:read")
+    return a_articulo(articulo)
 
 
 @router.put("/farmacia/{id}")
@@ -223,6 +227,7 @@ async def actualizar_articulo(
     user=Depends(get_current_user),
 ):
     articulo = await obtener_articulo(db, id, user)
+    exigir_permiso(user, articulo["negocio_id"], "farmacia:create")
     cambios = body.model_dump(exclude_none=True)
     if not cambios:
         raise HTTPException(400, "Sin campos a actualizar")
@@ -242,6 +247,7 @@ async def baja_articulo(
 ):
     """Baja lógica: deja de aparecer en el inventario; sus movimientos se conservan."""
     articulo = await obtener_articulo(db, id, user)
+    exigir_permiso(user, articulo["negocio_id"], "farmacia:create")
     if articulo.get("stock", 0) > 0:
         raise HTTPException(400, "El artículo aún tiene existencia; da salida (merma) a sus lotes antes de darlo de baja")
     await db.farmacia_inventario.update_one(
@@ -263,6 +269,7 @@ async def registrar_entrada(
     caducidad = body.fecha_caducidad.isoformat()
     for _ in range(REINTENTOS):
         articulo = await obtener_articulo(db, id, user)
+        exigir_permiso(user, articulo["negocio_id"], "farmacia:update")
         if not articulo.get("activo", True):
             raise HTTPException(400, "El artículo está dado de baja")
         lotes = [dict(l) for l in articulo.get("lotes", [])]
@@ -296,6 +303,7 @@ async def registrar_salida(
     receta = None
     for _ in range(REINTENTOS):
         articulo = await obtener_articulo(db, id, user)
+        exigir_permiso(user, articulo["negocio_id"], "farmacia:update")
         if body.receta_id and receta is None:
             if merma:
                 raise HTTPException(400, "Una merma no se vincula a una receta")
@@ -349,5 +357,6 @@ async def listar_movimientos(
     user=Depends(get_current_user),
 ):
     articulo = await obtener_articulo(db, id, user)
+    exigir_permiso(user, articulo["negocio_id"], "farmacia:read")
     docs = await db.farmacia_movimientos.find({"articulo_id": str(articulo["_id"])}).sort("fecha", -1).limit(limit).to_list(limit)
     return [a_movimiento(d) for d in docs]

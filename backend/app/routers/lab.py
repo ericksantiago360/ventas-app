@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.database import get_db
+from app.core.permissions import exigir_permiso
 from app.core.security import get_current_user
 from app.core.negocios import negocios_del_usuario, validar_referencia, verificar_acceso
 from app.modules.clinica.routes.expedientes import validar_medico
@@ -213,6 +214,7 @@ async def listar_plantillas(
     user=Depends(get_current_user),
 ):
     verificar_acceso(user, negocio_id)
+    exigir_permiso(user, negocio_id, "lab:read", sin_rol_permitido=True)
     filtro: dict = {"negocio_id": negocio_id, "activo": True}
     if categoria.strip():
         filtro["categoria"] = categoria.strip()
@@ -233,6 +235,7 @@ async def crear_plantilla(
     user=Depends(get_current_user),
 ):
     verificar_acceso(user, body.negocio_id)
+    exigir_permiso(user, body.negocio_id, "lab:config", sin_rol_permitido=True)
     now = datetime.now(timezone.utc)
     doc = {
         **body.model_dump(),
@@ -258,6 +261,7 @@ async def actualizar_plantilla(
     if not plantilla:
         raise HTTPException(404, "Plantilla no encontrada")
     verificar_acceso(user, plantilla["negocio_id"])
+    exigir_permiso(user, plantilla["negocio_id"], "lab:config", sin_rol_permitido=True)
 
     campos = {k: v for k, v in body.model_dump(exclude_none=True).items()}
     if "analitos" in campos:
@@ -282,6 +286,7 @@ async def desactivar_plantilla(
     if not plantilla:
         raise HTTPException(404, "Plantilla no encontrada")
     verificar_acceso(user, plantilla["negocio_id"])
+    exigir_permiso(user, plantilla["negocio_id"], "lab:config", sin_rol_permitido=True)
     await db.plantillas_estudios.update_one(
         {"_id": oid},
         {"$set": {"activo": False, "updated_at": datetime.now(timezone.utc)}},
@@ -296,6 +301,7 @@ async def seed_plantillas(
     user=Depends(get_current_user),
 ):
     verificar_acceso(user, negocio_id)
+    exigir_permiso(user, negocio_id, "lab:config", sin_rol_permitido=True)
     now = datetime.now(timezone.utc)
     creados = 0
     for est in ESTUDIOS_SEED:
@@ -330,6 +336,7 @@ async def listar_ordenes(
     user=Depends(get_current_user),
 ):
     verificar_acceso(user, negocio_id)
+    exigir_permiso(user, negocio_id, "lab:read", sin_rol_permitido=True)
     filtro: dict = {"negocio_id": negocio_id}
     if expediente_id.strip():
         filtro["expediente_id"] = expediente_id.strip()
@@ -358,6 +365,7 @@ async def crear_orden(
     user=Depends(get_current_user),
 ):
     verificar_acceso(user, body.negocio_id)
+    exigir_permiso(user, body.negocio_id, "lab:create", sin_rol_permitido=True)
     if not body.estudios:
         raise HTTPException(400, "Debe seleccionar al menos un estudio")
 
@@ -494,6 +502,7 @@ async def obtener_orden(
     if not orden:
         raise HTTPException(404, "Orden no encontrada")
     verificar_acceso(user, orden["negocio_id"])
+    exigir_permiso(user, orden["negocio_id"], "lab:read", sin_rol_permitido=True)
     orden = serializar(orden)
     resultados = await db.resultados_lab.find({"orden_id": id}).sort("estudio_nombre", 1).to_list(50)
     orden["resultados"] = [serializar(r) for r in resultados]
@@ -512,6 +521,7 @@ async def cambiar_estado_orden(
     if not orden:
         raise HTTPException(404, "Orden no encontrada")
     verificar_acceso(user, orden["negocio_id"])
+    exigir_permiso(user, orden["negocio_id"], "lab:update", sin_rol_permitido=True)
     doc = await db.ordenes_trabajo.find_one_and_update(
         {"_id": oid},
         {"$set": {"estado": estado, "updated_at": datetime.now(timezone.utc)}},
@@ -540,6 +550,7 @@ async def enviar_orden_por_correo(
     if not orden:
         raise HTTPException(404, "Orden no encontrada")
     verificar_acceso(user, orden["negocio_id"])
+    exigir_permiso(user, orden["negocio_id"], "lab:update", sin_rol_permitido=True)
     if orden.get("estado") not in ("completado", "entregado"):
         raise HTTPException(400, "Solo se pueden enviar órdenes con todos sus resultados validados")
 
@@ -592,6 +603,7 @@ async def capturar_resultado(
     if not resultado:
         raise HTTPException(404, "Resultado no encontrado")
     verificar_acceso(user, resultado["negocio_id"])
+    exigir_permiso(user, resultado["negocio_id"], "lab:update", sin_rol_permitido=True)
     if resultado.get("estado") == "validado":
         raise HTTPException(400, "El resultado ya está validado")
 
@@ -642,6 +654,7 @@ async def validar_resultado(
     if not resultado:
         raise HTTPException(404, "Resultado no encontrado")
     verificar_acceso(user, resultado["negocio_id"])
+    exigir_permiso(user, resultado["negocio_id"], "lab:update", sin_rol_permitido=True)
     if resultado.get("estado") != "capturado":
         raise HTTPException(400, "Solo se pueden validar resultados ya capturados")
 
@@ -680,6 +693,7 @@ async def dashboard(
     user=Depends(get_current_user),
 ):
     verificar_acceso(user, negocio_id)
+    exigir_permiso(user, negocio_id, "lab:read", sin_rol_permitido=True)
     hoy = date.today().isoformat()
 
     ordenes_hoy      = await db.ordenes_trabajo.count_documents({"negocio_id": negocio_id, "fecha": hoy})
@@ -737,6 +751,7 @@ async def registrar_muestra(
     if not orden:
         raise HTTPException(404, "Orden no encontrada")
     verificar_acceso(user, orden["negocio_id"])
+    exigir_permiso(user, orden["negocio_id"], "lab:update", sin_rol_permitido=True)
 
     tecnico = user
     if body.tecnico_id and body.tecnico_id != user["_id"]:
@@ -772,6 +787,7 @@ async def notificar_criticos(
     if not orden:
         raise HTTPException(404, "Orden no encontrada")
     verificar_acceso(user, orden["negocio_id"])
+    exigir_permiso(user, orden["negocio_id"], "lab:update", sin_rol_permitido=True)
     if not orden.get("resultados_criticos"):
         raise HTTPException(400, "La orden no tiene resultados críticos")
 
@@ -821,6 +837,7 @@ async def listar_rangos(
     user=Depends(get_current_user),
 ):
     verificar_acceso(user, negocio_id)
+    exigir_permiso(user, negocio_id, "lab:read", sin_rol_permitido=True)
     docs = await db.rangos_referencia.find({"negocio_id": negocio_id, "activo": True}).sort("parametro", 1).to_list(500)
     return [serializar(d) for d in docs]
 
@@ -832,6 +849,7 @@ async def crear_rango(
     user=Depends(get_current_user),
 ):
     verificar_acceso(user, body.negocio_id)
+    exigir_permiso(user, body.negocio_id, "lab:config", sin_rol_permitido=True)
     aliases = [a.strip() for a in body.aliases if a.strip()]
     await clave_libre(db, body.negocio_id, body.parametro, aliases)
     now = datetime.now(timezone.utc)
@@ -852,6 +870,7 @@ async def actualizar_rango(
 ):
     """Aplica a las órdenes nuevas; las ya creadas conservan el rango con que se abrieron."""
     actual = await obtener_rango(db, id, user)
+    exigir_permiso(user, actual["negocio_id"], "lab:config", sin_rol_permitido=True)
     cambios = body.model_dump(exclude_none=True)
     if not cambios:
         raise HTTPException(400, "Sin campos a actualizar")
@@ -875,6 +894,7 @@ async def eliminar_rango(
     user=Depends(get_current_user),
 ):
     actual = await obtener_rango(db, id, user)
+    exigir_permiso(user, actual["negocio_id"], "lab:config", sin_rol_permitido=True)
     await db.rangos_referencia.update_one(
         {"_id": actual["_id"]}, {"$set": {"activo": False, "updated_at": datetime.now(timezone.utc)}}
     )
@@ -889,6 +909,7 @@ async def seed_rangos(
 ):
     """Carga los parámetros comunes que aún no existan (por nombre); no toca los ya configurados."""
     verificar_acceso(user, negocio_id)
+    exigir_permiso(user, negocio_id, "lab:config", sin_rol_permitido=True)
     existentes = await catalogo_de_rangos(db, negocio_id)
     now = datetime.now(timezone.utc)
     creados = 0
@@ -939,6 +960,7 @@ async def obtener_config(
     user=Depends(get_current_user),
 ):
     verificar_acceso(user, negocio_id)
+    exigir_permiso(user, negocio_id, "lab:read", sin_rol_permitido=True)
     doc = await db.config_negocios.find_one({"_id": negocio_id}) or {}
     doc.pop("_id", None)
     return {"negocio_id": negocio_id, **doc}
@@ -951,6 +973,7 @@ async def guardar_config(
     user=Depends(get_current_user),
 ):
     verificar_acceso(user, body.negocio_id)
+    exigir_permiso(user, body.negocio_id, "lab:config", sin_rol_permitido=True)
     campos = {k: v for k, v in body.model_dump().items() if k != "negocio_id"}
     campos["updated_at"] = datetime.now(timezone.utc)
     await db.config_negocios.update_one(
@@ -972,6 +995,7 @@ async def pdf_orden(
     if not orden:
         raise HTTPException(404, "Orden no encontrada")
     verificar_acceso(user, orden["negocio_id"])
+    exigir_permiso(user, orden["negocio_id"], "lab:read", sin_rol_permitido=True)
 
     pdf = await generar_pdf_resultados(db, orden)
     return Response(

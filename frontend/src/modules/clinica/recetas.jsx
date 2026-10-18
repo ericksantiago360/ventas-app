@@ -2,10 +2,12 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { req, fechaHora, abrirArchivo, s, Chip } from './comun'
+import { usePuede } from './permisos'
 
 export const abrirReceta = (r) => abrirArchivo(`/api/clinica/recetas/${r.id}/pdf`)
 
 export function RecetaFila({ r, conPaciente, onCambio }) {
+  const puede = usePuede()
   const [error, setError] = useState('')
   const [ocupado, setOcupado] = useState(false)
   const cancelada = r.estado === 'cancelada'
@@ -49,7 +51,7 @@ export function RecetaFila({ r, conPaciente, onCambio }) {
           <button style={s.btn(cancelada ? 'ghost' : 'primary')} onClick={() => abrirReceta(r).catch(e => setError(e.message))}>
             Imprimir / PDF
           </button>
-          {!cancelada && <button style={{ ...s.btn('ghost'), color: '#b91c1c' }} disabled={ocupado} onClick={cancelar}>Cancelar</button>}
+          {!cancelada && puede('recetas:update') && <button style={{ ...s.btn('ghost'), color: '#b91c1c' }} disabled={ocupado} onClick={cancelar}>Cancelar</button>}
         </div>
       </div>
       {error && <div style={{ ...s.err, marginTop: 8, marginBottom: 0 }}>{error}</div>}

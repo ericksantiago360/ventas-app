@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.negocios import negocio_autorizado, obtener_del_negocio, verificar_acceso
+from app.core.negocios import obtener_del_negocio, verificar_acceso
+from app.core.permissions import con_permiso, exigir_permiso
 from app.core.security import get_current_user
 
 from ..models.cita import ESTADOS_FINALES, ESTADOS_LIBERAN, CitaCreate, CitaUpdate
@@ -126,7 +127,7 @@ async def a_citas(db, citas: list[dict]) -> list[dict]:
 
 @router.get("/consultorios")
 async def listar_consultorios(
-    negocio_id: str = Depends(negocio_autorizado),
+    negocio_id: str = Depends(con_permiso("citas:read")),
     db=Depends(get_db),
 ):
     """Consultorios ya usados en la agenda, para sugerirlos al agendar."""
@@ -138,7 +139,7 @@ async def listar_consultorios(
 
 @router.get("/citas")
 async def listar_citas(
-    negocio_id: str = Depends(negocio_autorizado),
+    negocio_id: str = Depends(con_permiso("citas:read")),
     desde: datetime | None = Query(None),
     hasta: datetime | None = Query(None),
     medico_id: str = Query(""),
@@ -164,7 +165,7 @@ async def listar_citas(
 
 @router.get("/citas/hoy")
 async def citas_de_hoy(
-    negocio_id: str = Depends(negocio_autorizado),
+    negocio_id: str = Depends(con_permiso("citas:read")),
     medico_id: str = Query(""),
     fecha: date | None = Query(None, description="Otro día; por defecto, hoy"),
     tz: str = Query(""),
@@ -182,7 +183,7 @@ async def citas_de_hoy(
 
 @router.get("/citas/disponibilidad")
 async def disponibilidad(
-    negocio_id: str = Depends(negocio_autorizado),
+    negocio_id: str = Depends(con_permiso("citas:read")),
     medico_id: str = Query(..., min_length=1),
     fecha: date = Query(...),
     duracion: int = Query(30, ge=5, le=480),
@@ -230,6 +231,7 @@ async def crear_cita(
     user=Depends(get_current_user),
 ):
     verificar_acceso(user, body.negocio_id)
+    exigir_permiso(user, body.negocio_id, "citas:create")
     await validar_expediente(db, body.expediente_id, body.negocio_id)
     await validar_medico(db, body.medico_id, body.negocio_id)
     consultorio = body.consultorio.strip()
@@ -262,6 +264,7 @@ async def obtener_cita(
     user=Depends(get_current_user),
 ):
     cita = await obtener_del_negocio(db.citas, id, user, "Cita")
+    exigir_permiso(user, cita["negocio_id"], "citas:read")
     return (await a_citas(db, [cita]))[0]
 
 
@@ -274,6 +277,7 @@ async def actualizar_cita(
 ):
     """Reprogramar (fecha, duración, médico, consultorio) o cambiar el estado."""
     cita = await obtener_del_negocio(db.citas, id, user, "Cita")
+    exigir_permiso(user, cita["negocio_id"], "citas:update")
     if cita["estado"] in ESTADOS_FINALES:
         raise HTTPException(400, f"La cita está {cita['estado']} y ya no se puede modificar")
     cambios = body.model_dump(exclude_none=True)
@@ -316,6 +320,7 @@ async def cancelar_cita(
 ):
     """Cancela la cita; queda en la agenda como cancelada y libera el horario."""
     cita = await obtener_del_negocio(db.citas, id, user, "Cita")
+    exigir_permiso(user, cita["negocio_id"], "citas:update")
     if cita["estado"] in ESTADOS_FINALES:
         raise HTTPException(400, f"La cita ya está {cita['estado']}")
     cita = await db.citas.find_one_and_update(

@@ -11,7 +11,8 @@ from gridfs.errors import NoFile
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 from app.core.database import get_db
-from app.core.negocios import negocio_autorizado, obtener_del_negocio, verificar_acceso
+from app.core.negocios import obtener_del_negocio, verificar_acceso
+from app.core.permissions import con_permiso, exigir_permiso
 from app.core.security import get_current_user
 from app.routers.pacientes import calcular_edad
 
@@ -106,7 +107,7 @@ def a_plantilla(doc: dict) -> dict:
 
 @router.get("/consentimientos/plantillas")
 async def listar_plantillas(
-    negocio_id: str = Depends(negocio_autorizado),
+    negocio_id: str = Depends(con_permiso("consentimientos:read")),
     db=Depends(get_db),
 ):
     """Las del negocio y, para los tipos que no ha personalizado, las incluidas."""
@@ -125,6 +126,7 @@ async def crear_plantilla(
 ):
     """Una plantilla propia de un tipo incluido (cirugia, anestesia…) la reemplaza para el negocio."""
     verificar_acceso(user, body.negocio_id)
+    exigir_permiso(user, body.negocio_id, "consentimientos:config")
     tipo = re.sub(r"\W+", "_", body.tipo.strip().lower()).strip("_")
     if await db.consentimientos_plantillas.find_one({"negocio_id": body.negocio_id, "tipo": tipo, "activo": True}):
         raise HTTPException(409, f"Ya hay una plantilla de tipo {tipo}; edítala")
@@ -143,6 +145,7 @@ async def actualizar_plantilla(
 ):
     """Los consentimientos ya firmados guardan su propio texto: editar la plantilla no los cambia."""
     plantilla = await obtener_del_negocio(db.consentimientos_plantillas, id, user, "Plantilla")
+    exigir_permiso(user, plantilla["negocio_id"], "consentimientos:config")
     cambios = body.model_dump(exclude_none=True)
     if not cambios:
         raise HTTPException(400, "Sin campos a actualizar")
@@ -160,6 +163,7 @@ async def eliminar_plantilla(
 ):
     """Si era de un tipo incluido, vuelve a usarse la plantilla incluida."""
     plantilla = await obtener_del_negocio(db.consentimientos_plantillas, id, user, "Plantilla")
+    exigir_permiso(user, plantilla["negocio_id"], "consentimientos:config")
     await db.consentimientos_plantillas.update_one(
         {"_id": plantilla["_id"]}, {"$set": {"activo": False, "updated_at": datetime.now(timezone.utc)}}
     )
@@ -170,7 +174,7 @@ async def eliminar_plantilla(
 
 @router.get("/consentimientos")
 async def listar_consentimientos(
-    negocio_id: str = Depends(negocio_autorizado),
+    negocio_id: str = Depends(con_permiso("consentimientos:read")),
     expediente_id: str = Query(""),
     q: str = Query(""),
     skip: int = Query(0, ge=0),
@@ -201,6 +205,7 @@ async def crear_consentimiento(
     dos testigos y el médico que informa (con la firma de su perfil médico).
     """
     exp = await obtener_del_negocio(db.expedientes, body.expediente_id, user, "Expediente")
+    exigir_permiso(user, exp["negocio_id"], "consentimientos:create")
     if not exp.get("activo", True):
         raise HTTPException(400, "El expediente está cerrado")
     perfil = PerfilMedico(**(user.get("perfil_medico") or {}))
@@ -272,6 +277,7 @@ async def obtener_consentimiento(
     user=Depends(get_current_user),
 ):
     doc = await obtener_del_negocio(db.consentimientos, id, user, "Consentimiento")
+    exigir_permiso(user, doc["negocio_id"], "consentimientos:read")
     c = a_consentimiento(doc)
     c["integro"] = huella(doc) == doc.get("huella")
     return c
@@ -284,6 +290,7 @@ async def descargar_pdf(
     user=Depends(get_current_user),
 ):
     doc = await obtener_del_negocio(db.consentimientos, id, user, "Consentimiento")
+    exigir_permiso(user, doc["negocio_id"], "consentimientos:read")
     try:
         contenido = await (await bucket_pdfs(db).open_download_stream(doc["pdf_id"])).read()
     except (KeyError, NoFile):
@@ -302,6 +309,7 @@ async def revocar_consentimiento(
 ):
     """El paciente retira su consentimiento: queda registrado y el PDF sale marcado como revocado."""
     doc = await obtener_del_negocio(db.consentimientos, id, user, "Consentimiento")
+    exigir_permiso(user, doc["negocio_id"], "consentimientos:update")
     if doc["estado"] == "revocado":
         raise HTTPException(400, "El consentimiento ya está revocado")
     revocacion = {"fecha": datetime.now(timezone.utc), "motivo": body.motivo.strip(), "usuario": user.get("nombre", "")}

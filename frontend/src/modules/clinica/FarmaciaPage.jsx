@@ -3,6 +3,7 @@ import { useNegocio } from '../../context/NegocioContext'
 import useEsMovil from '../../hooks/useEsMovil'
 import ModalFormulario from '../../components/ModalFormulario'
 import EntradaSalidaModal, { avisarCambioFarmacia } from './EntradaSalidaModal'
+import { usePuede } from './permisos'
 import { req, qs, diaISO, fechaHora, s, Campo, Chip } from './comun'
 
 const CATEGORIAS = { medicamento: 'Medicamento', reactivo: 'Reactivo', material: 'Material', equipo: 'Equipo' }
@@ -87,6 +88,7 @@ function Alertas({ a }) {
 }
 
 function DetalleArticulo({ articulo, cerrar, onMovimiento, onEditar, onBaja }) {
+  const puede = usePuede()
   const [movs, setMovs] = useState(null)
   const hoy = diaISO(new Date())
   useEffect(() => {
@@ -115,10 +117,10 @@ function DetalleArticulo({ articulo, cerrar, onMovimiento, onEditar, onBaja }) {
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button style={s.btn('success')} onClick={() => onMovimiento('entrada')}>+ Entrada</button>
-          <button style={s.btn()} disabled={!articulo.stock} onClick={() => onMovimiento('salida')}>− Salida</button>
-          <button style={s.btn('ghost')} onClick={onEditar}>Editar</button>
-          {!articulo.stock && <button style={{ ...s.btn('ghost'), color: '#b91c1c' }} onClick={onBaja}>Dar de baja</button>}
+          {puede('farmacia:update') && <button style={s.btn('success')} onClick={() => onMovimiento('entrada')}>+ Entrada</button>}
+          {puede('farmacia:update') && <button style={s.btn()} disabled={!articulo.stock} onClick={() => onMovimiento('salida')}>− Salida</button>}
+          {puede('farmacia:create') && <button style={s.btn('ghost')} onClick={onEditar}>Editar</button>}
+          {!articulo.stock && puede('farmacia:create') && <button style={{ ...s.btn('ghost'), color: '#b91c1c' }} onClick={onBaja}>Dar de baja</button>}
         </div>
 
         <div style={s.sect}>Lotes</div>
@@ -208,6 +210,7 @@ function Caducidades({ negocioId, version, onAbrir }) {
 }
 
 export default function FarmaciaPage() {
+  const puede = usePuede()
   const { negocioId } = useNegocio()
   const esMovil = useEsMovil()
   const [tab, setTab] = useState('inventario')
@@ -261,7 +264,7 @@ export default function FarmaciaPage() {
     <div style={s.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <h1 style={s.h1}>Farmacia</h1>
-        <button style={s.btn()} onClick={() => setModal({ tipo: 'articulo' })}>+ Nuevo artículo</button>
+        {puede('farmacia:create') && <button style={s.btn()} onClick={() => setModal({ tipo: 'articulo' })}>+ Nuevo artículo</button>}
       </div>
 
       {alertas?.total > 0 && (
@@ -344,10 +347,10 @@ export default function FarmaciaPage() {
                         <td style={{ ...s.td, color: '#64748b' }}>{a.ubicacion || '—'}</td>
                         <td style={s.td}>{dinero(a.precio_venta)}</td>
                         <td style={s.td} onClick={e => e.stopPropagation()}>
-                          <div style={{ display: 'flex', gap: 6 }}>
+                          {puede('farmacia:update') && <div style={{ display: 'flex', gap: 6 }}>
                             <button style={{ ...s.btn('success'), padding: '5px 10px', fontSize: 12 }} onClick={() => setModal({ tipo: 'entrada', articulo: a })}>Entrada</button>
                             <button style={{ ...s.btn('ghost'), padding: '5px 10px', fontSize: 12 }} disabled={!a.stock} onClick={() => setModal({ tipo: 'salida', articulo: a })}>Salida</button>
-                          </div>
+                          </div>}
                         </td>
                       </tr>
                     ))}

@@ -12,6 +12,7 @@ from app.core.database import get_db
 from app.core.negocios import (
     negocio_autorizado, negocios_del_usuario, obtener_del_negocio, validar_referencia, verificar_acceso,
 )
+from app.core.permissions import con_permiso, exigir_permiso, permisos_de, rol_clinica
 from app.core.security import get_current_user
 from app.routers.pacientes import calcular_edad, siguiente_folio as siguiente_folio_paciente
 
@@ -53,8 +54,17 @@ def alergias_de_texto(texto: str) -> list[str]:
     return limpiar_alergias(re.split(r"[,;\n]", texto or ""))
 
 
+def filtro_medicos(negocio_id: str) -> dict:
+    return {"activo": {"$ne": False}, "$or": [{"negocios": negocio_id}, {"businesses": negocio_id}]}
+
+
+async def usa_roles(db, negocio_id: str) -> bool:
+    """El negocio ya asignó médicos por rol; antes de eso, cualquier usuario del negocio puede serlo."""
+    return await db.usuarios.count_documents({**filtro_medicos(negocio_id), f"roles_clinica.{negocio_id}": "medico"}, limit=1) > 0
+
+
 async def validar_medico(db, medico_id: str, negocio_id: str) -> dict | None:
-    """El médico es un usuario activo con acceso al negocio. Vacío = sin médico asignado."""
+    """El médico es un usuario activo del negocio, con rol de médico si el negocio ya usa roles. Vacío = sin médico."""
     if not medico_id:
         return None
     if not ObjectId.is_valid(medico_id):
@@ -62,6 +72,8 @@ async def validar_medico(db, medico_id: str, negocio_id: str) -> dict | None:
     medico = await db.usuarios.find_one({"_id": ObjectId(medico_id), "activo": {"$ne": False}})
     if not medico or negocio_id not in negocios_del_usuario(medico):
         raise HTTPException(404, "Médico: no existe en este negocio")
+    if await usa_roles(db, negocio_id) and rol_clinica(medico, negocio_id) != "medico":
+        raise HTTPException(400, f"{medico.get('nombre', 'El usuario')} no tiene rol de médico en este negocio")
     return medico
 
 
@@ -147,22 +159,32 @@ def campos_paciente(datos: dict) -> dict:
 
 @router.get("/medicos")
 async def listar_medicos(
-    negocio_id: str = Depends(negocio_autorizado),
+    negocio_id: str = Depends(con_permiso("expedientes:read")),
     db=Depends(get_db),
 ):
-    """Usuarios del negocio que pueden ser médico tratante."""
-    docs = await db.usuarios.find(
-        {"activo": {"$ne": False}, "$or": [{"negocios": negocio_id}, {"businesses": negocio_id}]},
-        {"nombre": 1, "rol": 1},
-    ).sort("nombre", 1).to_list(500)
+    """Usuarios con rol de médico en el negocio (todos los del negocio mientras no se asignen roles)."""
+    filtro = filtro_medicos(negocio_id)
+    if await usa_roles(db, negocio_id):
+        filtro[f"roles_clinica.{negocio_id}"] = "medico"
+    docs = await db.usuarios.find(filtro, {"nombre": 1, "rol": 1}).sort("nombre", 1).to_list(500)
     return [{"id": str(d["_id"]), "nombre": d.get("nombre", ""), "rol": d.get("rol", "")} for d in docs]
+
+
+@router.get("/mis-permisos")
+async def mis_permisos(
+    negocio_id: str = Depends(negocio_autorizado),
+    user=Depends(get_current_user),
+):
+    """Rol de clínica y permisos de quien tiene la sesión, para mostrar u ocultar opciones."""
+    return {"rol": rol_clinica(user, negocio_id), "admin": user.get("rol") == "admin",
+            "permisos": sorted(permisos_de(user, negocio_id))}
 
 
 # ── Expedientes ───────────────────────────────────────────────────────────────
 
 @router.get("/expedientes")
 async def listar_expedientes(
-    negocio_id: str = Depends(negocio_autorizado),
+    negocio_id: str = Depends(con_permiso("expedientes:read")),
     q: str = Query(""),
     medico_id: str = Query(""),
     solo_activos: bool = Query(True),
@@ -185,7 +207,7 @@ async def listar_expedientes(
 
 @router.get("/expedientes/buscar")
 async def buscar_expedientes(
-    negocio_id: str = Depends(negocio_autorizado),
+    negocio_id: str = Depends(con_permiso("expedientes:read")),
     q: str = Query(..., min_length=1),
     db=Depends(get_db),
 ):
@@ -202,6 +224,7 @@ async def crear_expediente(
     user=Depends(get_current_user),
 ):
     verificar_acceso(user, body.negocio_id)
+    exigir_permiso(user, body.negocio_id, "expedientes:create")
     medico = await validar_medico(db, body.medico_id, body.negocio_id)
     now = datetime.now(timezone.utc)
 
@@ -259,6 +282,7 @@ async def obtener_expediente_detalle(
     user=Depends(get_current_user),
 ):
     exp = await obtener_expediente(db, id, user)
+    exigir_permiso(user, exp["negocio_id"], "expedientes:read")
     respuesta = (await a_respuestas(db, [exp]))[0]
     notas = await db.notas_clinicas.find({"expediente_id": respuesta["id"]}).sort("fecha", -1).to_list(None)
     respuesta["notas"] = [a_nota(n) for n in notas]
@@ -278,6 +302,7 @@ async def actualizar_expediente(
     user=Depends(get_current_user),
 ):
     exp = await obtener_expediente(db, id, user)
+    exigir_permiso(user, exp["negocio_id"], "expedientes:update")
     now = datetime.now(timezone.utc)
     cambios_exp: dict = {}
     cambios_paciente: dict = {}
@@ -318,6 +343,7 @@ async def agregar_nota(
     user=Depends(get_current_user),
 ):
     exp = await obtener_expediente(db, id, user)
+    exigir_permiso(user, exp["negocio_id"], "notas:create")
     if not exp.get("activo", True):
         raise HTTPException(400, "El expediente está cerrado")
     now = datetime.now(timezone.utc)
@@ -343,6 +369,7 @@ async def listar_notas(
     user=Depends(get_current_user),
 ):
     exp = await obtener_expediente(db, id, user)
+    exigir_permiso(user, exp["negocio_id"], "expedientes:read")
     notas = await db.notas_clinicas.find({"expediente_id": str(exp["_id"])}).sort("fecha", -1).to_list(None)
     return [a_nota(n) for n in notas]
 
@@ -363,6 +390,7 @@ async def subir_archivo(
 ):
     """Estudios, imágenes o documentos externos del paciente (PDF o imagen, hasta 10 MB)."""
     exp = await obtener_expediente(db, id, user)
+    exigir_permiso(user, exp["negocio_id"], "expedientes:update")
     if not exp.get("activo", True):
         raise HTTPException(400, "El expediente está cerrado")
     if archivo.content_type not in TIPOS_ARCHIVO:
@@ -401,6 +429,7 @@ async def listar_archivos(
     user=Depends(get_current_user),
 ):
     exp = await obtener_expediente(db, id, user)
+    exigir_permiso(user, exp["negocio_id"], "expedientes:read")
     return sorted(exp.get("archivos_adjuntos", []), key=lambda a: a["fecha"], reverse=True)
 
 
@@ -412,6 +441,7 @@ async def descargar_archivo(
     user=Depends(get_current_user),
 ):
     exp = await obtener_expediente(db, id, user)
+    exigir_permiso(user, exp["negocio_id"], "expedientes:read")
     # Solo los archivos registrados en este expediente; así no se lee uno de otro negocio por id
     ref = next((a for a in exp.get("archivos_adjuntos", []) if a["id"] == archivo_id), None)
     if not ref:

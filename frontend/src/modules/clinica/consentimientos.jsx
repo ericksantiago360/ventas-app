@@ -2,8 +2,10 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { req, fechaHora, abrirArchivo, s, Chip } from './comun'
+import { usePuede } from './permisos'
 
 export function ConsentimientoFila({ c, conPaciente, onCambio }) {
+  const puede = usePuede()
   const [error, setError] = useState('')
   const [ocupado, setOcupado] = useState(false)
   const revocado = c.estado === 'revocado'
@@ -45,7 +47,7 @@ export function ConsentimientoFila({ c, conPaciente, onCambio }) {
           <button style={s.btn(revocado ? 'ghost' : 'primary')} onClick={() => abrirArchivo(`/api/clinica/consentimientos/${c.id}/pdf`).catch(e => setError(e.message))}>
             PDF
           </button>
-          {!revocado && <button style={{ ...s.btn('ghost'), color: '#b91c1c' }} disabled={ocupado} onClick={revocar}>Revocar</button>}
+          {!revocado && puede('consentimientos:update') && <button style={{ ...s.btn('ghost'), color: '#b91c1c' }} disabled={ocupado} onClick={revocar}>Revocar</button>}
         </div>
       </div>
       {error && <div style={{ ...s.err, marginTop: 8, marginBottom: 0 }}>{error}</div>}

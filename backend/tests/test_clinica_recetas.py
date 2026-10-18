@@ -1,7 +1,7 @@
 """Clínica: perfil médico, recetas con PDF y verificación pública por QR."""
 import pytest
 
-from .conftest import es_pdf, unico
+from .conftest import NEGOCIO_ROLES, es_pdf, unico, usuario_con_rol
 
 C = {"negocio_id": "diagnostico_plus"}
 URL = "/api/clinica/recetas"
@@ -55,12 +55,13 @@ def test_perfil_medico(client, admin, con_perfil):
                       json={"firma_base64": "data:text/html;base64,PHNjcmlwdD4="}).status_code == 422
 
 
-def test_sin_cedula_no_emite(client, solo_santal, admin):
-    # El usuario de Santal no tiene perfil médico
-    exp = client.post("/api/clinica/expedientes", headers=solo_santal, json={
-        "negocio_id": "santal", "paciente": {"nombre": unico("Pac")},
+def test_sin_cedula_no_emite(client, admin):
+    # Médico recién creado: aún no registra su perfil médico
+    medico, _ = usuario_con_rol(client, admin, "medico")
+    exp = client.post("/api/clinica/expedientes", headers=admin, json={
+        "negocio_id": NEGOCIO_ROLES, "paciente": {"nombre": unico("Pac")},
     }).json()
-    r = client.post(URL, headers=solo_santal, json={"expediente_id": exp["id"], "medicamentos": MEDICAMENTOS})
+    r = client.post(URL, headers=medico, json={"expediente_id": exp["id"], "medicamentos": MEDICAMENTOS})
     assert r.status_code == 400
     assert "cédula" in r.json()["detail"]
 

@@ -37,6 +37,7 @@ async def login(
             "email":    user["email"],
             "negocios": user.get("negocios", []),
             "rol":      user.get("rol", "usuario"),
+            "roles_clinica": user.get("roles_clinica") or {},
         },
     }
 
@@ -49,4 +50,5 @@ async def me(current_user=Depends(get_current_user)):
         "email":    current_user["email"],
         "negocios": current_user.get("negocios", []),
         "rol":      current_user.get("rol", "usuario"),
+        "roles_clinica": current_user.get("roles_clinica") or {},
     }

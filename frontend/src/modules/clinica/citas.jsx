@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useEsMovil from '../../hooks/useEsMovil'
 import { req, hora, fechaHora, s, Chip, BadgeAlergico } from './comun'
+import { usePuede } from './permisos'
 
 export const ESTADOS_CITA = {
   programada:  { label: 'Programada',  bg: '#e0f2fe', color: '#0369a1', borde: '#38bdf8' },
@@ -30,6 +31,7 @@ export function ChipEstado({ estado }) {
 // Botones según el estado. "Iniciar consulta" abre el expediente para escribir la nota.
 export function AccionesCita({ cita, onCambio, onReprogramar, compacto }) {
   const navigate = useNavigate()
+  const puede = usePuede()
   const esMovil = useEsMovil()
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState('')
@@ -55,6 +57,12 @@ export function AccionesCita({ cita, onCambio, onReprogramar, compacto }) {
   }
 
   const e = cita.estado
+  // Sin permiso de modificar citas solo queda abrir el expediente (si puede verlo)
+  if (!puede('citas:update')) {
+    return puede('expedientes:read') && e === 'en_consulta'
+      ? <button style={s.btn()} onClick={() => navigate(`/clinica/expedientes/${cita.expediente_id}`)}>Abrir expediente</button>
+      : null
+  }
   const botones = [
     e === 'programada' && ['Confirmar', 'success', () => cambiar('confirmada')],
     ['programada', 'confirmada'].includes(e) && ['Iniciar consulta', 'primary', () => cambiar('en_consulta', true)],

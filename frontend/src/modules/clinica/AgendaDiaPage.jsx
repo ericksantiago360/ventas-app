@@ -5,6 +5,7 @@ import useEsMovil from '../../hooks/useEsMovil'
 import NuevaCitaModal from './NuevaCitaModal'
 import { req, qs, hora, diaISO, desdeDiaISO, sumarDias, ZONA, s, BadgeAlergico } from './comun'
 import { ESTADOS_CITA, TIPOS_CITA, ChipEstado, AccionesCita } from './citas'
+import { usePuede } from './permisos'
 
 function CitaFila({ c, onCambio, onReprogramar }) {
   const est = ESTADOS_CITA[c.estado] || ESTADOS_CITA.programada
@@ -40,6 +41,7 @@ function CitaFila({ c, onCambio, onReprogramar }) {
 }
 
 export default function AgendaDiaPage() {
+  const puede = usePuede()
   const { negocioId } = useNegocio()
   const esMovil = useEsMovil()
   const navigate = useNavigate()
@@ -88,7 +90,7 @@ export default function AgendaDiaPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {!esMovil && <button style={s.btn('ghost')} onClick={() => navigate('/clinica/agenda')}>Vista semanal</button>}
-          <button style={s.btn()} onClick={() => setModal({})}>+ Nueva cita</button>
+          {puede('citas:create') && <button style={s.btn()} onClick={() => setModal({})}>+ Nueva cita</button>}
         </div>
       </div>
 

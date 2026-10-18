@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional, get_args
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,11 +7,15 @@ from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.core.negocios import negocios_del_usuario
+from app.core.permissions import ROLES_CLINICA
 from app.core.security import hash_password, require_admin
 
 router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
 
 ROLES = Literal["admin", "vendedor", "usuario"]
+# Rol dentro del módulo de clínica, por negocio (ver core/permissions.py); "" lo quita
+ROL_CLINICA = Literal["", "recepcion", "medico", "laboratorista", "farmacia", "admin_clinica"]
+assert set(get_args(ROL_CLINICA)) - {""} == set(ROLES_CLINICA), "ROL_CLINICA debe listar los roles de permissions.py"
 EMAIL = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 
@@ -21,6 +25,7 @@ class UsuarioCreate(BaseModel):
     password: str = Field(min_length=8, max_length=200)
     rol:      ROLES = "usuario"
     negocios: List[str] = []
+    roles_clinica: Dict[str, ROL_CLINICA] = {}
 
 
 class UsuarioUpdate(BaseModel):
@@ -28,6 +33,7 @@ class UsuarioUpdate(BaseModel):
     password: Optional[str] = Field(default=None, min_length=8, max_length=200)
     rol:      Optional[ROLES] = None
     negocios: Optional[List[str]] = None
+    roles_clinica: Optional[Dict[str, ROL_CLINICA]] = None   # solo cambia los negocios que se envían
     activo:   Optional[bool] = None
 
 
@@ -39,6 +45,7 @@ def a_respuesta(doc: dict, admin: dict) -> dict:
         "email":    doc.get("email", ""),
         "rol":      doc.get("rol", "usuario"),
         "negocios": sorted(negocios_del_usuario(doc) & negocios_del_usuario(admin)),
+        "roles_clinica": {n: r for n, r in (doc.get("roles_clinica") or {}).items() if n in negocios_del_usuario(admin)},
         "activo":   doc.get("activo", True),
     }
 
@@ -48,6 +55,17 @@ def validar_negocios(admin: dict, negocios: List[str]) -> None:
     ajenos = set(negocios) - negocios_del_usuario(admin)
     if ajenos:
         raise HTTPException(403, f"No puedes asignar negocios a los que no tienes acceso: {', '.join(sorted(ajenos))}")
+
+
+def combinar_roles(actuales: dict, cambios: dict, negocios: set[str], admin: dict) -> dict:
+    """Aplica los roles enviados; solo en negocios del usuario y del administrador. "" quita el rol."""
+    fuera = set(cambios) - negocios
+    if fuera:
+        raise HTTPException(400, f"Rol de clínica en negocios que el usuario no tiene: {', '.join(sorted(fuera))}")
+    validar_negocios(admin, list(cambios))
+    roles = {**actuales, **cambios}
+    # Un negocio que el usuario ya no tiene no conserva rol
+    return {n: r for n, r in roles.items() if r and n in negocios}
 
 
 def visible_para(admin: dict, usuario: dict) -> bool:
@@ -87,6 +105,7 @@ async def crear_usuario(
         "email":         email,
         "password_hash": hash_password(body.password),
         "negocios":      sorted(set(body.negocios)),
+        "roles_clinica": combinar_roles({}, body.roles_clinica, set(body.negocios), admin),
         "rol":           body.rol,
         "activo":        True,
         "created_at":    now,
@@ -133,6 +152,9 @@ async def actualizar_usuario(
         # Los negocios que el administrador no tiene no se tocan: no puede verlos ni quitarlos
         fuera_de_alcance = negocios_del_usuario(usuario) - negocios_del_usuario(admin)
         campos["negocios"] = sorted(set(body.negocios) | fuera_de_alcance)
+    if body.roles_clinica is not None or body.negocios is not None:
+        negocios = set(campos.get("negocios", negocios_del_usuario(usuario)))
+        campos["roles_clinica"] = combinar_roles(usuario.get("roles_clinica") or {}, body.roles_clinica or {}, negocios, admin)
 
     await db.usuarios.update_one({"_id": oid}, {"$set": campos})
     return a_respuesta({**usuario, **campos}, admin)

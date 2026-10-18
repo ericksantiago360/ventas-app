@@ -11,7 +11,8 @@ from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.negocios import negocio_autorizado, obtener_del_negocio
+from app.core.negocios import obtener_del_negocio
+from app.core.permissions import con_permiso, exigir_permiso, permisos_de
 from app.core.security import get_current_user
 from app.routers.pacientes import calcular_edad
 
@@ -134,7 +135,7 @@ async def verificar_receta(folio_verificacion: str, db=Depends(get_db)):
 
 @router.get("/recetas")
 async def listar_recetas(
-    negocio_id: str = Depends(negocio_autorizado),
+    negocio_id: str = Depends(con_permiso("recetas:read")),
     expediente_id: str = Query(""),
     q: str = Query(""),
     skip: int = Query(0, ge=0),
@@ -162,6 +163,7 @@ async def crear_receta(
 ):
     """La firma quien tiene la sesión, con los datos de su perfil médico; el PDF se genera al momento."""
     exp = await obtener_del_negocio(db.expedientes, body.expediente_id, user, "Expediente")
+    exigir_permiso(user, exp["negocio_id"], "recetas:create")
     if not exp.get("activo", True):
         raise HTTPException(400, "El expediente está cerrado")
 
@@ -218,7 +220,9 @@ async def obtener_receta(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    return a_receta(await obtener_del_negocio(db.recetas, id, user, "Receta"))
+    receta = await obtener_del_negocio(db.recetas, id, user, "Receta")
+    exigir_permiso(user, receta["negocio_id"], "recetas:read")
+    return a_receta(receta)
 
 
 @router.get("/recetas/{id}/pdf")
@@ -229,6 +233,7 @@ async def descargar_pdf_receta(
     user=Depends(get_current_user),
 ):
     receta = await obtener_del_negocio(db.recetas, id, user, "Receta")
+    exigir_permiso(user, receta["negocio_id"], "recetas:read")
     try:
         contenido = await (await bucket_pdfs(db).open_download_stream(receta["pdf_id"])).read()
     except (KeyError, NoFile):
@@ -251,9 +256,10 @@ async def cancelar_receta(
 ):
     """La receta no se borra: queda cancelada, el QR lo muestra y el PDF sale marcado."""
     receta = await obtener_del_negocio(db.recetas, id, user, "Receta")
+    exigir_permiso(user, receta["negocio_id"], "recetas:update")
     if receta["estado"] == "cancelada":
         raise HTTPException(400, "La receta ya está cancelada")
-    if receta["medico_id"] != user["_id"] and user.get("rol") != "admin":
+    if receta["medico_id"] != user["_id"] and "*" not in permisos_de(user, receta["negocio_id"]):
         raise HTTPException(403, "Solo el médico que la emitió o un administrador puede cancelarla")
     cambios = {
         "estado":             "cancelada",

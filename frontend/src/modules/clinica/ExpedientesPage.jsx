@@ -4,6 +4,7 @@ import { useNegocio } from '../../context/NegocioContext'
 import useEsMovil from '../../hooks/useEsMovil'
 import NuevoExpedienteModal from './NuevoExpedienteModal'
 import { req, qs, nombreCompleto, fechaHora, s, Chip, SEXO_COLOR, BadgeAlergico } from './comun'
+import { SiPuede } from './permisos'
 
 const POR_PAGINA = 25
 
@@ -74,7 +75,7 @@ export default function ExpedientesPage() {
     <div style={s.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
         <h1 style={s.h1}>Expedientes clínicos</h1>
-        <button style={s.btn()} onClick={() => setModal(true)}>+ Nuevo paciente</button>
+        <SiPuede permiso="expedientes:create"><button style={s.btn()} onClick={() => setModal(true)}>+ Nuevo paciente</button></SiPuede>
       </div>
 
       <div style={{ display: 'flex', gap: 10, margin: '20px 0 16px', alignItems: 'center', flexWrap: 'wrap' }}>

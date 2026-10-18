@@ -6,6 +6,7 @@ import NuevaCitaModal from './NuevaCitaModal'
 import AgendaDiaPage from './AgendaDiaPage'
 import { req, qs, hora, aFecha, diaISO, sumarDias, s } from './comun'
 import { ESTADOS_CITA, CitaDetalleModal } from './citas'
+import { usePuede } from './permisos'
 
 const PX_HORA = 56
 const HORAS_DEFECTO = [7, 21]
@@ -75,6 +76,7 @@ export default function AgendaPage() {
 }
 
 function AgendaSemana() {
+  const puede = usePuede()
   const { negocioId } = useNegocio()
   const navigate = useNavigate()
   const [vista, setVista] = useState('semana')        // 'semana' | 'dia' (columnas por médico)
@@ -157,7 +159,7 @@ function AgendaSemana() {
         <h1 style={s.h1}>Agenda</h1>
         <div style={{ display: 'flex', gap: 8 }}>
           <button style={s.btn('ghost')} onClick={() => navigate('/clinica/agenda/dia')}>Lista del día</button>
-          <button style={s.btn()} onClick={() => setNueva({})}>+ Nueva cita</button>
+          {puede('citas:create') && <button style={s.btn()} onClick={() => setNueva({})}>+ Nueva cita</button>}
         </div>
       </div>
 
@@ -224,8 +226,8 @@ function AgendaSemana() {
             {columnas.map(col => {
               const esHoy = diaISO(col.dia) === hoyISO
               return (
-                <div key={col.clave} onClick={(e) => clicHueco(e, col)} style={{
-                  flex: 1, minWidth: 120, position: 'relative', borderLeft: '1px solid #f1f5f9', cursor: 'copy',
+                <div key={col.clave} onClick={puede('citas:create') ? (e) => clicHueco(e, col) : undefined} style={{
+                  flex: 1, minWidth: 120, position: 'relative', borderLeft: '1px solid #f1f5f9', cursor: puede('citas:create') ? 'copy' : 'default',
                   height: horas.length * PX_HORA,
                   background: `repeating-linear-gradient(to bottom, transparent 0, transparent ${PX_HORA / 2 - 1}px, #f8fafc ${PX_HORA / 2 - 1}px, #f8fafc ${PX_HORA / 2}px, transparent ${PX_HORA / 2}px, transparent ${PX_HORA - 1}px, #e2e8f0 ${PX_HORA - 1}px, #e2e8f0 ${PX_HORA}px)`,
                 }}>
@@ -241,7 +243,7 @@ function AgendaSemana() {
           </div>
         </div>
       </div>
-      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>Haz clic en un horario vacío para agendar ahí.</div>
+      {puede('citas:create') && <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>Haz clic en un horario vacío para agendar ahí.</div>}
 
       {detalle && (
         <CitaDetalleModal

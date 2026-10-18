@@ -4,6 +4,7 @@ import useEsMovil from '../../hooks/useEsMovil'
 import ModalFormulario from '../../components/ModalFormulario'
 import { req, qs, s, Campo, Chip } from './comun'
 import { ConsentimientoFila } from './consentimientos'
+import { usePuede } from './permisos'
 
 const POR_PAGINA = 30
 const MARCADORES = ['paciente', 'edad', 'firmante', 'medico', 'cedula', 'clinica', 'fecha', 'procedimiento', 'riesgos', 'beneficios', 'alternativas']
@@ -93,6 +94,7 @@ function Plantillas({ negocioId }) {
 
 // Los consentimientos se firman desde el expediente del paciente; aquí se consultan y se administran las plantillas
 export default function ConsentimientosPage() {
+  const puede = usePuede()
   const { negocioId } = useNegocio()
   const esMovil = useEsMovil()
   const [tab, setTab] = useState('firmados')
@@ -128,7 +130,7 @@ export default function ConsentimientosPage() {
       <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>Para recabar uno nuevo, abre el expediente del paciente.</div>
 
       <div style={s.tabs}>
-        {[['firmados', 'Firmados'], ['plantillas', 'Plantillas']].map(([k, l]) => (
+        {[['firmados', 'Firmados'], ...(puede('consentimientos:config') ? [['plantillas', 'Plantillas']] : [])].map(([k, l]) => (
           <button key={k} style={s.tab(tab === k)} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>

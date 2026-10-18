@@ -11,8 +11,12 @@ import { TIPOS_CITA, ChipEstado, AccionesCita } from './citas'
 import { ChipsOrden } from './laboratorio'
 import ConsentimientoModal from './ConsentimientoModal'
 import { ConsentimientoFila } from './consentimientos'
+import { usePuede } from './permisos'
 
 const TABS = [['ficha', 'Ficha'], ['notas', 'Notas clínicas'], ['recetas', 'Recetas'], ['laboratorio', 'Laboratorio'], ['consentimientos', 'Consentimientos'], ['citas', 'Citas'], ['archivos', 'Archivos']]
+
+// Pestaña → permiso para verla (sin permiso, no aparece)
+const PERMISO_TAB = { recetas: 'recetas:read', laboratorio: 'lab:read', consentimientos: 'consentimientos:read', citas: 'citas:read' }
 
 const ESTADOS_LAB = { pendiente: 'Pendiente', en_proceso: 'En proceso', completado: 'Completado', entregado: 'Entregado' }
 
@@ -137,6 +141,7 @@ function Nota({ n, onReceta }) {
 }
 
 function Archivos({ exp, onSubido }) {
+  const puede = usePuede()
   const input = useRef(null)
   const [descripcion, setDescripcion] = useState('')
   const [subiendo, setSubiendo] = useState(false)
@@ -168,7 +173,7 @@ function Archivos({ exp, onSubido }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {exp.activo && (
+      {exp.activo && puede('expedientes:update') && (
         <div style={{ ...s.card, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <input style={{ ...s.input, flex: '1 1 220px' }} placeholder="Descripción (opcional): Rx tórax, estudio externo…"
             value={descripcion} onChange={e => setDescripcion(e.target.value)} />
@@ -210,6 +215,7 @@ function Archivos({ exp, onSubido }) {
 }
 
 function Recetas({ exp, version, onNueva }) {
+  const puede = usePuede()
   const [recetas, setRecetas] = useState(null)
   const [error, setError] = useState('')
   useEffect(() => {
@@ -221,7 +227,7 @@ function Recetas({ exp, version, onNueva }) {
   if (!recetas) return <div style={{ color: '#94a3b8' }}>Cargando…</div>
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {exp.activo && <div><button style={s.btn()} onClick={onNueva}>+ Nueva receta</button></div>}
+      {exp.activo && puede('recetas:create') && <div><button style={s.btn()} onClick={onNueva}>+ Nueva receta</button></div>}
       {recetas.length === 0
         ? <div style={{ ...s.card, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Sin recetas</div>
         : <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
@@ -232,6 +238,7 @@ function Recetas({ exp, version, onNueva }) {
 }
 
 function Consentimientos({ exp, version, onNuevo }) {
+  const puede = usePuede()
   const [lista, setLista] = useState(null)
   const [error, setError] = useState('')
   useEffect(() => {
@@ -243,7 +250,7 @@ function Consentimientos({ exp, version, onNuevo }) {
   if (!lista) return <div style={{ color: '#94a3b8' }}>Cargando…</div>
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {exp.activo && <div><button style={s.btn()} onClick={onNuevo}>+ Nuevo consentimiento</button></div>}
+      {exp.activo && puede('consentimientos:create') && <div><button style={s.btn()} onClick={onNuevo}>+ Nuevo consentimiento</button></div>}
       {lista.length === 0
         ? <div style={{ ...s.card, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Sin consentimientos firmados</div>
         : <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
@@ -256,6 +263,7 @@ function Consentimientos({ exp, version, onNuevo }) {
 // Órdenes de laboratorio del paciente; se abren en la página de resultados
 function Laboratorio({ exp }) {
   const navigate = useNavigate()
+  const puede = usePuede()
   const [ordenes, setOrdenes] = useState(null)
   const [error, setError] = useState('')
   useEffect(() => {
@@ -267,7 +275,7 @@ function Laboratorio({ exp }) {
   if (!ordenes) return <div style={{ color: '#94a3b8' }}>Cargando…</div>
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {exp.activo && <div><button style={s.btn()} onClick={() => navigate(`/resultados?nueva_orden=${exp.id}`)}>+ Solicitar estudios</button></div>}
+      {exp.activo && puede('lab:create') && <div><button style={s.btn()} onClick={() => navigate(`/resultados?nueva_orden=${exp.id}`)}>+ Solicitar estudios</button></div>}
       {ordenes.length === 0 ? <div style={{ ...s.card, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Sin órdenes de laboratorio</div> : (
         <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
           {ordenes.map((o, i) => (
@@ -337,6 +345,7 @@ function Citas({ exp, version, onReprogramar }) {
 }
 
 export default function ExpedienteDetalle() {
+  const puede = usePuede()
   const { id } = useParams()
   const navigate = useNavigate()
   const esMovil = useEsMovil()
@@ -381,11 +390,13 @@ export default function ExpedienteDetalle() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, width: esMovil ? '100%' : 'auto' }}>
-          <button style={{ ...s.btn('ghost'), flex: esMovil ? 1 : undefined }} onClick={() => setModal('editar')}>Editar</button>
-          {exp.activo && (
+          {puede('expedientes:update') && (
+            <button style={{ ...s.btn('ghost'), flex: esMovil ? 1 : undefined }} onClick={() => setModal('editar')}>Editar</button>
+          )}
+          {exp.activo && puede('citas:create') && (
             <button style={{ ...s.btn('ghost'), flex: esMovil ? 1 : undefined }} onClick={() => setModal('cita')}>Agendar cita</button>
           )}
-          {exp.activo && (
+          {exp.activo && puede('notas:create') && (
             <button style={{ ...s.btn(), flex: esMovil ? 1 : undefined }} onClick={() => setModal('nota')}>+ Nota SOAP</button>
           )}
         </div>
@@ -408,7 +419,7 @@ export default function ExpedienteDetalle() {
       )}
 
       <div style={{ ...s.tabs, overflowX: 'auto' }}>
-        {TABS.map(([k, l]) => (
+        {TABS.filter(([k]) => !PERMISO_TAB[k] || puede(PERMISO_TAB[k])).map(([k, l]) => (
           <button key={k} style={s.tab(tab === k)} onClick={() => setTab(k)}>
             {l}
             {k === 'notas' && ` (${exp.notas.length})`}
@@ -425,7 +436,7 @@ export default function ExpedienteDetalle() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {exp.notas.length === 0
             ? <div style={{ ...s.card, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Aún no hay notas clínicas</div>
-            : exp.notas.map(n => <Nota key={n.id} n={n} onReceta={exp.activo ? () => setModal({ receta: n }) : null} />)}
+            : exp.notas.map(n => <Nota key={n.id} n={n} onReceta={exp.activo && puede('recetas:create') ? () => setModal({ receta: n }) : null} />)}
         </div>
       )}
 

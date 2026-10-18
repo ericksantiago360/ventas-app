@@ -13,7 +13,7 @@ from pathlib import Path
 
 APP = Path(__file__).resolve().parents[1] / "app"
 ROUTERS = sorted([*(APP / "routers").glob("*.py"), *(APP / "modules").glob("*/routes/*.py")])
-VERIFICADORES = {"verificar_acceso", "obtener_del_negocio", "negocio_autorizado"}
+VERIFICADORES = {"verificar_acceso", "obtener_del_negocio", "negocio_autorizado", "con_permiso"}
 METODOS = {"get", "post", "put", "patch", "delete"}
 
 # (archivo, función): motivo
@@ -92,3 +92,36 @@ def test_excepciones_siguen_existiendo():
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 existentes.add((archivo.name, n.name))
     assert set(SIN_NEGOCIO) <= existentes, set(SIN_NEGOCIO) - existentes
+
+
+# ── Permisos de clínica ───────────────────────────────────────────────────────
+
+CON_PERMISOS = sorted([*(APP / "modules" / "clinica" / "routes").glob("*.py"), APP / "routers" / "lab.py"])
+PERMISOS = {"exigir_permiso", "con_permiso"}
+
+# (archivo, función): motivo
+SIN_PERMISO = {
+    ("recetas.py", "obtener_perfil_medico"): "perfil médico del propio usuario",
+    ("recetas.py", "actualizar_perfil_medico"): "perfil médico del propio usuario",
+    ("recetas.py", "verificar_receta"): "pública para farmacias (QR)",
+    ("expedientes.py", "mis_permisos"): "solo informa los permisos del propio usuario",
+    ("lab.py", "estado_correo"): "solo dice si el SMTP del servidor está configurado",
+}
+
+
+def _endpoints(archivos):
+    for archivo in archivos:
+        for f in ast.parse(archivo.read_text()).body:
+            if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(
+                isinstance(d, ast.Call) and getattr(d.func, "attr", "") in METODOS for d in f.decorator_list
+            ):
+                yield archivo.name, f
+
+
+def test_endpoints_de_clinica_verifican_el_permiso():
+    """Todo endpoint de clínica y laboratorio revisa el rol (core/permissions.py)."""
+    faltantes = [f"{a}: {f.name}" for a, f in _endpoints(CON_PERMISOS)
+                 if (a, f.name) not in SIN_PERMISO and not _nombres_llamados(f) & PERMISOS]
+    assert not faltantes, "Endpoints sin verificación de permiso de clínica:\n" + "\n".join(faltantes)
+    existentes = {(a, f.name) for a, f in _endpoints(CON_PERMISOS)}
+    assert set(SIN_PERMISO) <= existentes, set(SIN_PERMISO) - existentes

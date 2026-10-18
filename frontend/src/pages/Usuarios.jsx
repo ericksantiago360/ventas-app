@@ -9,7 +9,18 @@ const ROLES = [
 ]
 const NOMBRE_ROL = Object.fromEntries(ROLES)
 
-const VACIO = { nombre: '', email: '', password: '', rol: 'usuario', negocios: [], activo: true }
+// Rol en el módulo de clínica, por negocio (backend/app/core/permissions.py)
+const ROLES_CLINICA = [
+  ['',              'Sin acceso a clínica'],
+  ['recepcion',     'Recepción'],
+  ['medico',        'Médico'],
+  ['laboratorista', 'Laboratorista'],
+  ['farmacia',      'Farmacia'],
+  ['admin_clinica', 'Administrador de clínica'],
+]
+const NOMBRE_ROL_CLINICA = Object.fromEntries(ROLES_CLINICA)
+
+const VACIO = { nombre: '', email: '', password: '', rol: 'usuario', negocios: [], roles_clinica: {}, activo: true }
 
 const mensajeDeError = (e, porDefecto) => {
   const detalle = e.response?.data?.detail
@@ -48,7 +59,7 @@ export default function Usuarios() {
 
   function abrirEdicion(u) {
     setEditando(u)
-    setForm({ nombre: u.nombre, email: u.email, password: '', rol: u.rol, negocios: u.negocios, activo: u.activo })
+    setForm({ nombre: u.nombre, email: u.email, password: '', rol: u.rol, negocios: u.negocios, roles_clinica: u.roles_clinica || {}, activo: u.activo })
     setErrorForm(''); setModal(true)
   }
 
@@ -59,17 +70,21 @@ export default function Usuarios() {
     }))
   }
 
+  // Se manda el rol de cada negocio marcado ("" lo quita); los desmarcados lo pierden en el servidor
+  const rolesClinica = () => Object.fromEntries(form.negocios.map(n => [n, form.roles_clinica[n] || '']))
+
   async function guardar(ev) {
     ev.preventDefault()
     setGuardando(true); setErrorForm('')
     try {
       if (editando) {
-        const cambios = { nombre: form.nombre.trim(), rol: form.rol, negocios: form.negocios, activo: form.activo }
+        const cambios = { nombre: form.nombre.trim(), rol: form.rol, negocios: form.negocios, roles_clinica: rolesClinica(), activo: form.activo }
         if (form.password) cambios.password = form.password   // vacío = no cambiar
         await usuariosApi.actualizar(editando.id, cambios)
       } else {
         const { activo, ...alta } = form
-        await usuariosApi.crear({ ...alta, nombre: form.nombre.trim(), email: form.email.trim() })
+        const roles = Object.fromEntries(Object.entries(rolesClinica()).filter(([, r]) => r))
+        await usuariosApi.crear({ ...alta, roles_clinica: roles, nombre: form.nombre.trim(), email: form.email.trim() })
       }
       setModal(false)
       await cargar()
@@ -126,7 +141,12 @@ export default function Usuarios() {
                 <td style={s.td}>
                   {u.negocios.length === 0
                     ? <span style={{ color: '#94a3b8' }}>Sin negocios</span>
-                    : u.negocios.map(n => <span key={n} style={s.chip}>{nombreNegocio[n] || n}</span>)}
+                    : u.negocios.map(n => (
+                      <span key={n} style={s.chip}>
+                        {nombreNegocio[n] || n}
+                        {u.roles_clinica?.[n] && <strong style={{ color: '#1d4ed8' }}> · {NOMBRE_ROL_CLINICA[u.roles_clinica[n]]}</strong>}
+                      </span>
+                    ))}
                 </td>
                 <td style={s.td}>{u.activo ? 'Activo' : 'Inactivo'}</td>
                 <td style={{ ...s.td, textAlign: 'right' }}>
@@ -175,12 +195,24 @@ export default function Usuarios() {
             <div style={s.campo}>
               <label style={s.label}>Negocios</label>
               {negociosDisponibles.map(n => (
-                <label key={n.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, padding: '3px 0' }}>
-                  <input type="checkbox" checked={form.negocios.includes(n.id)} onChange={() => alternarNegocio(n.id)} />
-                  {n.nombre}
-                </label>
+                <div key={n.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, padding: '3px 0' }}>
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1, minWidth: 0 }}>
+                    <input type="checkbox" checked={form.negocios.includes(n.id)} onChange={() => alternarNegocio(n.id)} />
+                    {n.nombre}
+                  </label>
+                  {form.negocios.includes(n.id) && (
+                    <select style={{ ...s.input, width: 'auto', padding: '4px 8px', fontSize: 12 }} aria-label={`Rol de clínica en ${n.nombre}`}
+                      value={form.roles_clinica[n.id] || ''}
+                      onChange={e => setForm(f => ({ ...f, roles_clinica: { ...f.roles_clinica, [n.id]: e.target.value } }))}>
+                      {ROLES_CLINICA.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  )}
+                </div>
               ))}
-              <div style={s.hint}>Solo puedes asignar los negocios a los que tú tienes acceso.</div>
+              <div style={s.hint}>
+                Solo puedes asignar los negocios a los que tú tienes acceso. El rol de clínica define qué ve cada quien en
+                expedientes, agenda, recetas, farmacia y consentimientos; los administradores ven todo.
+              </div>
             </div>
             {editando && (
               <div style={s.campo}>

@@ -23,8 +23,9 @@ def _listados():
 @pytest.mark.parametrize("negocio", NEGOCIOS)
 @pytest.mark.parametrize("ruta,requeridos", list(_listados()), ids=lambda v: v if isinstance(v, str) else "")
 def test_listado_responde(client, admin, negocio, ruta, requeridos):
-    # El admin tiene acceso a todos los negocios, así que sirve como médico
-    valores = {**VALORES_QUERY, "medico_id": client.get("/auth/me", headers=admin).json()["id"]}
+    # Un médico del negocio (si el negocio no asigna roles, cualquier usuario suyo, como el admin)
+    medicos = client.get("/api/clinica/medicos", headers=admin, params={"negocio_id": negocio}).json()
+    valores = {**VALORES_QUERY, "medico_id": medicos[0]["id"] if medicos else client.get("/auth/me", headers=admin).json()["id"]}
     params = {
         nombre: negocio if nombre == "negocio_id" else valores.get(nombre, "x")
         for nombre in requeridos

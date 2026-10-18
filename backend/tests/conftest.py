@@ -108,6 +108,22 @@ def unico(prefijo: str = "T") -> str:
     return f"{prefijo}-{uuid.uuid4().hex[:6].upper()}"
 
 
+# Negocio donde se prueban los roles de clínica: en diagnostico_plus nadie tiene rol,
+# así las demás pruebas ven el comportamiento sin roles (cualquier usuario es médico)
+NEGOCIO_ROLES = "bienes_raices"
+
+
+def usuario_con_rol(client, admin, rol: str, negocio: str = NEGOCIO_ROLES) -> tuple[dict, str]:
+    """Crea un usuario con ese rol de clínica en el negocio; devuelve sus headers y su id."""
+    email = f"{rol}_{uuid.uuid4().hex[:6]}@clinica.mx"
+    r = client.post("/api/usuarios", headers=admin, json={
+        "nombre": f"{rol.capitalize()} {uuid.uuid4().hex[:4]}", "email": email, "password": "clinica-123",
+        "negocios": [negocio], "roles_clinica": {negocio: rol} if rol else {},
+    })
+    assert r.status_code == 201, r.text
+    return _token(client, email, "clinica-123"), r.json()["id"]
+
+
 def es_pdf(r) -> bool:
     return r.status_code == 200 and r.content[:4] == b"%PDF"
 
