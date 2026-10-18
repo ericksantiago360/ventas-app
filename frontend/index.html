@@ -18,6 +18,8 @@
     <style>
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
       body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; color: #1e293b; -webkit-tap-highlight-color: transparent; }
+      /* Los botones usan estilos en línea sin estado deshabilitado: se marca aquí para todos */
+      button:disabled { opacity: .5; cursor: not-allowed; }
 
       /* Ajustes para celular. Las páginas usan estilos en línea, por eso se
          seleccionan por su atributo style y se usa !important. */

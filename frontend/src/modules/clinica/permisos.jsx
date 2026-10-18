@@ -32,6 +32,21 @@ export const PermisosProvider = PermisosContext.Provider
 
 export const usePuede = () => useContext(PermisosContext).puede
 
+// Página completa: sin el permiso (p. ej. al escribir la dirección a mano) se explica en lugar de mostrar errores
+export function RequierePermiso({ permiso, children }) {
+  const { cargado, puede } = useContext(PermisosContext)
+  if (!cargado) return <div style={{ color: '#94a3b8' }}>Cargando…</div>
+  if (puede(permiso)) return children
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '28px 24px', maxWidth: 520 }}>
+      <div style={{ fontWeight: 700, fontSize: 16, color: '#1e293b' }}>No tienes acceso a esta sección</div>
+      <div style={{ fontSize: 14, color: '#64748b', marginTop: 6 }}>
+        Tu rol de clínica en este negocio no lo permite. Si lo necesitas, pide a un administrador que lo cambie en Usuarios.
+      </div>
+    </div>
+  )
+}
+
 // Muestra los hijos solo con el permiso
 export function SiPuede({ permiso, children }) {
   return usePuede()(permiso) ? children : null

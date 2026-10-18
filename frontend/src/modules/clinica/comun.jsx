@@ -61,6 +61,9 @@ export const desdeDiaISO = (iso) => { const [a, m, d] = iso.split('-').map(Numbe
 
 export const sumarDias = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r }
 
+// "lunes, 19 de octubre" → "Lunes, 19 de octubre" (text-transform: capitalize subiría también el "De")
+export const capitalizar = (t) => t ? t.charAt(0).toUpperCase() + t.slice(1) : t
+
 export const ZONA = Intl.DateTimeFormat().resolvedOptions().timeZone
 
 export const SEXO_COLOR = {
@@ -96,7 +99,7 @@ export const s = {
   page:   { fontFamily: 'system-ui,sans-serif', color: '#1e293b', maxWidth: 1200 },
   h1:     { fontSize: 22, fontWeight: 700, margin: 0 },
   tabs:   { display: 'flex', gap: 4, marginTop: 20, marginBottom: 20, borderBottom: '2px solid #e2e8f0' },
-  tab:    (a) => ({ padding: '8px 18px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: a ? '#3b82f6' : '#64748b', borderBottom: a ? '2px solid #3b82f6' : '2px solid transparent', marginBottom: -2 }),
+  tab:    (a) => ({ padding: '8px 18px', whiteSpace: 'nowrap', flexShrink: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: a ? '#3b82f6' : '#64748b', borderBottom: a ? '2px solid #3b82f6' : '2px solid transparent', marginBottom: -2 }),
   card:   { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '20px 24px' },
   kv:     { fontSize: 11, color: '#94a3b8', marginBottom: 3 },
   btn:    (v = 'primary') => ({ padding: '7px 16px', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600, background: v === 'primary' ? '#3b82f6' : v === 'danger' ? '#ef4444' : v === 'ghost' ? '#f1f5f9' : '#22c55e', color: v === 'ghost' ? '#334155' : '#fff' }),

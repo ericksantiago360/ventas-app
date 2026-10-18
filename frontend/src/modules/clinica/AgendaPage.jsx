@@ -4,7 +4,7 @@ import { useNegocio } from '../../context/NegocioContext'
 import useEsMovil from '../../hooks/useEsMovil'
 import NuevaCitaModal from './NuevaCitaModal'
 import AgendaDiaPage from './AgendaDiaPage'
-import { req, qs, hora, aFecha, diaISO, sumarDias, s } from './comun'
+import { req, qs, hora, aFecha, diaISO, sumarDias, capitalizar, s } from './comun'
 import { ESTADOS_CITA, CitaDetalleModal } from './citas'
 import { usePuede } from './permisos'
 
@@ -121,7 +121,7 @@ function AgendaSemana() {
     if (vista === 'semana') {
       return Array.from({ length: 7 }, (_, i) => {
         const d = sumarDias(inicio, i)
-        return { clave: diaISO(d), dia: d, medicoId, titulo: d.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric' }) }
+        return { clave: diaISO(d), dia: d, medicoId, titulo: capitalizar(d.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric' })) }
       })
     }
     const conCitas = new Set(visibles.map(c => c.medico_id))
@@ -148,7 +148,7 @@ function AgendaSemana() {
   const mover = (n) => setReferencia(r => sumarDias(r, n * (vista === 'semana' ? 7 : 1)))
   const titulo = vista === 'semana'
     ? `${inicio.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })} – ${sumarDias(fin, -1).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}`
-    : inicio.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    : capitalizar(inicio.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))
   const hoyISO = diaISO(ahora)
   const lineaAhora = (minutosDelDia(ahora) - desdeHora * 60) / 60 * PX_HORA
   const reemplazar = (c) => { setCitas(cs => cs.map(x => x.id === c.id ? c : x)); setDetalle(c) }
@@ -167,7 +167,7 @@ function AgendaSemana() {
         <button style={s.btn('ghost')} aria-label="Anterior" onClick={() => mover(-1)}>←</button>
         <button style={s.btn('ghost')} onClick={() => setReferencia(new Date())}>Hoy</button>
         <button style={s.btn('ghost')} aria-label="Siguiente" onClick={() => mover(1)}>→</button>
-        <span style={{ fontWeight: 600, fontSize: 15, marginLeft: 6, textTransform: vista === 'dia' ? 'capitalize' : 'none' }}>{titulo}</span>
+        <span style={{ fontWeight: 600, fontSize: 15, marginLeft: 6 }}>{titulo}</span>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ fontSize: 13, color: '#64748b', display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -204,7 +204,7 @@ function AgendaSemana() {
                   title={vista === 'semana' ? 'Ver el día por médico' : undefined}
                   style={{
                     flex: 1, minWidth: 120, padding: '8px 4px', border: 'none', borderLeft: '1px solid #f1f5f9', background: 'none',
-                    fontSize: 13, fontWeight: 600, color: esHoy ? '#1d4ed8' : '#334155', textTransform: 'capitalize',
+                    fontSize: 13, fontWeight: 600, color: esHoy ? '#1d4ed8' : '#334155',
                     cursor: vista === 'semana' ? 'pointer' : 'default', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     fontFamily: 'inherit',
                   }}>

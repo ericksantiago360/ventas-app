@@ -97,8 +97,8 @@
     <div><div class="k">Paciente</div><div class="v">{{ r.paciente.nombre }}</div></div>
     {% if r.paciente.edad %}<div><div class="k">Edad</div><div class="v">{{ r.paciente.edad }} años</div></div>{% endif %}
     {% if r.paciente.sexo %}<div><div class="k">Sexo</div><div class="v">{{ r.paciente.sexo | capitalize }}</div></div>{% endif %}
-    {% if r.paciente.peso %}<div><div class="k">Peso</div><div class="v">{{ r.paciente.peso }} kg</div></div>{% endif %}
-    {% if r.paciente.talla %}<div><div class="k">Talla</div><div class="v">{{ r.paciente.talla }} cm</div></div>{% endif %}
+    {% if r.paciente.peso %}<div><div class="k">Peso</div><div class="v">{{ '%g' | format(r.paciente.peso) }} kg</div></div>{% endif %}
+    {% if r.paciente.talla %}<div><div class="k">Talla</div><div class="v">{{ '%g' | format(r.paciente.talla) }} cm</div></div>{% endif %}
     <div><div class="k">Expediente</div><div class="v">{{ r.expediente_folio }}</div></div>
   </div>
   {% if r.paciente.alergias %}

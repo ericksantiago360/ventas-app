@@ -270,9 +270,9 @@ export default function FarmaciaPage() {
       {alertas?.total > 0 && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
           {[
-            [alertas.stock_bajo.length, 'con stock bajo', '#ffedd5', '#c2410c', () => { setTab('inventario'); setSoloAlertas(true) }],
-            [alertas.por_caducar.length, 'lotes caducan en 30 días', '#fef9c3', '#a16207', () => setTab('caducidades')],
-            [alertas.caducados.length, 'lotes caducados con existencia', '#fee2e2', '#b91c1c', () => setTab('caducidades')],
+            [alertas.stock_bajo.length, alertas.stock_bajo.length === 1 ? 'artículo con stock bajo' : 'artículos con stock bajo', '#ffedd5', '#c2410c', () => { setTab('inventario'); setSoloAlertas(true) }],
+            [alertas.por_caducar.length, alertas.por_caducar.length === 1 ? 'lote caduca en 30 días' : 'lotes caducan en 30 días', '#fef9c3', '#a16207', () => setTab('caducidades')],
+            [alertas.caducados.length, alertas.caducados.length === 1 ? 'lote caducado con existencia' : 'lotes caducados con existencia', '#fee2e2', '#b91c1c', () => setTab('caducidades')],
           ].filter(([n]) => n).map(([n, texto, bg, color, accion]) => (
             <button key={texto} onClick={accion} style={{ background: bg, color, border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
               {n} {texto}

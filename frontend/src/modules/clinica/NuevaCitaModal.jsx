@@ -161,6 +161,12 @@ export default function NuevaCitaModal({ negocioId, cita, expediente, inicio, di
         {medicoId && libres && <span style={{ fontSize: 12, color: '#64748b' }}>{libres.length ? 'o elige un horario libre:' : 'Sin horarios libres de 8:00 a 20:00'}</span>}
         {!medicoId && <span style={{ fontSize: 12, color: '#94a3b8' }}>Elige un médico para ver sus horarios libres</span>}
       </div>
+      {horaInicio && (() => {
+        const [a, m, d] = fecha.split('-').map(Number), [h, min] = horaInicio.split(':').map(Number)
+        return new Date(a, m - 1, d, h, min) < new Date()
+      })() && (
+        <div style={{ fontSize: 12, color: '#b45309', marginTop: 6 }}>Esa fecha y hora ya pasaron: la cita quedará registrada en el pasado.</div>
+      )}
       {libres?.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8, maxHeight: 130, overflowY: 'auto' }}>
           {libres.map(l => {

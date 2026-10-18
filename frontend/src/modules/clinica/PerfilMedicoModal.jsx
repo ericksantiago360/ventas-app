@@ -9,6 +9,8 @@ const MAX_FIRMA = 400_000
 // Datos del médico que se imprimen en sus recetas (cédula, especialidad, firma)
 export default function PerfilMedicoModal({ cerrar, onGuardado }) {
   const [perfil, setPerfil] = useState(VACIO)
+  // El formulario aparece hasta tener el perfil guardado: si llegara después, borraría lo que ya se escribió
+  const [cargado, setCargado] = useState(false)
   const [nombre, setNombre] = useState('')
   const [dibujando, setDibujando] = useState(false)
   const [error, setError] = useState('')
@@ -17,6 +19,7 @@ export default function PerfilMedicoModal({ cerrar, onGuardado }) {
 
   useEffect(() => {
     req('/api/clinica/perfil-medico').then(({ nombre, ...p }) => { setNombre(nombre); setPerfil({ ...VACIO, ...p }) })
+      .finally(() => setCargado(true))
       .catch(e => setError(e.message))
   }, [])
 
@@ -44,7 +47,8 @@ export default function PerfilMedicoModal({ cerrar, onGuardado }) {
 
   return (
     <ModalFormulario titulo="Mi perfil médico" subtitulo={`${nombre} · Estos datos aparecen en tus recetas`}
-      ancho={620} error={error} cerrar={cerrar} onSubmit={guardar} guardando={guardando} textoGuardar="Guardar perfil">
+      ancho={620} error={error} cerrar={cerrar} onSubmit={guardar} guardando={guardando || !cargado} textoGuardar="Guardar perfil">
+      {!cargado ? <div style={{ color: '#94a3b8', padding: 20 }}>Cargando…</div> : <>
       <div style={s.grid(200)}>
         <Campo label="Cédula profesional *">
           <input style={s.input} value={perfil.cedula_profesional} inputMode="numeric" onChange={e => setP('cedula_profesional', e.target.value)} />
@@ -83,6 +87,7 @@ export default function PerfilMedicoModal({ cerrar, onGuardado }) {
         </div>
       )}
       <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>Las recetas ya emitidas conservan los datos con que se firmaron.</div>
+      </>}
     </ModalFormulario>
   )
 }

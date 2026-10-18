@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useNegocio } from '../../context/NegocioContext'
 import useEsMovil from '../../hooks/useEsMovil'
 import NuevaCitaModal from './NuevaCitaModal'
-import { req, qs, hora, diaISO, desdeDiaISO, sumarDias, ZONA, s, BadgeAlergico } from './comun'
+import { req, qs, hora, diaISO, desdeDiaISO, sumarDias, capitalizar, ZONA, s, BadgeAlergico } from './comun'
 import { ESTADOS_CITA, TIPOS_CITA, ChipEstado, AccionesCita } from './citas'
 import { usePuede } from './permisos'
 
@@ -79,14 +79,14 @@ export default function AgendaDiaPage() {
 
   const reemplazar = (nueva) => setCitas(cs => cs.map(c => c.id === nueva.id ? nueva : c))
   const conteo = Object.fromEntries(Object.keys(ESTADOS_CITA).map(k => [k, citas.filter(c => c.estado === k).length]))
-  const titulo = desdeDiaISO(fecha).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' })
+  const titulo = capitalizar(desdeDiaISO(fecha).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' }))
 
   return (
     <div style={s.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <h1 style={s.h1}>{esHoy ? 'Agenda de hoy' : 'Agenda del día'}</h1>
-          <div style={{ fontSize: 14, color: '#64748b', marginTop: 2, textTransform: 'capitalize' }}>{titulo}</div>
+          <div style={{ fontSize: 14, color: '#64748b', marginTop: 2 }}>{titulo}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {!esMovil && <button style={s.btn('ghost')} onClick={() => navigate('/clinica/agenda')}>Vista semanal</button>}

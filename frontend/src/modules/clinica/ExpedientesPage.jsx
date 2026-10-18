@@ -75,7 +75,7 @@ export default function ExpedientesPage() {
     <div style={s.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
         <h1 style={s.h1}>Expedientes clínicos</h1>
-        <SiPuede permiso="expedientes:create"><button style={s.btn()} onClick={() => setModal(true)}>+ Nuevo paciente</button></SiPuede>
+        <SiPuede permiso="expedientes:create"><button style={{ ...s.btn(), whiteSpace: 'nowrap' }} onClick={() => setModal(true)}>+ Nuevo paciente</button></SiPuede>
       </div>
 
       <div style={{ display: 'flex', gap: 10, margin: '20px 0 16px', alignItems: 'center', flexWrap: 'wrap' }}>

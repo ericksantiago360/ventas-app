@@ -486,7 +486,7 @@ export default function ExpedienteDetalle() {
         <NuevoNotaSOAPModal
           expediente={exp}
           cerrar={() => setModal(null)}
-          onGuardada={() => { setModal(null); setTab('notas'); cargar() }}
+          onGuardada={(nota) => { setExp(e => ({ ...e, notas: [nota, ...e.notas] })); setModal(null); setTab('notas'); cargar() }}
         />
       )}
     </div>

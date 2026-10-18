@@ -25,6 +25,7 @@ import RecetasPage       from './modules/clinica/RecetasPage'
 import VerificarReceta   from './modules/clinica/VerificarReceta'
 import FarmaciaPage      from './modules/clinica/FarmaciaPage'
 import ConsentimientosPage from './modules/clinica/ConsentimientosPage'
+import { RequierePermiso } from './modules/clinica/permisos'
 import Layout    from './components/Layout'
 import { NegocioProvider } from './context/NegocioContext'
 
@@ -117,13 +118,13 @@ export default function App() {
               element={<Resultados />}
             />
 
-            <Route path="clinica/expedientes" element={<ExpedientesPage />} />
-            <Route path="clinica/expedientes/:id" element={<ExpedienteDetalle />} />
-            <Route path="clinica/agenda" element={<AgendaPage />} />
-            <Route path="clinica/agenda/dia" element={<AgendaDiaPage />} />
-            <Route path="clinica/recetas" element={<RecetasPage />} />
-            <Route path="clinica/farmacia" element={<FarmaciaPage />} />
-            <Route path="clinica/consentimientos" element={<ConsentimientosPage />} />
+            <Route path="clinica/expedientes" element={<RequierePermiso permiso="expedientes:read"><ExpedientesPage /></RequierePermiso>} />
+            <Route path="clinica/expedientes/:id" element={<RequierePermiso permiso="expedientes:read"><ExpedienteDetalle /></RequierePermiso>} />
+            <Route path="clinica/agenda" element={<RequierePermiso permiso="citas:read"><AgendaPage /></RequierePermiso>} />
+            <Route path="clinica/agenda/dia" element={<RequierePermiso permiso="citas:read"><AgendaDiaPage /></RequierePermiso>} />
+            <Route path="clinica/recetas" element={<RequierePermiso permiso="recetas:read"><RecetasPage /></RequierePermiso>} />
+            <Route path="clinica/farmacia" element={<RequierePermiso permiso="farmacia:read"><FarmaciaPage /></RequierePermiso>} />
+            <Route path="clinica/consentimientos" element={<RequierePermiso permiso="consentimientos:read"><ConsentimientosPage /></RequierePermiso>} />
           </Route>
 
           <Route

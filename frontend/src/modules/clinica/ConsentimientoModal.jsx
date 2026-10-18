@@ -81,7 +81,7 @@ export default function ConsentimientoModal({ expediente, cerrar, onGuardado }) 
     }
     if (paso === 1) {
       if (firmante.tipo === 'representante' && (firmante.nombre.trim().length < 3 || !firmante.parentesco.trim())) return 'Indica nombre y parentesco del representante legal'
-      if (!firmaPaciente) return `Falta la firma de ${firmante.tipo === 'representante' ? 'el representante' : 'el paciente'} (presiona "Aceptar firma")`
+      if (!firmaPaciente) return `Falta la firma ${firmante.tipo === 'representante' ? 'del representante' : 'del paciente'} (presiona "Aceptar firma")`
     }
     if (paso === 2) {
       if (testigos.some(t => t.nombre.trim().length < 3)) return 'Escribe el nombre completo de los dos testigos'
