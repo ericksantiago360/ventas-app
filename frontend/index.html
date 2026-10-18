@@ -29,6 +29,10 @@
         [style*="grid-template-columns: 1fr 1fr;"],
         [style*="grid-template-columns: 1fr 1fr 1fr;"],
         [style*="grid-template-columns: repeat(3, 1fr);"] { grid-template-columns: 1fr !important; }
+        /* Un campo que abarcaba 2 columnas crearía una columna fantasma al quedar en una sola */
+        [style*="grid-template-columns: 1fr 1fr;"] > *,
+        [style*="grid-template-columns: 1fr 1fr 1fr;"] > *,
+        [style*="grid-template-columns: repeat(3, 1fr);"] > * { grid-column: auto !important; }
         [style*="grid-template-columns: 1fr 1fr 1fr 1fr;"],
         [style*="grid-template-columns: repeat(4, minmax(0px, 1fr));"] { grid-template-columns: 1fr 1fr !important; }
 
@@ -37,6 +41,35 @@
 
         /* Modales: ocupan el ancho disponible y se desplazan si son altos */
         div[style*="position: fixed"] > div { max-width: 100% !important; max-height: 100%; overflow-y: auto; }
+
+        /* Modales con fondo oscuro → pantalla completa. Los que ya son de pantalla
+           completa (ModalFormulario, captura de resultados) tienen fondo sólido y no entran. */
+        div[style*="position: fixed"][style*="inset: 0px"][style*="background: rgba"] {
+          padding: 0 !important; align-items: stretch !important; justify-content: stretch !important;
+        }
+        div[style*="position: fixed"][style*="inset: 0px"][style*="background: rgba"] > :is(div, form) {
+          width: 100% !important; max-width: 100% !important; height: 100% !important; max-height: 100% !important;
+          border-radius: 0 !important; box-shadow: none !important;
+          display: flex; flex-direction: column; overflow-y: auto !important;
+          padding-top: calc(12px + env(safe-area-inset-top)) !important;
+          padding-bottom: env(safe-area-inset-bottom) !important;
+        }
+        /* Cuerpos con su propio scroll (alto calculado para el modal de escritorio) llenan la pantalla */
+        div[style*="position: fixed"][style*="inset: 0px"][style*="background: rgba"] > :is(div, form) > div[style*="max-height: calc"] {
+          max-height: none !important; flex: 1 0 auto;
+        }
+        /* Campos con altura mínima para tocarlos con el dedo */
+        div[style*="position: fixed"][style*="inset: 0px"][style*="background: rgba"] :is(input:not([type="checkbox"]):not([type="radio"]), select) {
+          min-height: 40px;
+        }
+        /* Fila de botones al final del formulario: fija abajo y con botones más fáciles de tocar */
+        div[style*="position: fixed"][style*="inset: 0px"][style*="background: rgba"] div[style*="justify-content: flex-end"]:last-child:has(> button) {
+          position: sticky; bottom: 0; z-index: 2; background: #fff;
+          margin-top: 16px !important; padding: 10px 0 !important; border-top: 1px solid #e2e8f0;
+        }
+        div[style*="position: fixed"][style*="inset: 0px"][style*="background: rgba"] div[style*="justify-content: flex-end"]:last-child:has(> button) > button {
+          flex: 1; min-height: 44px; font-size: 15px !important;
+        }
       }
     </style>
   </head>

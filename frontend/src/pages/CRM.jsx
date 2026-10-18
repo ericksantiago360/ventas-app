@@ -878,7 +878,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
-    zIndex: 100,
+    zIndex: 1000,
   },
 
   modal: {
