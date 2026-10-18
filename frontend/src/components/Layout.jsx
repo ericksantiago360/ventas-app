@@ -56,7 +56,7 @@ const NAV_GROUPS = [
 ]
 
 const ALTO_PESTANAS = 58
-const ANCHO_BARRA = 200
+const ANCHO_BARRA = 220
 
 // Trazos de 24×24 para las pestañas inferiores del celular
 const ICONOS = {
