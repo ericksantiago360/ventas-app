@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useNegocio } from '../context/NegocioContext'
+import useEsMovil from '../hooks/useEsMovil'
 
 // Subtítulo del menú según el giro del negocio (config_negocios.tipo)
 const GIROS = {
@@ -54,7 +55,6 @@ const NAV_GROUPS = [
   },
 ]
 
-const ANCHO_MOVIL = 768
 const ALTO_PESTANAS = 58
 
 // Trazos de 24×24 para las pestañas inferiores del celular
@@ -102,18 +102,6 @@ function useEnLinea() {
     }
   }, [])
   return enLinea
-}
-
-function useEsMovil() {
-  const consulta = `(max-width: ${ANCHO_MOVIL}px)`
-  const [esMovil, setEsMovil] = useState(() => window.matchMedia(consulta).matches)
-  useEffect(() => {
-    const mq = window.matchMedia(consulta)
-    const cambio = (e) => setEsMovil(e.matches)
-    mq.addEventListener('change', cambio)
-    return () => mq.removeEventListener('change', cambio)
-  }, [consulta])
-  return esMovil
 }
 
 // Chrome/Android ofrece instalar la app; iOS no tiene este evento (se instala desde Compartir)

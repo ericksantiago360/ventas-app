@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNegocio } from '../context/NegocioContext'
+import useEsMovil from '../hooks/useEsMovil'
 
 async function req(url, opts = {}) {
   const token = localStorage.getItem('token')
@@ -92,6 +93,37 @@ const S = {
   err:     { background: '#fef2f2', color: '#b91c1c', borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 12 },
 }
 
+// Orden en formato tarjeta para celular: lo esencial a la vista y las acciones a un toque
+function OrdenTarjeta({ o, onAbrir, acciones }) {
+  const n = o.estudios?.length ?? 0
+  return (
+    <div onClick={onAbrir} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', cursor: 'pointer' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.paciente_nombre}</div>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+            <span style={{ fontFamily: 'monospace' }}>{o.folio}</span>
+            {o.fecha && <> · {o.fecha}</>}
+          </div>
+        </div>
+        <EstadoChip estado={o.estado} map={ESTADO_ORDEN} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 10, marginTop: 10 }}>
+        <div style={{ fontSize: 13, color: '#64748b', minWidth: 0 }}>
+          <div>{n} estudio{n !== 1 ? 's' : ''}</div>
+          {o.medico_solicitante && <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dr(a). {o.medico_solicitante}</div>}
+        </div>
+        <div style={{ fontWeight: 700, fontSize: 16, whiteSpace: 'nowrap' }}>{fmt(o.total)}</div>
+      </div>
+      {acciones && (
+        <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #f1f5f9' }}>
+          {acciones}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const EMPTY_ORDEN = { paciente_id: '', paciente_nombre: '', medico_solicitante: '', fecha: hoy(), observaciones: '', estudios: [] }
 const EMPTY_PLANTILLA = { codigo: '', nombre: '', categoria: '', muestra: 'Sangre', tiempo_entrega: 2, precio: '', analitos: [] }
 const EMPTY_ANALITO = { nombre: '', unidad: '', tipo: 'numerico', referencia_hombre_min: '', referencia_hombre_max: '', referencia_mujer_min: '', referencia_mujer_max: '', referencia_texto: '' }
@@ -99,6 +131,7 @@ const EMPTY_CONFIG = { nombre: '', nombre_corto: '', direccion: '', colonia: '',
 
 export default function Resultados() {
   const { negocioId } = useNegocio()
+  const esMovil = useEsMovil()
   const [vista, setVista] = useState('ordenes')
   const [fechaFiltro, setFechaFiltro] = useState(hoy())
   const [estadoFiltro, setEstadoFiltro] = useState('')
@@ -415,9 +448,9 @@ export default function Resultados() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={S.page}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={S.h1}>Resultados de Laboratorio</h1>
+    <div style={esMovil ? { ...S.page, padding: 0 } : S.page}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+        <h1 style={esMovil ? { ...S.h1, fontSize: 19 } : S.h1}>{esMovil ? 'Resultados' : 'Resultados de Laboratorio'}</h1>
         {!ordenDetalle && (
           <button style={S.btn()} onClick={() => { setFormOrden(EMPTY_ORDEN); setBusquedaPac(''); setError(''); setModalOrden(true) }}>
             + Nueva orden
@@ -426,9 +459,9 @@ export default function Resultados() {
       </div>
 
       {!ordenDetalle && (
-        <div style={S.tabs}>
+        <div style={esMovil ? { ...S.tabs, overflowX: 'auto', marginTop: 14, marginBottom: 16, scrollbarWidth: 'none' } : S.tabs}>
           {[['resumen','Resumen del día'],['ordenes','Órdenes'],['plantillas','Catálogo de estudios'],['configuracion','Configuración']].map(([k, l]) => (
-            <button key={k} style={S.tab(vista === k)} onClick={() => { setError(''); setVista(k) }}>{l}</button>
+            <button key={k} style={esMovil ? { ...S.tab(vista === k), whiteSpace: 'nowrap', padding: '8px 12px', flexShrink: 0 } : S.tab(vista === k)} onClick={() => { setError(''); setVista(k) }}>{l}</button>
           ))}
         </div>
       )}
@@ -457,6 +490,13 @@ export default function Resultados() {
           {dash?.ultimas_ordenes?.length > 0 && (
             <div style={S.card}>
               <div style={{ fontWeight: 700, marginBottom: 12 }}>Últimas órdenes</div>
+              {esMovil ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {dash.ultimas_ordenes.map(o => (
+                    <OrdenTarjeta key={o.id} o={o} onAbrir={() => { setVista('ordenes'); cargarOrdenDetalle(o.id) }} />
+                  ))}
+                </div>
+              ) : (
               <table style={S.table}>
                 <thead><tr>{['Folio','Paciente','Médico','Estudios','Total','Estado'].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
                 <tbody>
@@ -472,6 +512,7 @@ export default function Resultados() {
                   ))}
                 </tbody>
               </table>
+              )}
             </div>
           )}
         </div>
@@ -481,16 +522,35 @@ export default function Resultados() {
       {vista === 'ordenes' && !ordenDetalle && (
         <div>
           <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-            <input style={{ ...S.input, maxWidth: 200 }} type="date" value={fechaFiltro} onChange={e => setFechaFiltro(e.target.value)} />
-            <select style={{ ...S.select, maxWidth: 160 }} value={estadoFiltro} onChange={e => setEstadoFiltro(e.target.value)}>
+            <input style={{ ...S.input, maxWidth: esMovil ? 'none' : 200, flex: esMovil ? '1 1 140px' : undefined }} type="date" value={fechaFiltro} onChange={e => setFechaFiltro(e.target.value)} />
+            <select style={{ ...S.select, maxWidth: esMovil ? 'none' : 160, flex: esMovil ? '1 1 140px' : undefined }} value={estadoFiltro} onChange={e => setEstadoFiltro(e.target.value)}>
               <option value="">Todos los estados</option>
               {['pendiente','en_proceso','completado','entregado'].map(s => <option key={s} value={s}>{s.replace('_',' ')}</option>)}
             </select>
-            <input style={{ ...S.input, maxWidth: 260 }} placeholder="Buscar por folio, paciente o médico…" value={busqueda} onChange={e => setBusqueda(e.target.value)} />
+            <input style={{ ...S.input, maxWidth: esMovil ? 'none' : 260, flex: esMovil ? '1 1 100%' : undefined }} placeholder="Buscar por folio, paciente o médico…" value={busqueda} onChange={e => setBusqueda(e.target.value)} />
             <button style={{ ...S.btn('ghost'), marginLeft: 'auto' }} onClick={() => setFechaFiltro('')}>Ver todas</button>
           </div>
 
-          {cargando ? <div style={{ color: '#94a3b8', padding: 20 }}>Cargando…</div> : (
+          {cargando ? <div style={{ color: '#94a3b8', padding: 20 }}>Cargando…</div> : esMovil ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {ordenes.length === 0 && (
+                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 32, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+                  Sin órdenes para los filtros seleccionados
+                </div>
+              )}
+              {ordenes.map(o => {
+                const listo = ['completado', 'entregado'].includes(o.estado)
+                const boton = (v) => ({ ...S.btn(v), flex: 1, padding: '10px 12px', fontSize: 14 })
+                return (
+                  <OrdenTarjeta key={o.id} o={o} onAbrir={() => cargarOrdenDetalle(o.id)} acciones={listo && <>
+                    {o.estado === 'completado' && <button style={boton('primary')} onClick={() => cambiarEstadoOrden(o.id, 'entregado')}>Entregar</button>}
+                    <button style={boton('success')} onClick={() => verPdf(o.id)}>PDF</button>
+                    <button style={boton('ghost')} onClick={() => abrirEnvioCorreo(o)}>✉ Enviar</button>
+                  </>} />
+                )
+              })}
+            </div>
+          ) : (
             <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
               <table style={S.table}>
                 <thead><tr>{['Folio','Paciente','Fecha','Médico','Estudios','Total','Estado',''].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
