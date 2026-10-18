@@ -55,6 +55,41 @@ const PRESTACIONES_LEY = { aguinaldo_dias: 15, prima_pct: 25, vacaciones_extra: 
 const factorPrimerAnio = (c) =>
   1 + (Number(c.aguinaldo_dias) + (12 + Number(c.vacaciones_extra)) * Number(c.prima_pct) / 100) / 365
 
+// Período de nómina como tarjeta para celular; los botones llegan como children
+function PeriodoTarjeta({ p, children }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 14px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 15 }}>{p.nombre}</div>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+            {p.fecha_inicio} — {p.fecha_fin}
+            {p.tipo_periodo && <span style={{ textTransform: 'capitalize' }}> · {p.tipo_periodo}</span>}
+          </div>
+        </div>
+        <Chip tipo={p.estado} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 10 }}>
+        <div>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>Percepciones</div>
+          <div style={{ fontWeight: 600, fontSize: 14, color: '#15803d', whiteSpace: 'nowrap' }}>{fmt(p.total_percepciones)}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>Deducciones</div>
+          <div style={{ fontWeight: 600, fontSize: 14, color: '#b91c1c', whiteSpace: 'nowrap' }}>{fmt(p.total_deducciones)}</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>Neto</div>
+          <div style={{ fontWeight: 700, fontSize: 16, whiteSpace: 'nowrap' }}>{fmt(p.total_neto)}</div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #f1f5f9' }}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 // Recibo de nómina como tarjeta para celular: el neto es lo que más se busca
 function ReciboTarjeta({ r, onEditar }) {
   const monto = (label, valor, color, grande) => (
@@ -269,6 +304,38 @@ export default function Personal() {
       await req(`/api/personal/nomina/periodos/${id}/${accion}`, { method: 'PATCH' })
       await cargarPeriodos()
     } catch (e) { setError(e.message) }
+  }
+
+  // Botones de un período según su estado; los usan la tabla y las tarjetas del celular
+  function accionesPeriodo(p, btn) {
+    return (
+      <>
+        <button style={btn('ghost')} onClick={() => verRecibos(p)}>Ver recibos</button>
+        {p.estado === 'borrador' && (
+          <button style={btn()} onClick={async () => {
+            const r = await calcularNomina(p.id)
+            if (r) alert(`Nómina calculada. Recibos nuevos: ${r.recibos_creados}`)
+          }}>Calcular</button>
+        )}
+        {p.estado === 'calculado' && (
+          <>
+            <button style={btn()} onClick={async () => {
+              const r = await calcularNomina(p.id)
+              if (r) alert(`Recalculado. Recibos nuevos: ${r.recibos_creados}`)
+            }}>Recalcular</button>
+            <button style={btn('success')} onClick={() => {
+              if (window.confirm('¿Cerrar el período? No se podrán editar los recibos.'))
+                cambiarEstadoPeriodo(p.id, 'cerrar')
+            }}>Cerrar</button>
+          </>
+        )}
+        {p.estado === 'cerrado' && (
+          <button style={btn('ghost')} onClick={() => {
+            if (window.confirm('¿Reabrir el período?')) cambiarEstadoPeriodo(p.id, 'reabrir')
+          }}>Reabrir</button>
+        )}
+      </>
+    )
   }
 
   async function verRecibos(periodo) {
@@ -555,7 +622,18 @@ export default function Personal() {
 
           {cargando
             ? <div style={{ color: '#94a3b8', padding: 20 }}>Cargando…</div>
-            : (
+            : esMovil ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {periodos.length === 0 && (
+                  <div style={{ ...s.card, padding: 32, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Sin períodos registrados</div>
+                )}
+                {periodos.map(p => (
+                  <PeriodoTarjeta key={p.id} p={p}>
+                    {accionesPeriodo(p, v => ({ ...s.btn(v), flex: '1 1 0', padding: '10px 8px', fontSize: 14 }))}
+                  </PeriodoTarjeta>
+                ))}
+              </div>
+            ) : (
               <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
                 <table style={s.table}>
                   <thead>
@@ -580,30 +658,7 @@ export default function Personal() {
                         <td style={{ ...s.td, fontWeight: 700 }}>{fmt(p.total_neto)}</td>
                         <td style={s.td}>
                           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                            <button style={s.btn('ghost')} onClick={() => verRecibos(p)}>Ver recibos</button>
-                            {p.estado === 'borrador' && (
-                              <button style={s.btn()} onClick={async () => {
-                                const r = await calcularNomina(p.id)
-                                if (r) alert(`Nómina calculada. Recibos nuevos: ${r.recibos_creados}`)
-                              }}>Calcular</button>
-                            )}
-                            {p.estado === 'calculado' && (
-                              <>
-                                <button style={s.btn()} onClick={async () => {
-                                  const r = await calcularNomina(p.id)
-                                  if (r) alert(`Recalculado. Recibos nuevos: ${r.recibos_creados}`)
-                                }}>Recalcular</button>
-                                <button style={s.btn('success')} onClick={() => {
-                                  if (window.confirm('¿Cerrar el período? No se podrán editar los recibos.'))
-                                    cambiarEstadoPeriodo(p.id, 'cerrar')
-                                }}>Cerrar</button>
-                              </>
-                            )}
-                            {p.estado === 'cerrado' && (
-                              <button style={s.btn('ghost')} onClick={() => {
-                                if (window.confirm('¿Reabrir el período?')) cambiarEstadoPeriodo(p.id, 'reabrir')
-                              }}>Reabrir</button>
-                            )}
+                            {accionesPeriodo(p, s.btn)}
                           </div>
                         </td>
                       </tr>
