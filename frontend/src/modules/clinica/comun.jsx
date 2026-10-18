@@ -27,9 +27,24 @@ export const qs = (params) => new URLSearchParams(
 export const nombreCompleto = (p) =>
   p ? [p.nombre, p.apellido_paterno, p.apellido_materno].filter(Boolean).join(' ') : '—'
 
+// El backend responde en UTC; algunas fechas llegan sin zona horaria
+export const aFecha = (f) => new Date(/Z$|[+-]\d\d:\d\d$/.test(f) ? f : `${f}Z`)
+
 export const fechaHora = (f) => f
-  ? new Date(f.endsWith?.('Z') || f.includes?.('+') ? f : `${f}Z`).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })
+  ? aFecha(f).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })
   : '—'
+
+export const hora = (f) => aFecha(f).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false })
+
+// YYYY-MM-DD del día local (no el de UTC)
+export const diaISO = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+export const desdeDiaISO = (iso) => { const [a, m, d] = iso.split('-').map(Number); return new Date(a, m - 1, d) }
+
+export const sumarDias = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r }
+
+export const ZONA = Intl.DateTimeFormat().resolvedOptions().timeZone
 
 export const SEXO_COLOR = {
   masculino: { bg: '#dbeafe', color: '#1d4ed8' },

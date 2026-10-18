@@ -3,9 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 import useEsMovil from '../../hooks/useEsMovil'
 import NuevoExpedienteModal from './NuevoExpedienteModal'
 import NuevoNotaSOAPModal from './NuevoNotaSOAPModal'
-import { req, nombreCompleto, fechaHora, s, Chip, SEXO_COLOR, TIPOS_NOTA, BadgeAlergico } from './comun'
+import NuevaCitaModal from './NuevaCitaModal'
+import { req, qs, nombreCompleto, fechaHora, aFecha, s, Chip, SEXO_COLOR, TIPOS_NOTA, BadgeAlergico } from './comun'
+import { TIPOS_CITA, ChipEstado, AccionesCita } from './citas'
 
-const TABS = [['ficha', 'Ficha'], ['notas', 'Notas clínicas'], ['archivos', 'Archivos']]
+const TABS = [['ficha', 'Ficha'], ['notas', 'Notas clínicas'], ['citas', 'Citas'], ['archivos', 'Archivos']]
 
 const SIGNOS = [
   ['tension_arterial', 'T/A', 'mmHg'], ['frecuencia_cardiaca', 'FC', 'lpm'], ['temperatura', 'Temp.', '°C'],
@@ -210,6 +212,46 @@ function Archivos({ exp, onSubido }) {
   )
 }
 
+function Citas({ exp, version, onReprogramar }) {
+  const [citas, setCitas] = useState(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    req(`/api/clinica/citas?${qs({ negocio_id: exp.negocio_id, expediente_id: exp.id })}`)
+      .then(setCitas).catch(e => setError(e.message))
+  }, [exp.id, version])
+
+  if (error) return <div style={s.err}>{error}</div>
+  if (!citas) return <div style={{ color: '#94a3b8' }}>Cargando…</div>
+  if (!citas.length) return <div style={{ ...s.card, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Sin citas</div>
+
+  // Próximas primero (la más cercana arriba), después el historial
+  const ahora = new Date()
+  const proximas = citas.filter(c => aFecha(c.fecha_fin) >= ahora)
+  const pasadas = citas.filter(c => aFecha(c.fecha_fin) < ahora).reverse()
+  const reemplazar = (n) => setCitas(cs => cs.map(c => c.id === n.id ? n : c))
+  const fila = (c) => (
+    <div key={c.id} style={{ padding: '12px 16px', borderTop: '1px solid #f1f5f9' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontWeight: 600, fontSize: 14 }}>{fechaHora(c.fecha_inicio)}</span>
+        <ChipEstado estado={c.estado} />
+        <span style={{ fontSize: 13, color: '#64748b' }}>
+          {[TIPOS_CITA[c.tipo], c.medico_nombre && `Dr(a). ${c.medico_nombre}`, c.consultorio].filter(Boolean).join(' · ')}
+        </span>
+      </div>
+      {c.motivo && <div style={{ fontSize: 13, marginTop: 4 }}>{c.motivo}</div>}
+      {aFecha(c.fecha_fin) >= ahora && (
+        <div style={{ marginTop: 8 }}><AccionesCita cita={c} onCambio={reemplazar} onReprogramar={() => onReprogramar(c)} compacto /></div>
+      )}
+    </div>
+  )
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {proximas.length > 0 && <div style={{ ...s.card, padding: 0 }}><div style={{ ...s.sect, margin: '12px 16px 4px' }}>Próximas</div>{proximas.map(fila)}</div>}
+      {pasadas.length > 0 && <div style={{ ...s.card, padding: 0 }}><div style={{ ...s.sect, margin: '12px 16px 4px' }}>Historial</div>{pasadas.map(fila)}</div>}
+    </div>
+  )
+}
+
 export default function ExpedienteDetalle() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -217,7 +259,8 @@ export default function ExpedienteDetalle() {
   const [exp, setExp] = useState(null)
   const [error, setError] = useState('')
   const [tab, setTab] = useState('ficha')
-  const [modal, setModal] = useState(null)        // 'editar' | 'nota'
+  const [modal, setModal] = useState(null)        // 'editar' | 'nota' | 'cita' | { cita } para reprogramar
+  const [versionCitas, setVersionCitas] = useState(0)
 
   const cargar = () => req(`/api/clinica/expedientes/${id}`).then(setExp).catch(e => setError(e.message))
   useEffect(() => { setExp(null); setError(''); cargar() }, [id])
@@ -254,6 +297,9 @@ export default function ExpedienteDetalle() {
         <div style={{ display: 'flex', gap: 8, width: esMovil ? '100%' : 'auto' }}>
           <button style={{ ...s.btn('ghost'), flex: esMovil ? 1 : undefined }} onClick={() => setModal('editar')}>Editar</button>
           {exp.activo && (
+            <button style={{ ...s.btn('ghost'), flex: esMovil ? 1 : undefined }} onClick={() => setModal('cita')}>Agendar cita</button>
+          )}
+          {exp.activo && (
             <button style={{ ...s.btn(), flex: esMovil ? 1 : undefined }} onClick={() => setModal('nota')}>+ Nota SOAP</button>
           )}
         </div>
@@ -289,6 +335,8 @@ export default function ExpedienteDetalle() {
         </div>
       )}
 
+      {tab === 'citas' && <Citas exp={exp} version={versionCitas} onReprogramar={(c) => setModal({ cita: c })} />}
+
       {tab === 'archivos' && <Archivos exp={exp} onSubido={cargar} />}
 
       {modal === 'editar' && (
@@ -297,6 +345,15 @@ export default function ExpedienteDetalle() {
           expediente={exp}
           cerrar={() => setModal(null)}
           onGuardado={() => { setModal(null); cargar() }}
+        />
+      )}
+      {(modal === 'cita' || modal?.cita) && (
+        <NuevaCitaModal
+          negocioId={exp.negocio_id}
+          expediente={exp}
+          cita={modal?.cita}
+          cerrar={() => setModal(null)}
+          onGuardada={() => { setModal(null); setTab('citas'); setVersionCitas(v => v + 1) }}
         />
       )}
       {modal === 'nota' && (

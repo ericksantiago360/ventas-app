@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = ""       # nombre visible; si se omite, el del laboratorio
     SMTP_SSL: bool = False         # True para puerto 465 (SSL directo); False usa STARTTLS
 
+    # Zona horaria de las clínicas: define qué es "hoy" en la agenda y los horarios de disponibilidad
+    ZONA_HORARIA: str = "America/Mexico_City"
+
     # Portal del paciente
     PORTAL_TOKEN_DAYS: int = 30
 

@@ -19,6 +19,8 @@ import Resultados  from './pages/Resultados'
 import Portal, { PortalAcceso } from './pages/Portal'
 import ExpedientesPage   from './modules/clinica/ExpedientesPage'
 import ExpedienteDetalle from './modules/clinica/ExpedienteDetalle'
+import AgendaPage        from './modules/clinica/AgendaPage'
+import AgendaDiaPage     from './modules/clinica/AgendaDiaPage'
 import Layout    from './components/Layout'
 import { NegocioProvider } from './context/NegocioContext'
 
@@ -112,6 +114,8 @@ export default function App() {
 
             <Route path="clinica/expedientes" element={<ExpedientesPage />} />
             <Route path="clinica/expedientes/:id" element={<ExpedienteDetalle />} />
+            <Route path="clinica/agenda" element={<AgendaPage />} />
+            <Route path="clinica/agenda/dia" element={<AgendaDiaPage />} />
           </Route>
 
           <Route
