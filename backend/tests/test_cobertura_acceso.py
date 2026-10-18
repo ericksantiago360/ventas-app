@@ -1,5 +1,5 @@
 """
-Guardia: todo endpoint de app/routers debe verificar el acceso al negocio.
+Guardia: todo endpoint de app/routers y app/modules/*/routes debe verificar el acceso al negocio.
 
 Revisa el código (AST), no la app en ejecución. Un endpoint cumple si llama a
 verificar_acceso u obtener_del_negocio, depende de negocio_autorizado, o llama a
@@ -11,7 +11,8 @@ de verdad no maneja datos de un negocio, súmalo a SIN_NEGOCIO con el motivo.
 import ast
 from pathlib import Path
 
-ROUTERS = Path(__file__).resolve().parents[1] / "app" / "routers"
+APP = Path(__file__).resolve().parents[1] / "app"
+ROUTERS = sorted([*(APP / "routers").glob("*.py"), *(APP / "modules").glob("*/routes/*.py")])
 VERIFICADORES = {"verificar_acceso", "obtener_del_negocio", "negocio_autorizado"}
 METODOS = {"get", "post", "put", "patch", "delete"}
 
@@ -46,7 +47,7 @@ def _nombres_llamados(nodo) -> set[str]:
 
 def _endpoints_sin_verificacion():
     faltantes = []
-    for archivo in sorted(ROUTERS.glob("*.py")):
+    for archivo in ROUTERS:
         arbol = ast.parse(archivo.read_text())
         funciones = {
             n.name: n for n in arbol.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -83,7 +84,7 @@ def test_todos_los_endpoints_verifican_el_negocio():
 def test_excepciones_siguen_existiendo():
     # Una excepción de una función que ya no existe es ruido: hay que quitarla
     existentes = set()
-    for archivo in ROUTERS.glob("*.py"):
+    for archivo in ROUTERS:
         for n in ast.parse(archivo.read_text()).body:
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 existentes.add((archivo.name, n.name))

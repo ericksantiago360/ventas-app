@@ -27,6 +27,12 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'Clínica',
+    items: [
+      { to: '/clinica/expedientes', label: 'Expedientes' },
+    ],
+  },
+  {
     label: 'Comercial',
     items: [
       { to: '/crm',          label: 'CRM'          },
