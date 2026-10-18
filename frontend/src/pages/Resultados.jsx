@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useNegocio } from '../context/NegocioContext'
 import useEsMovil from '../hooks/useEsMovil'
+import ModalFormulario from '../components/ModalFormulario'
 
 async function req(url, opts = {}) {
   const token = localStorage.getItem('token')
@@ -403,6 +404,15 @@ export default function Resultados() {
     return () => clearTimeout(t)
   }, [busquedaPac, negocioId])
 
+  function abrirNuevaOrden() {
+    setFormOrden(EMPTY_ORDEN); setBusquedaPac(''); setError(''); setModalOrden(true)
+    // El catálogo solo se cargaba al visitar su pestaña; sin esto el formulario decía "No hay plantillas".
+    // Se pide aparte de cargarPlantillas para no poner la lista de órdenes en "Cargando…"
+    req(`/api/lab/plantillas?negocio_id=${encodeURIComponent(negocioId)}`)
+      .then(setPlantillas)
+      .catch(e => setError(e.message))
+  }
+
   function seleccionarPaciente(p) {
     setFormOrden(f => ({ ...f, paciente_id: p.id, paciente_nombre: `${p.nombre} ${p.apellido_paterno} ${p.apellido_materno || ''}`.trim() }))
     setBusquedaPac(`${p.nombre} ${p.apellido_paterno}`)
@@ -597,7 +607,7 @@ export default function Resultados() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
         <h1 style={esMovil ? { ...S.h1, fontSize: 19 } : S.h1}>{esMovil ? 'Resultados' : 'Resultados de Laboratorio'}</h1>
         {!ordenDetalle && (
-          <button style={S.btn()} onClick={() => { setFormOrden(EMPTY_ORDEN); setBusquedaPac(''); setError(''); setModalOrden(true) }}>
+          <button style={S.btn()} onClick={abrirNuevaOrden}>
             + Nueva orden
           </button>
         )}
@@ -1024,14 +1034,22 @@ export default function Resultados() {
 
       {/* ── MODAL NUEVA ORDEN ────────────────────────────────────────────── */}
       {modalOrden && (
-        <div style={S.overlay} onClick={e => e.target === e.currentTarget && setModalOrden(false)}>
-          <div style={S.modal(740)}>
-            <div style={S.mh}>
-              <h2 style={S.mTitle}>Nueva orden de trabajo</h2>
-              <button style={{ ...S.btn('ghost'), fontSize: 18, padding: '2px 10px' }} onClick={() => setModalOrden(false)}>×</button>
+        <ModalFormulario
+          titulo="Nueva orden de trabajo"
+          ancho={740}
+          error={error}
+          cerrar={() => setModalOrden(false)}
+          onSubmit={crearOrden}
+          guardando={guardandoOrden}
+          textoGuardar="Crear orden"
+          textoGuardando="Creando…"
+          resumen={formOrden.estudios.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 700 }}>
+              <span>{formOrden.estudios.length} estudio{formOrden.estudios.length !== 1 ? 's' : ''} seleccionado{formOrden.estudios.length !== 1 ? 's' : ''}</span>
+              <span style={{ color: '#15803d' }}>Total: {fmt(totalOrden)}</span>
             </div>
-            {error && <div style={S.err}>{error}</div>}
-            <form onSubmit={crearOrden}>
+          )}
+        >
               {/* Paciente autocomplete */}
               <div style={{ ...S.fg, marginBottom: 12, position: 'relative' }}>
                 <label style={S.lbl}>Paciente *</label>
@@ -1046,7 +1064,7 @@ export default function Resultados() {
                 {sugerencias.length > 0 && (
                   <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6, zIndex: 50, boxShadow: '0 4px 12px rgba(0,0,0,.1)', marginTop: 2 }}>
                     {sugerencias.map(p => (
-                      <div key={p.id} style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #f1f5f9' }}
+                      <div key={p.id} style={{ padding: esMovil ? '12px' : '8px 12px', cursor: 'pointer', fontSize: esMovil ? 14 : 13, borderBottom: '1px solid #f1f5f9' }}
                         onMouseDown={() => seleccionarPaciente(p)}>
                         <span style={{ fontWeight: 600 }}>{p.nombre} {p.apellido_paterno}</span>
                         <span style={{ color: '#94a3b8', marginLeft: 8, fontFamily: 'monospace', fontSize: 11 }}>{p.folio}</span>
@@ -1076,13 +1094,14 @@ export default function Resultados() {
               {/* Selector de estudios */}
               <div style={{ ...S.sect, marginTop: 20 }}>Estudios a solicitar</div>
               {plantillas.length === 0 && <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>No hay plantillas. Ve a "Catálogo de estudios" y carga los estudios comunes.</div>}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 300, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12 }}>
+              {/* En celular la lista no lleva scroll propio: se recorre con el de la pantalla */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, border: '1px solid #e2e8f0', borderRadius: 8, padding: 12, background: '#fff', ...(!esMovil && { maxHeight: 300, overflowY: 'auto' }) }}>
                 {categorias.map(cat => (
                   <div key={cat}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4 }}>{cat}</div>
                     {plantillas.filter(p => p.categoria === cat).map(p => (
-                      <label key={p.id} style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', padding: '4px 0', fontSize: 13 }}>
-                        <input type="checkbox" checked={formOrden.estudios.includes(p.id)} onChange={() => toggleEstudio(p.id)} />
+                      <label key={p.id} style={{ display: 'flex', gap: esMovil ? 10 : 8, alignItems: 'center', cursor: 'pointer', padding: esMovil ? '10px 0' : '4px 0', fontSize: esMovil ? 14 : 13 }}>
+                        <input type="checkbox" checked={formOrden.estudios.includes(p.id)} onChange={() => toggleEstudio(p.id)} style={esMovil ? { width: 20, height: 20 } : undefined} />
                         <span style={{ flex: 1 }}>{p.nombre}</span>
                         <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#94a3b8' }}>{p.codigo}</span>
                         <span style={{ fontWeight: 600, color: '#15803d' }}>{fmt(p.precio)}</span>
@@ -1092,22 +1111,7 @@ export default function Resultados() {
                 ))}
               </div>
 
-              {formOrden.estudios.length > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 14, fontWeight: 700 }}>
-                  <span>{formOrden.estudios.length} estudio{formOrden.estudios.length !== 1 ? 's' : ''} seleccionado{formOrden.estudios.length !== 1 ? 's' : ''}</span>
-                  <span style={{ color: '#15803d' }}>Total: {fmt(totalOrden)}</span>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24 }}>
-                <button type="button" style={S.btn('ghost')} onClick={() => setModalOrden(false)}>Cancelar</button>
-                <button type="submit" style={S.btn()} disabled={guardandoOrden}>
-                  {guardandoOrden ? 'Creando…' : 'Crear orden'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        </ModalFormulario>
       )}
 
       {/* ── MODAL CAPTURA DE RESULTADOS ──────────────────────────────────── */}

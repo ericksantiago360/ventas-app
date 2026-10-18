@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useNegocio } from '../context/NegocioContext'
 import useEsMovil from '../hooks/useEsMovil'
+import ModalFormulario from '../components/ModalFormulario'
 
 async function req(url, opts = {}) {
   const token = localStorage.getItem('token')
@@ -248,10 +249,6 @@ export default function Pacientes() {
     table:  { width: '100%', borderCollapse: 'collapse', fontSize: 13 },
     th:     { textAlign: 'left', padding: '8px 12px', borderBottom: '2px solid #e2e8f0', color: '#64748b', fontWeight: 600, fontSize: 12 },
     td:     { padding: '10px 12px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' },
-    overlay:{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' },
-    modal:  { background: '#fff', borderRadius: 12, padding: 28, width: 680, maxHeight: '90vh', overflowY: 'auto', maxWidth: '95vw' },
-    mh:     { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    mTitle: { fontSize: 17, fontWeight: 700, margin: 0 },
     row2:   { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
     row3:   { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 },
     fg:     { display: 'flex', flexDirection: 'column', gap: 4 },
@@ -614,28 +611,28 @@ export default function Pacientes() {
 
       {/* ── MODAL PACIENTE ───────────────────────────────────────────────── */}
       {modal && (
-        <div style={s.overlay} onClick={e => e.target === e.currentTarget && setModal(false)}>
-          <div style={s.modal}>
-            <div style={s.mh}>
-              <h2 style={s.mTitle}>{editando ? 'Editar paciente' : 'Nuevo paciente'}</h2>
-              <button style={{ ...s.btn('ghost'), fontSize: 18, padding: '2px 10px' }} onClick={() => setModal(false)}>×</button>
-            </div>
-            {error && <div style={s.err}>{error}</div>}
-            <form onSubmit={guardar}>
+        <ModalFormulario
+          titulo={editando ? 'Editar paciente' : 'Nuevo paciente'}
+          error={error}
+          cerrar={() => setModal(false)}
+          onSubmit={guardar}
+          guardando={guardando}
+          textoGuardar={editando ? 'Guardar cambios' : 'Registrar paciente'}
+        >
 
               <div style={s.sect}>Datos personales</div>
               <div style={s.row3}>
                 <div style={s.fg}>
                   <label style={s.lbl}>Nombre *</label>
-                  <input style={s.input} value={form.nombre} onChange={e => setF('nombre', e.target.value)} required />
+                  <input style={s.input} value={form.nombre} onChange={e => setF('nombre', e.target.value)} autoCapitalize="words" required />
                 </div>
                 <div style={s.fg}>
                   <label style={s.lbl}>Apellido paterno</label>
-                  <input style={s.input} value={form.apellido_paterno} onChange={e => setF('apellido_paterno', e.target.value)} />
+                  <input style={s.input} value={form.apellido_paterno} onChange={e => setF('apellido_paterno', e.target.value)} autoCapitalize="words" />
                 </div>
                 <div style={s.fg}>
                   <label style={s.lbl}>Apellido materno</label>
-                  <input style={s.input} value={form.apellido_materno} onChange={e => setF('apellido_materno', e.target.value)} />
+                  <input style={s.input} value={form.apellido_materno} onChange={e => setF('apellido_materno', e.target.value)} autoCapitalize="words" />
                 </div>
               </div>
               <div style={{ ...s.row3, marginTop: 12 }}>
@@ -661,22 +658,22 @@ export default function Pacientes() {
               </div>
               <div style={{ ...s.fg, marginTop: 12 }}>
                 <label style={s.lbl}>CURP</label>
-                <input style={s.input} value={form.curp} onChange={e => setF('curp', e.target.value.toUpperCase())} maxLength={18} />
+                <input style={s.input} value={form.curp} onChange={e => setF('curp', e.target.value.toUpperCase())} maxLength={18} autoCapitalize="characters" autoCorrect="off" spellCheck={false} />
               </div>
 
               <div style={s.sect}>Contacto</div>
               <div style={s.row3}>
                 <div style={s.fg}>
                   <label style={s.lbl}>Teléfono</label>
-                  <input style={s.input} value={form.telefono} onChange={e => setF('telefono', e.target.value)} />
+                  <input style={s.input} type="tel" value={form.telefono} onChange={e => setF('telefono', e.target.value)} />
                 </div>
                 <div style={s.fg}>
                   <label style={s.lbl}>Tel. emergencia</label>
-                  <input style={s.input} value={form.telefono_emergencia} onChange={e => setF('telefono_emergencia', e.target.value)} />
+                  <input style={s.input} type="tel" value={form.telefono_emergencia} onChange={e => setF('telefono_emergencia', e.target.value)} />
                 </div>
                 <div style={s.fg}>
                   <label style={s.lbl}>Email</label>
-                  <input style={s.input} type="email" value={form.email} onChange={e => setF('email', e.target.value)} />
+                  <input style={s.input} type="email" value={form.email} onChange={e => setF('email', e.target.value)} autoCapitalize="none" autoCorrect="off" />
                 </div>
               </div>
 
@@ -684,11 +681,11 @@ export default function Pacientes() {
               <div style={s.row2}>
                 <div style={s.fg}>
                   <label style={s.lbl}>Nombre del médico</label>
-                  <input style={s.input} value={form.medico_tratante} onChange={e => setF('medico_tratante', e.target.value)} />
+                  <input style={s.input} value={form.medico_tratante} onChange={e => setF('medico_tratante', e.target.value)} autoCapitalize="words" />
                 </div>
                 <div style={s.fg}>
                   <label style={s.lbl}>Cédula profesional</label>
-                  <input style={s.input} value={form.medico_cedula} onChange={e => setF('medico_cedula', e.target.value)} />
+                  <input style={s.input} inputMode="numeric" value={form.medico_cedula} onChange={e => setF('medico_cedula', e.target.value)} />
                 </div>
               </div>
 
@@ -701,16 +698,7 @@ export default function Pacientes() {
                 <label style={s.lbl}>Notas adicionales</label>
                 <textarea style={{ ...s.input, minHeight: 60, resize: 'vertical' }} value={form.notas} onChange={e => setF('notas', e.target.value)} />
               </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24 }}>
-                <button type="button" style={s.btn('ghost')} onClick={() => setModal(false)}>Cancelar</button>
-                <button type="submit" style={s.btn()} disabled={guardando}>
-                  {guardando ? 'Guardando…' : editando ? 'Guardar cambios' : 'Registrar paciente'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        </ModalFormulario>
       )}
     </div>
   )
