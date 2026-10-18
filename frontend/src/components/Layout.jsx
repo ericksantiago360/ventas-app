@@ -55,6 +55,54 @@ const NAV_GROUPS = [
 ]
 
 const ANCHO_MOVIL = 768
+const ALTO_PESTANAS = 58
+
+// Trazos de 24×24 para las pestañas inferiores del celular
+const ICONOS = {
+  inicio:     'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
+  pacientes:  'M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 20v-1a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
+  resultados: 'M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3M7 15h10',
+  pedidos:    'M6 2l-3 4v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0',
+  crm:        'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 8v6M22 11h-6',
+  cotizaciones: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5',
+  mas:        'M3 6h18M3 12h18M3 18h18',
+}
+
+// Las pestañas muestran lo que más se usa en cada giro; el resto vive en "Más"
+function pestanasPara(tipo) {
+  const medio = tipo === 'laboratorio_clinico'
+    ? [{ to: '/pacientes', label: 'Pacientes', icono: 'pacientes' }, { to: '/resultados', label: 'Resultados', icono: 'resultados' }]
+    : [{ to: '/crm', label: 'Clientes', icono: 'crm' }, { to: '/cotizaciones', label: 'Cotizar', icono: 'cotizaciones' }]
+  return [
+    { to: '/', label: 'Inicio', icono: 'inicio', end: true },
+    ...medio,
+    { to: '/pedidos', label: 'Pedidos', icono: 'pedidos' },
+  ]
+}
+
+function Icono({ nombre, size = 22 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={ICONOS[nombre]} />
+    </svg>
+  )
+}
+
+function useEnLinea() {
+  const [enLinea, setEnLinea] = useState(() => navigator.onLine)
+  useEffect(() => {
+    const si = () => setEnLinea(true)
+    const no = () => setEnLinea(false)
+    window.addEventListener('online', si)
+    window.addEventListener('offline', no)
+    return () => {
+      window.removeEventListener('online', si)
+      window.removeEventListener('offline', no)
+    }
+  }, [])
+  return enLinea
+}
 
 function useEsMovil() {
   const consulta = `(max-width: ${ANCHO_MOVIL}px)`
@@ -92,6 +140,7 @@ export default function Layout() {
   const { negocioActual, cargandoNegocios, errorNegocios } = useNegocio()
   const esMovil = useEsMovil()
   const instalar = useInstalarApp()
+  const enLinea = useEnLinea()
   const [menuAbierto, setMenuAbierto] = useState(false)
 
   // Al navegar desde el cajón del menú, se cierra solo
@@ -122,14 +171,55 @@ export default function Layout() {
             background: 'none', border: 'none', color: '#fff', cursor: 'pointer',
             width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M3 6h18M3 12h18M3 18h18" />
-            </svg>
+            <Icono nombre="mas" />
           </button>
           <div style={{ fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {titulo}
           </div>
         </header>
+      )}
+
+      {/* ── Pestañas inferiores (celular) ── */}
+      {esMovil && (
+        <nav style={{
+          position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 900,
+          background: 'rgba(255,255,255,.96)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+          borderTop: '1px solid #e2e8f0',
+          display: 'flex',
+          height: `calc(${ALTO_PESTANAS}px + env(safe-area-inset-bottom))`,
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        }}>
+          {pestanasPara(negocioActual?.tipo).map(({ to, label, icono, end }) => (
+            <NavLink key={to} to={to} end={end} style={({ isActive }) => ({
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+              textDecoration: 'none', fontSize: 11, fontWeight: isActive ? 600 : 500,
+              color: isActive ? '#1e40af' : '#64748b',
+            })}>
+              <Icono nombre={icono} />
+              {label}
+            </NavLink>
+          ))}
+          <button onClick={() => setMenuAbierto(true)} style={{
+            flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+            background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 500, color: '#64748b',
+          }}>
+            <Icono nombre="mas" />
+            Más
+          </button>
+        </nav>
+      )}
+
+      {/* Aviso sin conexión: los datos siempre vienen del servidor */}
+      {!enLinea && (
+        <div role="status" style={{
+          position: 'fixed', left: 12, right: 12, zIndex: 1100,
+          ...(esMovil ? { bottom: `calc(${ALTO_PESTANAS + 10}px + env(safe-area-inset-bottom))` } : { bottom: 16, left: 236, right: 16 }),
+          background: '#1e293b', color: '#f8fafc', borderRadius: 10, padding: '10px 14px',
+          fontSize: 13, boxShadow: '0 8px 24px rgba(15,23,42,.3)', display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <span style={{ width: 8, height: 8, borderRadius: 999, background: '#f59e0b', flexShrink: 0 }} />
+          Sin conexión. Lo que veas puede no estar actualizado hasta que vuelva la señal.
+        </div>
       )}
 
       {/* Fondo oscuro detrás del cajón */}
@@ -230,7 +320,7 @@ export default function Layout() {
       }}>
         <div style={{
           padding: esMovil ? '1rem' : '2rem',
-          paddingBottom: esMovil ? 'calc(1rem + env(safe-area-inset-bottom))' : '2rem',
+          paddingBottom: esMovil ? `calc(1rem + ${ALTO_PESTANAS}px + env(safe-area-inset-bottom))` : '2rem',
         }}>
           {/* Las páginas esperan la lista de negocios para no pedir datos de uno no asignado */}
           {cargandoNegocios ? (

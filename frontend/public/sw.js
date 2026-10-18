@@ -1,6 +1,6 @@
 // Service worker de la app instalable.
 // Nunca guarda en caché la API, el login ni los PDFs: los datos siempre vienen del servidor.
-const VERSION = 'v1'
+const VERSION = 'v2'
 const CACHE = `gestion-${VERSION}`
 const SHELL = ['/', '/manifest.webmanifest', '/favicon.png', '/icons/icon-192.png', '/icons/icon-512.png']
 
