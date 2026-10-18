@@ -71,7 +71,7 @@ function calcularFlagJS(valor, tipo, min, max) {
 
 // ── Estilos ────────────────────────────────────────────────────────────────────
 const S = {
-  page:    { padding: '24px 28px', fontFamily: 'system-ui,sans-serif', color: '#1e293b', maxWidth: 1280 },
+  page:    { fontFamily: 'system-ui,sans-serif', color: '#1e293b', maxWidth: 1280 },
   h1:      { fontSize: 22, fontWeight: 700, margin: 0 },
   tabs:    { display: 'flex', gap: 4, marginTop: 20, marginBottom: 24, borderBottom: '2px solid #e2e8f0' },
   tab:     (a) => ({ padding: '8px 18px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: a ? '#3b82f6' : '#64748b', borderBottom: a ? '2px solid #3b82f6' : '2px solid transparent', marginBottom: -2 }),
@@ -487,7 +487,7 @@ export default function Resultados() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={esMovil ? { ...S.page, padding: 0 } : S.page}>
+    <div style={S.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
         <h1 style={esMovil ? { ...S.h1, fontSize: 19 } : S.h1}>{esMovil ? 'Resultados' : 'Resultados de Laboratorio'}</h1>
         {!ordenDetalle && (

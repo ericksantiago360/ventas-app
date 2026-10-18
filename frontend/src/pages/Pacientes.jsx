@@ -234,7 +234,7 @@ export default function Pacientes() {
   // ── Estilos ────────────────────────────────────────────────────────────────
 
   const s = {
-    page:   { padding: '24px 28px', fontFamily: 'system-ui,sans-serif', color: '#1e293b', maxWidth: 1200 },
+    page:   { fontFamily: 'system-ui,sans-serif', color: '#1e293b', maxWidth: 1200 },
     h1:     { fontSize: 22, fontWeight: 700, margin: 0 },
     tabs:   { display: 'flex', gap: 4, marginTop: 20, marginBottom: 24, borderBottom: '2px solid #e2e8f0' },
     tab:    (a) => ({ padding: '8px 18px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: a ? '#3b82f6' : '#64748b', borderBottom: a ? '2px solid #3b82f6' : '2px solid transparent', marginBottom: -2 }),
@@ -265,7 +265,7 @@ export default function Pacientes() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div style={esMovil ? { ...s.page, padding: 0 } : s.page}>
+    <div style={s.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1 style={s.h1}>Pacientes</h1>
         {vista !== 'detalle' && (

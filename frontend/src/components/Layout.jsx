@@ -307,8 +307,8 @@ export default function Layout() {
         paddingTop: esMovil ? 'calc(52px + env(safe-area-inset-top))' : 0,
       }}>
         <div style={{
-          padding: esMovil ? '1rem' : '2rem',
-          paddingBottom: esMovil ? `calc(1rem + ${ALTO_PESTANAS}px + env(safe-area-inset-bottom))` : '2rem',
+          padding: esMovil ? '1rem' : '1.5rem',
+          paddingBottom: esMovil ? `calc(1rem + ${ALTO_PESTANAS}px + env(safe-area-inset-bottom))` : '1.5rem',
         }}>
           {/* Las páginas esperan la lista de negocios para no pedir datos de uno no asignado */}
           {cargandoNegocios ? (

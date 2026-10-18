@@ -518,7 +518,7 @@ export default function Finanzas() {
     )
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div>
 
       {/* ======================================================
           ENCABEZADO

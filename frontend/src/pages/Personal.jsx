@@ -322,7 +322,7 @@ export default function Personal() {
   // ── Estilos ────────────────────────────────────────────────────────────────
 
   const s = {
-    page:    { padding: '24px 28px', fontFamily: 'system-ui,sans-serif', color: '#1e293b', maxWidth: 1200 },
+    page:    { fontFamily: 'system-ui,sans-serif', color: '#1e293b', maxWidth: 1200 },
     h1:      { fontSize: 22, fontWeight: 700, margin: 0 },
     tabs:    { display: 'flex', gap: 4, marginTop: 20, marginBottom: 24, borderBottom: '2px solid #e2e8f0' },
     tab:     (active) => ({
