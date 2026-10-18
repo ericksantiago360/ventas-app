@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNegocio } from '../context/NegocioContext'
+import useEsMovil from '../hooks/useEsMovil'
 
 async function req(url, opts = {}) {
   const token = localStorage.getItem('token')
@@ -26,6 +27,44 @@ function Chip({ texto, bg = '#f1f5f9', color = '#475569' }) {
   return <span style={{ background: bg, color, borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 600 }}>{texto}</span>
 }
 
+// Paciente en formato tarjeta para celular; el teléfono abre la llamada directo
+function PacienteTarjeta({ p, onAbrir, acciones }) {
+  const sexo = SEXO_COLOR[p.sexo]
+  return (
+    <div onClick={onAbrir} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', cursor: 'pointer', opacity: p.activo === false ? 0.65 : 1 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {[p.nombre, p.apellido_paterno, p.apellido_materno].filter(Boolean).join(' ')}
+          </div>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+            <span style={{ fontFamily: 'monospace' }}>{p.folio}</span>
+            {p.edad ? <> · {p.edad} años</> : null}
+            {p.activo === false && <> · <span style={{ color: '#b91c1c' }}>Baja</span></>}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          {p.tipo_sangre && p.tipo_sangre !== 'desconocido' && (
+            <span style={{ background: SANGRE_COLOR[p.tipo_sangre] || '#f1f5f9', borderRadius: 6, padding: '2px 8px', fontWeight: 700, fontSize: 12 }}>{p.tipo_sangre}</span>
+          )}
+          {p.sexo && <Chip texto={p.sexo} bg={sexo?.bg} color={sexo?.color} />}
+        </div>
+      </div>
+      {(p.medico_tratante || p.telefono) && (
+        <div style={{ fontSize: 13, color: '#64748b', marginTop: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {p.medico_tratante && <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dr(a). {p.medico_tratante}</div>}
+          {p.telefono && <div>{p.telefono}</div>}
+        </div>
+      )}
+      {acciones && (
+        <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #f1f5f9' }}>
+          {acciones}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const EMPTY_FORM = {
   nombre: '', apellido_paterno: '', apellido_materno: '',
   fecha_nacimiento: '', sexo: 'masculino', tipo_sangre: 'desconocido',
@@ -35,6 +74,7 @@ const EMPTY_FORM = {
 
 export default function Pacientes() {
   const { negocioId } = useNegocio()
+  const esMovil = useEsMovil()
   const [vista, setVista] = useState('lista')          // 'lista' | 'resumen' | 'detalle'
   const [pacientes, setPacientes] = useState([])
   const [dash, setDash] = useState(null)
@@ -203,7 +243,7 @@ export default function Pacientes() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div style={s.page}>
+    <div style={esMovil ? { ...s.page, padding: 0 } : s.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1 style={s.h1}>Pacientes</h1>
         {vista !== 'detalle' && (
@@ -212,7 +252,7 @@ export default function Pacientes() {
       </div>
 
       {vista !== 'detalle' && (
-        <div style={s.tabs}>
+        <div style={esMovil ? { ...s.tabs, marginTop: 14, marginBottom: 16 } : s.tabs}>
           {[['resumen','Resumen'],['lista','Lista']].map(([k,l]) => (
             <button key={k} style={s.tab(vista === k)} onClick={() => { setError(''); setVista(k) }}>{l}</button>
           ))}
@@ -294,6 +334,11 @@ export default function Pacientes() {
           {dash?.ultimos?.length > 0 && (
             <div style={s.card}>
               <div style={{ fontWeight: 700, marginBottom: 12 }}>Últimos registrados</div>
+              {esMovil ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {dash.ultimos.map(p => <PacienteTarjeta key={p.id} p={p} onAbrir={() => verDetalle(p)} />)}
+                </div>
+              ) : (
               <table style={s.table}>
                 <thead>
                   <tr>{['Folio','Nombre','Edad','Sexo','Médico tratante','Registro'].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
@@ -311,6 +356,7 @@ export default function Pacientes() {
                   ))}
                 </tbody>
               </table>
+              )}
             </div>
           )}
         </div>
@@ -320,7 +366,7 @@ export default function Pacientes() {
       {vista === 'lista' && (
         <div>
           <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-            <input style={{ ...s.input, maxWidth: 300 }} placeholder="Buscar por nombre, folio, CURP o médico…"
+            <input style={{ ...s.input, maxWidth: esMovil ? 'none' : 300, flex: esMovil ? '1 1 100%' : undefined }} placeholder="Buscar por nombre, folio, CURP o médico…"
               value={busqueda} onChange={e => setBusqueda(e.target.value)} />
             <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}>
               <input type="checkbox" checked={soloActivos} onChange={e => setSoloActivos(e.target.checked)} />
@@ -331,7 +377,25 @@ export default function Pacientes() {
 
           {cargando
             ? <div style={{ color: '#94a3b8', padding: 20 }}>Cargando…</div>
-            : (
+            : esMovil ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {pacientes.length === 0 && (
+                  <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 32, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+                    Sin pacientes registrados
+                  </div>
+                )}
+                {pacientes.map(p => {
+                  const boton = (v) => ({ ...s.btn(v), flex: 1, padding: '10px 12px', fontSize: 14, textAlign: 'center', textDecoration: 'none' })
+                  return (
+                    <PacienteTarjeta key={p.id} p={p} onAbrir={() => verDetalle(p)} acciones={<>
+                      {p.telefono && <a href={`tel:${p.telefono.replace(/[^\d+]/g, '')}`} style={boton('success')}>Llamar</a>}
+                      <button style={boton('ghost')} onClick={() => abrirEditar(p)}>Editar</button>
+                      {p.activo && <button style={boton('danger')} onClick={() => darDeBaja(p.id)}>Baja</button>}
+                    </>} />
+                  )
+                })}
+              </div>
+            ) : (
               <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
                 <table style={s.table}>
                   <thead>

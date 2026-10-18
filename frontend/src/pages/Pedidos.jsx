@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import { useNegocio } from '../context/NegocioContext'
+import useEsMovil from '../hooks/useEsMovil'
 
 const api = axios.create({
   baseURL: '',
@@ -122,6 +123,7 @@ function normalizarPedido(pedido) {
 
 export default function Pedidos() {
   const { negocioId, setNegocioId, negociosDisponibles } = useNegocio()
+  const esMovil = useEsMovil()
 
   const [pedidos, setPedidos] = useState([])
   const [totalRegistros, setTotalRegistros] = useState(0)
@@ -719,9 +721,9 @@ export default function Pedidos() {
     <div>
 
       {/* HEADER */}
-      <div style={styles.header}>
+      <div style={esMovil ? { ...styles.header, flexDirection: 'column', alignItems: 'stretch', gap: 12, marginBottom: 16 } : styles.header}>
         <div>
-          <h1 style={styles.title}>
+          <h1 style={esMovil ? { ...styles.title, fontSize: 22 } : styles.title}>
             Pedidos
           </h1>
 
@@ -730,7 +732,7 @@ export default function Pedidos() {
           </p>
         </div>
 
-        <div style={styles.headerActions}>
+        <div style={esMovil ? { ...styles.headerActions, flexWrap: 'wrap' } : styles.headerActions}>
           <select
             aria-label="Seleccionar empresa"
             value={negocioId}
@@ -744,7 +746,7 @@ export default function Pedidos() {
               setError('')
               setNegocioId(e.target.value)
             }}
-            style={styles.select}
+            style={esMovil ? { ...styles.select, flex: '1 1 100%' } : styles.select}
           >
             {negociosDisponibles.map((neg) => (
               <option key={neg.id} value={neg.id}>{neg.nombre}</option>
@@ -759,7 +761,7 @@ export default function Pedidos() {
                   : 'lista'
               )
             }
-            style={styles.secondaryButton}
+            style={esMovil ? { ...styles.secondaryButton, flex: 1, padding: '10px 14px' } : styles.secondaryButton}
           >
             {vista === 'lista'
               ? 'Vista Kanban'
@@ -768,7 +770,7 @@ export default function Pedidos() {
 
           <button
             onClick={abrirNuevo}
-            style={styles.primaryButton}
+            style={esMovil ? { ...styles.primaryButton, flex: 1, padding: '10px 14px' } : styles.primaryButton}
           >
             + Nuevo pedido
           </button>
@@ -790,7 +792,7 @@ export default function Pedidos() {
       )}
 
       {/* FILTROS */}
-      <div style={styles.filters}>
+      <div style={esMovil ? { ...styles.filters, flexWrap: 'wrap' } : styles.filters}>
 
         <input
           value={busqueda}
@@ -798,7 +800,7 @@ export default function Pedidos() {
             setBusqueda(e.target.value)
           }
           placeholder="Buscar pedido o cliente..."
-          style={styles.input}
+          style={esMovil ? { ...styles.input, flex: '1 1 100%' } : styles.input}
         />
 
         <select
@@ -806,7 +808,7 @@ export default function Pedidos() {
           onChange={(e) =>
             setEstadoFiltro(e.target.value)
           }
-          style={styles.select}
+          style={esMovil ? { ...styles.select, flex: 1 } : styles.select}
         >
           <option value="">
             Todos los estados
@@ -843,6 +845,7 @@ export default function Pedidos() {
           abrirEditar={abrirEditar}
           cancelarPedido={cancelarPedido}
           eliminarPedido={eliminarPedido}
+          esMovil={esMovil}
         />
       ) : (
         <Kanban
@@ -850,6 +853,7 @@ export default function Pedidos() {
           cargando={cargando}
           abrirDetalle={abrirDetalle}
           cambiarEstado={cambiarEstado}
+          esMovil={esMovil}
         />
       )}
 
@@ -1319,6 +1323,7 @@ function ListaPedidos({
   abrirEditar,
   cancelarPedido,
   eliminarPedido,
+  esMovil,
 }) {
   if (cargando && pedidos.length === 0) {
     return (
@@ -1338,6 +1343,23 @@ function ListaPedidos({
         <div>
           Crea el primer pedido para comenzar.
         </div>
+      </div>
+    )
+  }
+
+  if (esMovil) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {pedidos.map((pedido) => (
+          <PedidoTarjeta
+            key={pedido._id || pedido.id}
+            pedido={pedido}
+            abrirDetalle={abrirDetalle}
+            abrirEditar={abrirEditar}
+            cancelarPedido={cancelarPedido}
+            eliminarPedido={eliminarPedido}
+          />
+        ))}
       </div>
     )
   }
@@ -1476,6 +1498,65 @@ function ListaPedidos({
   )
 }
 
+// Pedido en formato tarjeta para celular: tocarla abre el detalle
+function PedidoTarjeta({
+  pedido,
+  abrirDetalle,
+  abrirEditar,
+  cancelarPedido,
+  eliminarPedido,
+}) {
+  const saldo = Number(pedido.saldo_pendiente || 0)
+  const estado = pedido.estado || 'confirmado'
+  const boton = (base) => ({ ...base, flex: 1, padding: '10px 8px', fontSize: 14, borderRadius: 6 })
+
+  return (
+    <div
+      onClick={() => abrirDetalle(pedido)}
+      style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', cursor: 'pointer' }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 15, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {pedido.cliente_nombre || pedido.cliente || 'Sin cliente'}
+          </div>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+            <span style={{ fontFamily: 'monospace' }}>{pedido.numero || pedido._id || pedido.id}</span>
+            {' · '}{fecha(pedido.created_at || pedido.fecha)}
+          </div>
+        </div>
+        <EstadoBadge estado={estado} />
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: saldo > 0 ? '#dc2626' : '#16a34a' }}>
+          {saldo > 0 ? `Debe ${money(saldo)}` : 'Pagado'}
+        </div>
+        <div style={{ fontWeight: 700, fontSize: 16, color: '#0f172a' }}>{money(pedido.total)}</div>
+      </div>
+
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ display: 'flex', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #f1f5f9' }}
+      >
+        <button onClick={() => abrirEditar(pedido)} style={boton(styles.actionButton)}>
+          Editar
+        </button>
+        {!['cancelado', 'cobrado'].includes(pedido.estado) && (
+          <button onClick={() => cancelarPedido(pedido)} style={boton(styles.cancelButton)}>
+            Cancelar
+          </button>
+        )}
+        {!['entregado', 'cobrado'].includes(pedido.estado) && (
+          <button onClick={() => eliminarPedido(pedido)} style={boton(styles.cancelButton)}>
+            Eliminar
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /* =====================================================
    KANBAN
 ===================================================== */
@@ -1485,9 +1566,17 @@ function Kanban({
   cargando,
   abrirDetalle,
   cambiarEstado,
+  esMovil,
 }) {
   return (
-    <div style={styles.kanban}>
+    <div style={esMovil ? {
+      ...styles.kanban,
+      // En celular, las columnas se recorren deslizando de lado y se acomodan una por una
+      gridTemplateColumns: 'repeat(4, 82%)',
+      overflowX: 'auto',
+      scrollSnapType: 'x mandatory',
+      paddingBottom: 8,
+    } : styles.kanban}>
 
       {ESTADOS_KANBAN.map(
         (estado) => {
@@ -1502,7 +1591,9 @@ function Kanban({
             <div
               key={estado}
               style={
-                styles.kanbanColumn
+                esMovil
+                  ? { ...styles.kanbanColumn, scrollSnapAlign: 'start' }
+                  : styles.kanbanColumn
               }
             >
 
