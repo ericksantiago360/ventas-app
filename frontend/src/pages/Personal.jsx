@@ -55,6 +55,39 @@ const PRESTACIONES_LEY = { aguinaldo_dias: 15, prima_pct: 25, vacaciones_extra: 
 const factorPrimerAnio = (c) =>
   1 + (Number(c.aguinaldo_dias) + (12 + Number(c.vacaciones_extra)) * Number(c.prima_pct) / 100) / 365
 
+// Empleado como tarjeta para celular; los botones llegan como children
+function EmpleadoTarjeta({ e, children }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', opacity: e.activo ? 1 : 0.65 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {[e.nombre, e.apellido_paterno, e.apellido_materno].filter(Boolean).join(' ')}
+          </div>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+            {[e.puesto, e.departamento].filter(Boolean).join(' · ') || 'Sin puesto'}
+            {!e.activo && <> · <span style={{ color: '#b91c1c' }}>Baja</span></>}
+          </div>
+        </div>
+        {e.tipo_contrato && <Chip tipo={e.tipo_contrato} />}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 8, marginTop: 10 }}>
+        <div style={{ fontSize: 13, color: '#64748b', minWidth: 0 }}>
+          {e.fecha_ingreso && <div>Ingreso: {e.fecha_ingreso}</div>}
+          {e.telefono && <div>{e.telefono}</div>}
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>Salario diario</div>
+          <div style={{ fontWeight: 700, fontSize: 16, whiteSpace: 'nowrap' }}>{fmt(e.salario_diario)}</div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #f1f5f9' }}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 // Período de nómina como tarjeta para celular; los botones llegan como children
 function PeriodoTarjeta({ p, children }) {
   return (
@@ -552,7 +585,7 @@ export default function Personal() {
         <div>
           <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
             <input
-              style={{ ...s.input, maxWidth: 280 }}
+              style={{ ...s.input, maxWidth: esMovil ? 'none' : 280, flex: esMovil ? '1 1 100%' : undefined }}
               placeholder="Buscar empleado…"
               value={busqueda}
               onChange={e => setBusqueda(e.target.value)}
@@ -566,7 +599,23 @@ export default function Personal() {
 
           {cargando
             ? <div style={{ color: '#94a3b8', padding: 20 }}>Cargando…</div>
-            : (
+            : esMovil ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {empleados.length === 0 && (
+                  <div style={{ ...s.card, padding: 32, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Sin empleados registrados</div>
+                )}
+                {empleados.map(e => {
+                  const boton = (v) => ({ ...s.btn(v), flex: 1, padding: '10px 12px', fontSize: 14, textAlign: 'center', textDecoration: 'none' })
+                  return (
+                    <EmpleadoTarjeta key={e.id} e={e}>
+                      {e.telefono && <a href={`tel:${e.telefono.replace(/[^\d+]/g, '')}`} style={boton('success')}>Llamar</a>}
+                      <button style={boton('ghost')} onClick={() => abrirEditarEmp(e)}>Editar</button>
+                      {e.activo && <button style={boton('danger')} onClick={() => desactivarEmpleado(e.id)}>Baja</button>}
+                    </EmpleadoTarjeta>
+                  )
+                })}
+              </div>
+            ) : (
               <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
                 <table style={s.table}>
                   <thead>
