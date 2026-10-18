@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Receta {{ r.folio }}</title>
+<style>
+  @page {
+    size: letter;
+    margin: 14mm 14mm 16mm;
+    @bottom-center {
+      content: "Receta {{ r.folio }} · Verificable en {{ url_verificacion_corta }}";
+      font-size: 7.5pt; color: #94a3b8; font-family: Helvetica, Arial, sans-serif;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 9.5pt; color: #1e293b; margin: 0; }
+
+  .encabezado { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+                border-bottom: 2px solid #1d4ed8; padding-bottom: 10px; }
+  .clinica { display: flex; gap: 12px; align-items: center; }
+  .clinica img { max-height: 54px; max-width: 120px; }
+  .clinica .nombre { font-size: 14pt; font-weight: bold; color: #0f172a; }
+  .clinica .dato { font-size: 8pt; color: #64748b; margin-top: 2px; }
+  .folio { text-align: right; }
+  .folio .num { font-size: 13pt; font-weight: bold; color: #b91c1c; font-family: "Courier New", monospace; }
+  .folio .fecha { font-size: 8.5pt; color: #64748b; margin-top: 2px; }
+
+  .medico { margin-top: 10px; }
+  .medico .nombre { font-size: 11.5pt; font-weight: bold; }
+  .medico .dato { font-size: 8.5pt; color: #475569; margin-top: 1px; }
+
+  .paciente { margin-top: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;
+              padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 4px 22px; }
+  .paciente .k { color: #94a3b8; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .04em; }
+  .paciente .v { font-weight: bold; }
+  .alergias { margin-top: 6px; border: 1.5px solid #dc2626; color: #b91c1c; border-radius: 6px; padding: 5px 10px; font-weight: bold; }
+
+  .seccion { font-size: 8pt; font-weight: bold; color: #1d4ed8; text-transform: uppercase; letter-spacing: .06em; margin: 14px 0 5px; }
+  .dx { font-size: 9.5pt; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 7.5pt; color: #64748b; text-transform: uppercase; letter-spacing: .04em;
+       border-bottom: 1.5px solid #cbd5e1; padding: 4px 6px; }
+  td { padding: 6px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  td.n { width: 18px; color: #94a3b8; font-weight: bold; }
+  .med { font-weight: bold; font-size: 10pt; }
+  .pres { color: #64748b; font-size: 8.5pt; }
+  .ind { color: #475569; font-size: 8.5pt; font-style: italic; margin-top: 2px; }
+
+  .indicaciones { white-space: pre-wrap; border-left: 3px solid #cbd5e1; padding-left: 10px; }
+
+  .pie { margin-top: 26px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; page-break-inside: avoid; }
+  .qr { text-align: center; font-size: 7pt; color: #64748b; width: 120px; }
+  .qr img { width: 96px; height: 96px; }
+  .firma { text-align: center; width: 240px; }
+  .firma .imagen { height: 70px; display: flex; align-items: flex-end; justify-content: center; }
+  .firma img { max-height: 70px; max-width: 220px; }
+  .firma .linea { border-top: 1px solid #1e293b; margin-top: 4px; padding-top: 4px; font-size: 8.5pt; }
+  .sello { width: 120px; height: 96px; border: 1px dashed #cbd5e1; border-radius: 6px; color: #cbd5e1;
+           font-size: 7.5pt; display: flex; align-items: center; justify-content: center; }
+  .cancelada { position: fixed; top: 40%; left: 0; right: 0; text-align: center; font-size: 60pt; font-weight: bold;
+               color: rgba(220, 38, 38, .18); transform: rotate(-24deg); }
+</style>
+</head>
+<body>
+  {% if r.estado == "cancelada" %}<div class="cancelada">CANCELADA</div>{% endif %}
+
+  <div class="encabezado">
+    <div class="clinica">
+      {% if clinica.logo %}<img src="{{ clinica.logo }}" alt="">{% endif %}
+      <div>
+        <div class="nombre">{{ clinica.nombre }}</div>
+        {% if clinica.direccion %}<div class="dato">{{ clinica.direccion }}</div>{% endif %}
+        {% if clinica.contacto %}<div class="dato">{{ clinica.contacto }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="folio">
+      <div class="num">{{ r.folio }}</div>
+      <div class="fecha">{{ fecha }}</div>
+    </div>
+  </div>
+
+  <div class="medico">
+    <div class="nombre">{{ r.medico.nombre }}</div>
+    <div class="dato">
+      {% if r.medico.especialidad %}{{ r.medico.especialidad }}{% else %}Médico general{% endif %}
+      {% if r.medico.institucion %} · {{ r.medico.institucion }}{% endif %}
+    </div>
+    <div class="dato">
+      Cédula profesional {{ r.medico.cedula_profesional }}
+      {% if r.medico.cedula_especialidad %} · Cédula de especialidad {{ r.medico.cedula_especialidad }}{% endif %}
+      {% if r.medico.telefono %} · Tel. {{ r.medico.telefono }}{% endif %}
+    </div>
+  </div>
+
+  <div class="paciente">
+    <div><div class="k">Paciente</div><div class="v">{{ r.paciente.nombre }}</div></div>
+    {% if r.paciente.edad %}<div><div class="k">Edad</div><div class="v">{{ r.paciente.edad }} años</div></div>{% endif %}
+    {% if r.paciente.sexo %}<div><div class="k">Sexo</div><div class="v">{{ r.paciente.sexo | capitalize }}</div></div>{% endif %}
+    {% if r.paciente.peso %}<div><div class="k">Peso</div><div class="v">{{ r.paciente.peso }} kg</div></div>{% endif %}
+    {% if r.paciente.talla %}<div><div class="k">Talla</div><div class="v">{{ r.paciente.talla }} cm</div></div>{% endif %}
+    <div><div class="k">Expediente</div><div class="v">{{ r.expediente_folio }}</div></div>
+  </div>
+  {% if r.paciente.alergias %}
+    <div class="alergias">ALÉRGICO A: {{ r.paciente.alergias | join(", ") }}</div>
+  {% endif %}
+
+  {% if r.diagnostico %}
+    <div class="seccion">Diagnóstico</div>
+    <div class="dx">{{ r.diagnostico }}</div>
+  {% endif %}
+
+  <div class="seccion">Prescripción</div>
+  <table>
+    <thead><tr><th></th><th>Medicamento</th><th>Dosis</th><th>Frecuencia</th><th>Duración</th><th>Vía</th></tr></thead>
+    <tbody>
+      {% for m in r.medicamentos %}
+      <tr>
+        <td class="n">{{ loop.index }}</td>
+        <td>
+          <div class="med">{{ m.nombre }}</div>
+          {% if m.presentacion %}<div class="pres">{{ m.presentacion }}</div>{% endif %}
+          {% if m.indicaciones %}<div class="ind">{{ m.indicaciones }}</div>{% endif %}
+        </td>
+        <td>{{ m.dosis }}</td>
+        <td>{{ m.frecuencia }}</td>
+        <td>{{ m.duracion }}</td>
+        <td>{{ m.via }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if r.indicaciones_generales %}
+    <div class="seccion">Indicaciones generales</div>
+    <div class="indicaciones">{{ r.indicaciones_generales }}</div>
+  {% endif %}
+
+  <div class="pie">
+    <div class="qr">
+      <img src="{{ qr }}" alt="">
+      <div>Escanea para verificar</div>
+    </div>
+    <div class="sello">Sello</div>
+    <div class="firma">
+      <div class="imagen">{% if r.medico.firma_base64 %}<img src="{{ r.medico.firma_base64 }}" alt="">{% endif %}</div>
+      <div class="linea">{{ r.medico.nombre }}<br>Céd. {{ r.medico.cedula_profesional }}</div>
+    </div>
+  </div>
+</body>
+</html>

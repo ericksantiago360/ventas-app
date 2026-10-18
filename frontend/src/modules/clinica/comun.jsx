@@ -20,6 +20,23 @@ export async function req(url, opts = {}) {
   return data
 }
 
+// Los archivos protegidos requieren el token: se bajan como blob y se abren en otra pestaña.
+// La pestaña se abre antes del fetch para que el navegador no la bloquee.
+export async function abrirArchivo(url) {
+  const ventana = window.open('', '_blank')
+  try {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'No se pudo abrir el archivo')
+    const blobUrl = URL.createObjectURL(await res.blob())
+    if (ventana) ventana.location.href = blobUrl
+    else window.location.href = blobUrl
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+  } catch (e) {
+    ventana?.close()
+    throw e
+  }
+}
+
 export const qs = (params) => new URLSearchParams(
   Object.entries(params).filter(([, v]) => v !== '' && v != null)
 ).toString()

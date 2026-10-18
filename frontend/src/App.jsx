@@ -21,6 +21,8 @@ import ExpedientesPage   from './modules/clinica/ExpedientesPage'
 import ExpedienteDetalle from './modules/clinica/ExpedienteDetalle'
 import AgendaPage        from './modules/clinica/AgendaPage'
 import AgendaDiaPage     from './modules/clinica/AgendaDiaPage'
+import RecetasPage       from './modules/clinica/RecetasPage'
+import VerificarReceta   from './modules/clinica/VerificarReceta'
 import Layout    from './components/Layout'
 import { NegocioProvider } from './context/NegocioContext'
 
@@ -41,6 +43,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/portal" element={<Portal />} />
           <Route path="/portal/acceso" element={<PortalAcceso />} />
+          <Route path="/rx/verificar/:folio" element={<VerificarReceta />} />
 
           <Route
             path="/"
@@ -116,6 +119,7 @@ export default function App() {
             <Route path="clinica/expedientes/:id" element={<ExpedienteDetalle />} />
             <Route path="clinica/agenda" element={<AgendaPage />} />
             <Route path="clinica/agenda/dia" element={<AgendaDiaPage />} />
+            <Route path="clinica/recetas" element={<RecetasPage />} />
           </Route>
 
           <Route

@@ -4,10 +4,12 @@ import useEsMovil from '../../hooks/useEsMovil'
 import NuevoExpedienteModal from './NuevoExpedienteModal'
 import NuevoNotaSOAPModal from './NuevoNotaSOAPModal'
 import NuevaCitaModal from './NuevaCitaModal'
-import { req, qs, nombreCompleto, fechaHora, aFecha, s, Chip, SEXO_COLOR, TIPOS_NOTA, BadgeAlergico } from './comun'
+import RecetaModal from './RecetaModal'
+import { RecetaFila } from './recetas'
+import { req, qs, nombreCompleto, fechaHora, aFecha, abrirArchivo, s, Chip, SEXO_COLOR, TIPOS_NOTA, BadgeAlergico } from './comun'
 import { TIPOS_CITA, ChipEstado, AccionesCita } from './citas'
 
-const TABS = [['ficha', 'Ficha'], ['notas', 'Notas clínicas'], ['citas', 'Citas'], ['archivos', 'Archivos']]
+const TABS = [['ficha', 'Ficha'], ['notas', 'Notas clínicas'], ['recetas', 'Recetas'], ['citas', 'Citas'], ['archivos', 'Archivos']]
 
 const SIGNOS = [
   ['tension_arterial', 'T/A', 'mmHg'], ['frecuencia_cardiaca', 'FC', 'lpm'], ['temperatura', 'Temp.', '°C'],
@@ -79,7 +81,7 @@ function Ficha({ exp }) {
   )
 }
 
-function Nota({ n }) {
+function Nota({ n, onReceta }) {
   const t = TIPOS_NOTA[n.tipo] || TIPOS_NOTA.seguimiento
   const signos = SIGNOS.filter(([k]) => n.signos_vitales?.[k] !== null && n.signos_vitales?.[k] !== undefined && n.signos_vitales?.[k] !== '')
   return (
@@ -89,7 +91,10 @@ function Nota({ n }) {
           <Chip texto={t.label} bg={t.bg} color={t.color} />
           <span style={{ fontSize: 13, fontWeight: 600 }}>{fechaHora(n.fecha)}</span>
         </div>
-        {n.medico_nombre && <span style={{ fontSize: 12, color: '#64748b' }}>Dr(a). {n.medico_nombre}</span>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {n.medico_nombre && <span style={{ fontSize: 12, color: '#64748b' }}>Dr(a). {n.medico_nombre}</span>}
+          {onReceta && <button style={{ ...s.btn('ghost'), padding: '5px 10px', fontSize: 12 }} onClick={onReceta}>Generar receta</button>}
+        </div>
       </div>
 
       {signos.length > 0 && (
@@ -152,20 +157,7 @@ function Archivos({ exp, onSubido }) {
     finally { setSubiendo(false); if (input.current) input.current.value = '' }
   }
 
-  // La descarga requiere el token, así que se baja como blob y se abre en otra pestaña
-  async function abrir(a) {
-    const ventana = window.open('', '_blank')
-    try {
-      const res = await fetch(`/api/clinica/expedientes/${exp.id}/archivos/${a.id}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      })
-      if (!res.ok) throw new Error('No se pudo abrir el archivo')
-      const url = URL.createObjectURL(await res.blob())
-      if (ventana) ventana.location.href = url
-      else window.location.href = url
-      setTimeout(() => URL.revokeObjectURL(url), 60_000)
-    } catch (e) { ventana?.close(); setError(e.message) }
-  }
+  const abrir = (a) => abrirArchivo(`/api/clinica/expedientes/${exp.id}/archivos/${a.id}`).catch(e => setError(e.message))
 
   const archivos = [...(exp.archivos || [])].sort((x, y) => (y.fecha > x.fecha ? 1 : -1))
 
@@ -208,6 +200,28 @@ function Archivos({ exp, onSubido }) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+function Recetas({ exp, version, onNueva }) {
+  const [recetas, setRecetas] = useState(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    req(`/api/clinica/recetas?${qs({ negocio_id: exp.negocio_id, expediente_id: exp.id, limit: 200 })}`)
+      .then(d => setRecetas(d.items)).catch(e => setError(e.message))
+  }, [exp.id, version])
+
+  if (error) return <div style={s.err}>{error}</div>
+  if (!recetas) return <div style={{ color: '#94a3b8' }}>Cargando…</div>
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {exp.activo && <div><button style={s.btn()} onClick={onNueva}>+ Nueva receta</button></div>}
+      {recetas.length === 0
+        ? <div style={{ ...s.card, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Sin recetas</div>
+        : <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
+            {recetas.map(r => <RecetaFila key={r.id} r={r} onCambio={(n) => setRecetas(rs => rs.map(x => x.id === n.id ? n : x))} />)}
+          </div>}
     </div>
   )
 }
@@ -259,8 +273,9 @@ export default function ExpedienteDetalle() {
   const [exp, setExp] = useState(null)
   const [error, setError] = useState('')
   const [tab, setTab] = useState('ficha')
-  const [modal, setModal] = useState(null)        // 'editar' | 'nota' | 'cita' | { cita } para reprogramar
+  const [modal, setModal] = useState(null)        // 'editar' | 'nota' | 'cita' | { cita } | 'receta' | { receta: nota }
   const [versionCitas, setVersionCitas] = useState(0)
+  const [versionRecetas, setVersionRecetas] = useState(0)
 
   const cargar = () => req(`/api/clinica/expedientes/${id}`).then(setExp).catch(e => setError(e.message))
   useEffect(() => { setExp(null); setError(''); cargar() }, [id])
@@ -331,9 +346,11 @@ export default function ExpedienteDetalle() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {exp.notas.length === 0
             ? <div style={{ ...s.card, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Aún no hay notas clínicas</div>
-            : exp.notas.map(n => <Nota key={n.id} n={n} />)}
+            : exp.notas.map(n => <Nota key={n.id} n={n} onReceta={exp.activo ? () => setModal({ receta: n }) : null} />)}
         </div>
       )}
+
+      {tab === 'recetas' && <Recetas exp={exp} version={versionRecetas} onNueva={() => setModal('receta')} />}
 
       {tab === 'citas' && <Citas exp={exp} version={versionCitas} onReprogramar={(c) => setModal({ cita: c })} />}
 
@@ -354,6 +371,14 @@ export default function ExpedienteDetalle() {
           cita={modal?.cita}
           cerrar={() => setModal(null)}
           onGuardada={() => { setModal(null); setTab('citas'); setVersionCitas(v => v + 1) }}
+        />
+      )}
+      {(modal === 'receta' || modal?.receta) && (
+        <RecetaModal
+          expediente={exp}
+          nota={modal?.receta}
+          cerrar={() => setModal(null)}
+          onGuardada={() => { setModal(null); setTab('recetas'); setVersionRecetas(v => v + 1) }}
         />
       )}
       {modal === 'nota' && (

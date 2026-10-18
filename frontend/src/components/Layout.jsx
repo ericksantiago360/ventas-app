@@ -31,6 +31,7 @@ const NAV_GROUPS = [
     items: [
       { to: '/clinica/agenda',      label: 'Agenda'      },
       { to: '/clinica/expedientes', label: 'Expedientes' },
+      { to: '/clinica/recetas',     label: 'Recetas'     },
     ],
   },
   {
