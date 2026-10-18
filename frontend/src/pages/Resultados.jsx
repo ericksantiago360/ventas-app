@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useNegocio } from '../context/NegocioContext'
 import useEsMovil from '../hooks/useEsMovil'
 
@@ -93,6 +94,35 @@ const S = {
   err:     { background: '#fef2f2', color: '#b91c1c', borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 12 },
 }
 
+// Rango de referencia según el sexo del paciente
+function referenciaAnalito(a, sexo = 'masculino') {
+  if (a.tipo === 'cualitativo') return a.referencia_texto || '—'
+  const min = sexo === 'femenino' ? a.referencia_mujer_min : a.referencia_hombre_min
+  const max = sexo === 'femenino' ? a.referencia_mujer_max : a.referencia_hombre_max
+  return min != null && max != null ? `${min} – ${max}` : '—'
+}
+
+// Analito en celular: nombre y flag arriba, valor grande con su referencia abajo
+function AnalitoFila({ a, sexo, ultimo }) {
+  const anormal = ['alto', 'bajo', 'critico'].includes(a.flag)
+  const color = anormal ? FLAG_STYLE[a.flag].color : '#1e293b'
+  return (
+    <div style={{ padding: '10px 0', borderBottom: ultimo ? 'none' : '1px solid #f1f5f9' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 13, color: '#475569' }}>{a.nombre}</span>
+        <FlagChip flag={a.flag} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginTop: 3 }}>
+        <span>
+          <span style={{ fontSize: 18, fontWeight: 700, color }}>{a.valor || '—'}</span>
+          {a.unidad && <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 4 }}>{a.unidad}</span>}
+        </span>
+        <span style={{ fontSize: 12, color: '#94a3b8', textAlign: 'right' }}>Ref. {referenciaAnalito(a, sexo)}</span>
+      </div>
+    </div>
+  )
+}
+
 // Orden en formato tarjeta para celular: lo esencial a la vista y las acciones a un toque
 function OrdenTarjeta({ o, onAbrir, acciones }) {
   const n = o.estudios?.length ?? 0
@@ -132,6 +162,7 @@ const EMPTY_CONFIG = { nombre: '', nombre_corto: '', direccion: '', colonia: '',
 export default function Resultados() {
   const { negocioId } = useNegocio()
   const esMovil = useEsMovil()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [vista, setVista] = useState('ordenes')
   const [fechaFiltro, setFechaFiltro] = useState(hoy())
   const [estadoFiltro, setEstadoFiltro] = useState('')
@@ -222,6 +253,14 @@ export default function Resultados() {
       setOrdenDetalle(data)
     } catch (e) { setError(e.message) }
   }
+
+  // Otras pantallas (como el historial del paciente) abren una orden con ?orden=<id>
+  useEffect(() => {
+    const id = searchParams.get('orden')
+    if (!id) return
+    cargarOrdenDetalle(id)
+    setSearchParams({}, { replace: true })
+  }, [searchParams])
 
   async function guardarConfig(ev) {
     ev.preventDefault()
@@ -594,11 +633,14 @@ export default function Resultados() {
       {/* ── DETALLE DE ORDEN ─────────────────────────────────────────────── */}
       {ordenDetalle && (
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: esMovil ? 14 : 20, flexWrap: 'wrap' }}>
             <button style={S.btn('ghost')} onClick={() => { setOrdenDetalle(null); cargarOrdenes() }}>← Volver</button>
             <span style={{ fontFamily: 'monospace', fontSize: 14, color: '#64748b', fontWeight: 700 }}>{ordenDetalle.folio}</span>
             <EstadoChip estado={ordenDetalle.estado} map={ESTADO_ORDEN} />
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            {/* En celular las acciones bajan a su propia fila y se reparten el ancho */}
+            <div style={esMovil
+              ? { flex: '1 1 100%', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }
+              : { marginLeft: 'auto', display: 'flex', gap: 8 }}>
               {ordenDetalle.estado === 'completado' && (
                 <button style={S.btn('primary')} onClick={() => cambiarEstadoOrden(ordenDetalle.id, 'entregado')}>Marcar como entregado</button>
               )}
@@ -621,8 +663,8 @@ export default function Resultados() {
           </div>
 
           {/* Cabecera del paciente */}
-          <div style={{ ...S.card, marginBottom: 16 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16, fontSize: 13 }}>
+          <div style={{ ...S.card, marginBottom: 16, ...(esMovil && { padding: 16 }) }}>
+            <div style={{ display: 'grid', gridTemplateColumns: esMovil ? '1fr 1fr' : '1fr 1fr 1fr 1fr', gap: esMovil ? 12 : 16, fontSize: 13 }}>
               {[
                 ['Paciente', `${ordenDetalle.paciente_nombre} (${ordenDetalle.paciente_folio})`],
                 ['Sexo / Edad', `${ordenDetalle.paciente_sexo} · ${ordenDetalle.paciente_edad} años`],
@@ -653,13 +695,13 @@ export default function Resultados() {
             {(ordenDetalle.resultados || []).map(res => {
               const tieneAnormales = res.analitos?.some(a => ['alto','bajo','critico'].includes(a.flag))
               return (
-                <div key={res.id} style={{ ...S.card, borderLeft: `4px solid ${tieneAnormales ? '#f59e0b' : '#e2e8f0'}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div key={res.id} style={{ ...S.card, borderLeft: `4px solid ${tieneAnormales ? '#f59e0b' : '#e2e8f0'}`, ...(esMovil && { padding: 14 }) }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
                     <div>
                       <span style={{ fontWeight: 700, fontSize: 15 }}>{res.estudio_nombre}</span>
                       <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 8 }}>{res.estudio_categoria}</span>
                     </div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', ...(esMovil && { flex: '1 1 100%', justifyContent: 'flex-end' }) }}>
                       <EstadoChip estado={res.estado} map={ESTADO_RES} />
                       {res.estado !== 'validado' && (
                         <button style={S.btn(res.estado === 'pendiente' ? 'primary' : 'warning')} onClick={() => abrirCaptura(res)}>
@@ -672,7 +714,14 @@ export default function Resultados() {
                     </div>
                   </div>
 
-                  {res.analitos?.length > 0 && res.estado !== 'pendiente' && (
+                  {res.analitos?.length > 0 && res.estado !== 'pendiente' && esMovil && (
+                    <div>
+                      {res.analitos.map((a, i) => (
+                        <AnalitoFila key={i} a={a} sexo={ordenDetalle.paciente_sexo} ultimo={i === res.analitos.length - 1} />
+                      ))}
+                    </div>
+                  )}
+                  {res.analitos?.length > 0 && res.estado !== 'pendiente' && !esMovil && (
                     <table style={{ ...S.table, fontSize: 12 }}>
                       <thead>
                         <tr>
@@ -685,12 +734,7 @@ export default function Resultados() {
                       </thead>
                       <tbody>
                         {res.analitos.map((a, i) => {
-                          const sexo = ordenDetalle.paciente_sexo || 'masculino'
-                          const min = sexo === 'femenino' ? a.referencia_mujer_min : a.referencia_hombre_min
-                          const max = sexo === 'femenino' ? a.referencia_mujer_max : a.referencia_hombre_max
-                          const refStr = a.tipo === 'cualitativo'
-                            ? (a.referencia_texto || '—')
-                            : (min != null && max != null ? `${min} – ${max}` : '—')
+                          const refStr = referenciaAnalito(a, ordenDetalle.paciente_sexo)
                           return (
                             <tr key={i}>
                               <td style={S.td}>{a.nombre}</td>

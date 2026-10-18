@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useNegocio } from '../context/NegocioContext'
 import useEsMovil from '../hooks/useEsMovil'
 
@@ -65,6 +66,21 @@ function PacienteTarjeta({ p, onAbrir, acciones }) {
   )
 }
 
+// Mismos colores que la lista de órdenes en Resultados
+const ESTADO_ORDEN = {
+  pendiente:  { bg: '#f1f5f9', color: '#64748b' },
+  en_proceso: { bg: '#fef9c3', color: '#a16207' },
+  completado: { bg: '#dcfce7', color: '#15803d' },
+  entregado:  { bg: '#dbeafe', color: '#1d4ed8' },
+}
+
+// Teléfono o correo como enlace que abre la llamada o el correo
+function enlace(tipo, valor) {
+  if (!valor) return '—'
+  const destino = tipo === 'tel' ? valor.replace(/[^\d+]/g, '') : valor
+  return <a href={`${tipo}:${destino}`} style={{ color: '#2563eb', textDecoration: 'none' }}>{valor}</a>
+}
+
 const EMPTY_FORM = {
   nombre: '', apellido_paterno: '', apellido_materno: '',
   fecha_nacimiento: '', sexo: 'masculino', tipo_sangre: 'desconocido',
@@ -75,6 +91,7 @@ const EMPTY_FORM = {
 export default function Pacientes() {
   const { negocioId } = useNegocio()
   const esMovil = useEsMovil()
+  const navigate = useNavigate()
   const [vista, setVista] = useState('lista')          // 'lista' | 'resumen' | 'detalle'
   const [pacientes, setPacientes] = useState([])
   const [dash, setDash] = useState(null)
@@ -90,6 +107,7 @@ export default function Pacientes() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [guardando, setGuardando] = useState(false)
   const [portalMsg, setPortalMsg] = useState('')
+  const [historial, setHistorial] = useState(null)   // órdenes de laboratorio del paciente; null = cargando
 
   // ── Loaders ────────────────────────────────────────────────────────────────
 
@@ -207,6 +225,10 @@ export default function Pacientes() {
 
   function verDetalle(p) {
     setPaciente(p); setPortalMsg(''); setVista('detalle')
+    setHistorial(null)
+    req(`/api/lab/ordenes?negocio_id=${encodeURIComponent(negocioId)}&paciente_id=${encodeURIComponent(p.id)}`)
+      .then(data => setHistorial(Array.isArray(data) ? data : []))
+      .catch(() => setHistorial([]))
   }
 
   // ── Estilos ────────────────────────────────────────────────────────────────
@@ -446,18 +468,26 @@ export default function Pacientes() {
       {/* ── DETALLE ─────────────────────────────────────────────────────── */}
       {vista === 'detalle' && paciente && (
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: esMovil ? 14 : 20 }}>
             <button style={s.btn('ghost')} onClick={() => setVista('lista')}>← Volver</button>
             <span style={{ fontFamily: 'monospace', fontSize: 13, color: '#64748b' }}>{paciente.folio}</span>
             <Chip texto={paciente.activo ? 'Activo' : 'Baja'} bg={paciente.activo ? '#dcfce7' : '#f1f5f9'} color={paciente.activo ? '#15803d' : '#94a3b8'} />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 16 }}>
+          {/* En celular las alergias van hasta arriba: es lo primero que hay que ver antes de tomar una muestra */}
+          {esMovil && paciente.alergias && (
+            <div style={{ ...s.card, padding: 14, marginBottom: 12, background: '#fef2f2', border: '1px solid #fecaca' }}>
+              <div style={{ fontWeight: 700, fontSize: 12, color: '#b91c1c', marginBottom: 4 }}>⚠ ALERGIAS</div>
+              <div style={{ fontSize: 14 }}>{paciente.alergias}</div>
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: esMovil ? '1fr' : '2fr 1fr', gap: esMovil ? 12 : 16, marginBottom: esMovil ? 12 : 16 }}>
             {/* Card principal */}
-            <div style={s.card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={esMovil ? { ...s.card, padding: 16 } : s.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
                 <div>
-                  <div style={{ fontSize: 22, fontWeight: 700 }}>
+                  <div style={{ fontSize: esMovil ? 19 : 22, fontWeight: 700 }}>
                     {paciente.nombre} {paciente.apellido_paterno} {paciente.apellido_materno}
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -468,13 +498,16 @@ export default function Pacientes() {
                     {paciente.edad > 0 && <Chip texto={`${paciente.edad} años`} />}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button style={s.btn('ghost')} onClick={() => abrirEditar(paciente)}>Editar</button>
-                  {paciente.activo && <button style={s.btn('danger')} onClick={() => darDeBaja(paciente.id)}>Dar de baja</button>}
+                <div style={{ display: 'flex', gap: 8, ...(esMovil && { flex: '1 1 100%' }) }}>
+                  {esMovil && paciente.telefono && (
+                    <a href={`tel:${paciente.telefono.replace(/[^\d+]/g, '')}`} style={{ ...s.btn('success'), flex: 1, padding: '10px 12px', textAlign: 'center', textDecoration: 'none' }}>Llamar</a>
+                  )}
+                  <button style={esMovil ? { ...s.btn('ghost'), flex: 1, padding: '10px 12px' } : s.btn('ghost')} onClick={() => abrirEditar(paciente)}>Editar</button>
+                  {paciente.activo && <button style={esMovil ? { ...s.btn('danger'), flex: 1, padding: '10px 12px' } : s.btn('danger')} onClick={() => darDeBaja(paciente.id)}>Dar de baja</button>}
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: esMovil ? '1fr' : '1fr 1fr', gap: esMovil ? 4 : 20, marginTop: esMovil ? 8 : 20 }}>
                 <div>
                   <div style={s.sect}>Datos personales</div>
                   {[
@@ -490,9 +523,9 @@ export default function Pacientes() {
                 <div>
                   <div style={s.sect}>Contacto</div>
                   {[
-                    ['Teléfono',             paciente.telefono || '—'],
-                    ['Tel. emergencia',       paciente.telefono_emergencia || '—'],
-                    ['Email',                 paciente.email || '—'],
+                    ['Teléfono',             enlace('tel', paciente.telefono)],
+                    ['Tel. emergencia',       enlace('tel', paciente.telefono_emergencia)],
+                    ['Email',                 enlace('mailto', paciente.email)],
                   ].map(([k, v]) => (
                     <div key={k} style={{ marginBottom: 8 }}>
                       <div style={s.kv}>{k}</div>
@@ -504,8 +537,8 @@ export default function Pacientes() {
             </div>
 
             {/* Card médico */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={s.card}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: esMovil ? 12 : 16 }}>
+              <div style={esMovil ? { ...s.card, padding: 16 } : s.card}>
                 <div style={s.sect}>Médico tratante</div>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{paciente.medico_tratante || '—'}</div>
                 {paciente.medico_cedula && (
@@ -513,7 +546,7 @@ export default function Pacientes() {
                 )}
               </div>
               {paciente.activo && (
-                <div style={s.card}>
+                <div style={esMovil ? { ...s.card, padding: 16 } : s.card}>
                   <div style={s.sect}>Portal del paciente</div>
                   <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10, lineHeight: 1.5 }}>
                     El paciente consulta sus resultados validados en <strong>/portal</strong> con un enlace personal.
@@ -526,7 +559,7 @@ export default function Pacientes() {
                   {portalMsg && <div style={{ fontSize: 12, color: '#15803d', marginTop: 8 }}>{portalMsg}</div>}
                 </div>
               )}
-              {paciente.alergias && (
+              {!esMovil && paciente.alergias && (
                 <div style={{ ...s.card, background: '#fef2f2', border: '1px solid #fecaca' }}>
                   <div style={{ fontWeight: 700, fontSize: 12, color: '#b91c1c', marginBottom: 6 }}>⚠ ALERGIAS</div>
                   <div style={{ fontSize: 13 }}>{paciente.alergias}</div>
@@ -541,12 +574,40 @@ export default function Pacientes() {
             </div>
           </div>
 
-          {/* Historial de estudios — placeholder hasta módulo Resultados */}
-          <div style={{ ...s.card, borderStyle: 'dashed', borderColor: '#cbd5e1' }}>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>Historial de estudios</div>
-            <div style={{ color: '#94a3b8', fontSize: 13 }}>
-              El historial de resultados estará disponible al implementar el módulo de Resultados.
+          {/* Historial de estudios: sus órdenes de laboratorio, la más reciente primero */}
+          <div style={esMovil ? { ...s.card, padding: 16 } : s.card}>
+            <div style={{ fontWeight: 700, marginBottom: 10 }}>
+              Historial de estudios
+              {historial?.length > 0 && <span style={{ fontWeight: 400, color: '#94a3b8', fontSize: 13, marginLeft: 8 }}>{historial.length} {historial.length === 1 ? 'orden' : 'órdenes'}</span>}
             </div>
+            {historial === null ? (
+              <div style={{ color: '#94a3b8', fontSize: 13 }}>Cargando…</div>
+            ) : historial.length === 0 ? (
+              <div style={{ color: '#94a3b8', fontSize: 13 }}>Este paciente aún no tiene órdenes de laboratorio.</div>
+            ) : (
+              historial.map((o, i) => {
+                const n = o.estudios?.length ?? 0
+                const estado = ESTADO_ORDEN[o.estado] || { bg: '#f1f5f9', color: '#64748b' }
+                return (
+                  <div key={o.id} onClick={() => navigate(`/resultados?orden=${o.id}`)} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+                    padding: '10px 0', borderTop: i === 0 ? 'none' : '1px solid #f1f5f9', cursor: 'pointer',
+                  }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{o.fecha}</div>
+                      <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                        <span style={{ fontFamily: 'monospace' }}>{o.folio}</span> · {n} estudio{n !== 1 ? 's' : ''}
+                        {o.medico_solicitante && !esMovil && <> · Dr(a). {o.medico_solicitante}</>}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                      <Chip texto={o.estado?.replace('_', ' ')} bg={estado.bg} color={estado.color} />
+                      <span style={{ color: '#cbd5e1', fontSize: 18 }}>›</span>
+                    </div>
+                  </div>
+                )
+              })
+            )}
           </div>
         </div>
       )}
