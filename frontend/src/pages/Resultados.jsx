@@ -123,6 +123,112 @@ function AnalitoFila({ a, sexo, ultimo }) {
   )
 }
 
+// Captura de resultados en celular: pantalla completa, teclado numérico y
+// "Siguiente" en el teclado para pasar al próximo analito sin tocar la pantalla
+function CapturaMovil({ resultado, orden, form, setForm, actualizarValor, guardar, guardando, error, cerrar }) {
+  const refs = useRef([])
+  const sexo = orden?.paciente_sexo || 'masculino'
+  const total = form.analitos.length
+  const capturados = form.analitos.filter(a => String(a.valor ?? '').trim() !== '').length
+  const fueraDeRango = form.analitos.filter(a => ['alto', 'bajo', 'critico'].includes(a.flag)).length
+
+  // Al abrir, el cursor va al primer analito sin valor (al retomar una captura a medias)
+  useEffect(() => {
+    const i = form.analitos.findIndex(x => String(x.valor ?? '').trim() === '')
+    refs.current[i === -1 ? 0 : i]?.focus()
+  }, [])
+
+  // Enter en el teclado avanza al siguiente campo; en el último no envía, solo cierra el teclado
+  function alPresionar(e, i) {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    const siguiente = refs.current[i + 1]
+    if (siguiente) siguiente.focus()
+    else e.currentTarget.blur()
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
+      <form onSubmit={guardar} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+
+        {/* Encabezado fijo: qué estudio y de quién, para no capturar en el paciente equivocado */}
+        <div style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '12px 16px', paddingTop: 'calc(12px + env(safe-area-inset-top))' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 17 }}>{resultado.estudio_nombre}</div>
+              <div style={{ fontSize: 13, color: '#64748b', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {orden?.paciente_nombre}{orden?.paciente_edad ? ` · ${orden.paciente_edad} años` : ''}{orden?.paciente_sexo ? ` · ${orden.paciente_sexo}` : ''}
+              </div>
+            </div>
+            <button type="button" onClick={cerrar} aria-label="Cerrar" style={{ ...S.btn('ghost'), fontSize: 20, lineHeight: 1, padding: '6px 12px' }}>×</button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+            <div style={{ flex: 1, height: 6, background: '#f1f5f9', borderRadius: 3 }}>
+              <div style={{ height: 6, width: `${total ? (capturados / total) * 100 : 0}%`, background: '#3b82f6', borderRadius: 3, transition: 'width .2s' }} />
+            </div>
+            <span style={{ fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>
+              {capturados} de {total}
+              {fueraDeRango > 0 && <span style={{ color: '#a16207', fontWeight: 600 }}> · {fueraDeRango} fuera de rango</span>}
+            </span>
+          </div>
+        </div>
+
+        {/* Analitos */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+          {error && <div style={S.err}>{error}</div>}
+          {form.analitos.map((a, i) => {
+            const anormal = ['alto', 'bajo', 'critico'].includes(a.flag)
+            const borde = a.flag === 'critico' ? '#ef4444' : anormal ? '#f59e0b' : '#cbd5e1'
+            return (
+              <div key={i} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 12, marginBottom: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <label htmlFor={`analito-${i}`} style={{ fontWeight: 600, fontSize: 14 }}>{a.nombre}</label>
+                  <FlagChip flag={a.flag} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <input
+                    id={`analito-${i}`}
+                    ref={el => { refs.current[i] = el }}
+                    style={{ ...S.input, flex: 1, padding: '10px 12px', fontSize: 18, fontWeight: 600, border: `1.5px solid ${borde}`, borderRadius: 8 }}
+                    inputMode={a.tipo === 'cualitativo' ? 'text' : 'decimal'}
+                    enterKeyHint={i < total - 1 ? 'next' : 'done'}
+                    autoComplete="off"
+                    placeholder={a.tipo === 'cualitativo' ? 'Ej. Negativo' : '0.0'}
+                    value={a.valor ?? ''}
+                    onChange={e => actualizarValor(i, e.target.value)}
+                    onKeyDown={e => alPresionar(e, i)}
+                  />
+                  {a.unidad && <span style={{ fontSize: 13, color: '#64748b', minWidth: 48 }}>{a.unidad}</span>}
+                </div>
+                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 6 }}>Ref. {referenciaAnalito(a, sexo)}</div>
+              </div>
+            )
+          })}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
+            <div style={S.fg}>
+              <label style={S.lbl}>Observaciones</label>
+              <input style={{ ...S.input, padding: '10px 12px' }} value={form.observaciones} onChange={e => setForm(f => ({ ...f, observaciones: e.target.value }))} />
+            </div>
+            <div style={S.fg}>
+              <label style={S.lbl}>Técnico responsable</label>
+              <input style={{ ...S.input, padding: '10px 12px' }} value={form.tecnico_nombre} onChange={e => setForm(f => ({ ...f, tecnico_nombre: e.target.value }))} />
+            </div>
+          </div>
+        </div>
+
+        {/* Botones fijos abajo: siempre a la mano aunque la lista sea larga */}
+        <div style={{ background: '#fff', borderTop: '1px solid #e2e8f0', padding: '10px 16px', paddingBottom: 'calc(10px + env(safe-area-inset-bottom))', display: 'flex', gap: 10 }}>
+          <button type="button" style={{ ...S.btn('ghost'), flex: 1, padding: '12px', fontSize: 15 }} onClick={cerrar}>Cancelar</button>
+          <button type="submit" style={{ ...S.btn(), flex: 2, padding: '12px', fontSize: 15 }} disabled={guardando}>
+            {guardando ? 'Guardando…' : 'Guardar resultados'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
 // Orden en formato tarjeta para celular: lo esencial a la vista y las acciones a un toque
 function OrdenTarjeta({ o, onAbrir, acciones }) {
   const n = o.estudios?.length ?? 0
@@ -1005,7 +1111,20 @@ export default function Resultados() {
       )}
 
       {/* ── MODAL CAPTURA DE RESULTADOS ──────────────────────────────────── */}
-      {modalCaptura && resultadoEditando && (
+      {modalCaptura && resultadoEditando && esMovil && (
+        <CapturaMovil
+          resultado={resultadoEditando}
+          orden={ordenDetalle}
+          form={formCaptura}
+          setForm={setFormCaptura}
+          actualizarValor={actualizarValor}
+          guardar={guardarCaptura}
+          guardando={guardandoCaptura}
+          error={error}
+          cerrar={() => setModalCaptura(false)}
+        />
+      )}
+      {modalCaptura && resultadoEditando && !esMovil && (
         <div style={{ ...S.overlay, zIndex: 1100 }} onClick={e => e.target === e.currentTarget && setModalCaptura(false)}>
           <div style={S.modal(700)}>
             <div style={S.mh}>
