@@ -56,6 +56,7 @@ const NAV_GROUPS = [
 ]
 
 const ALTO_PESTANAS = 58
+const ANCHO_BARRA = 200
 
 // Trazos de 24×24 para las pestañas inferiores del celular
 const ICONOS = {
@@ -201,7 +202,7 @@ export default function Layout() {
       {!enLinea && (
         <div role="status" style={{
           position: 'fixed', left: 12, right: 12, zIndex: 1100,
-          ...(esMovil ? { bottom: `calc(${ALTO_PESTANAS + 10}px + env(safe-area-inset-bottom))` } : { bottom: 16, left: 236, right: 16 }),
+          ...(esMovil ? { bottom: `calc(${ALTO_PESTANAS + 10}px + env(safe-area-inset-bottom))` } : { bottom: 16, left: ANCHO_BARRA + 16, right: 16 }),
           background: '#1e293b', color: '#f8fafc', borderRadius: 10, padding: '10px 14px',
           fontSize: 13, boxShadow: '0 8px 24px rgba(15,23,42,.3)', display: 'flex', alignItems: 'center', gap: 10,
         }}>
@@ -219,7 +220,7 @@ export default function Layout() {
 
       {/* ── Sidebar ── */}
       <aside style={{
-        width: esMovil ? 260 : 220, flexShrink: 0,
+        width: esMovil ? 260 : ANCHO_BARRA, flexShrink: 0,
         background: '#0f172a',
         display: 'flex', flexDirection: 'column',
         ...(esMovil ? {
