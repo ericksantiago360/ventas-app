@@ -9,8 +9,10 @@ import { RecetaFila } from './recetas'
 import { req, qs, nombreCompleto, fechaHora, aFecha, abrirArchivo, s, Chip, SEXO_COLOR, TIPOS_NOTA, BadgeAlergico } from './comun'
 import { TIPOS_CITA, ChipEstado, AccionesCita } from './citas'
 import { ChipsOrden } from './laboratorio'
+import ConsentimientoModal from './ConsentimientoModal'
+import { ConsentimientoFila } from './consentimientos'
 
-const TABS = [['ficha', 'Ficha'], ['notas', 'Notas clínicas'], ['recetas', 'Recetas'], ['laboratorio', 'Laboratorio'], ['citas', 'Citas'], ['archivos', 'Archivos']]
+const TABS = [['ficha', 'Ficha'], ['notas', 'Notas clínicas'], ['recetas', 'Recetas'], ['laboratorio', 'Laboratorio'], ['consentimientos', 'Consentimientos'], ['citas', 'Citas'], ['archivos', 'Archivos']]
 
 const ESTADOS_LAB = { pendiente: 'Pendiente', en_proceso: 'En proceso', completado: 'Completado', entregado: 'Entregado' }
 
@@ -229,6 +231,28 @@ function Recetas({ exp, version, onNueva }) {
   )
 }
 
+function Consentimientos({ exp, version, onNuevo }) {
+  const [lista, setLista] = useState(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    req(`/api/clinica/consentimientos?${qs({ negocio_id: exp.negocio_id, expediente_id: exp.id, limit: 200 })}`)
+      .then(d => setLista(d.items)).catch(e => setError(e.message))
+  }, [exp.id, version])
+
+  if (error) return <div style={s.err}>{error}</div>
+  if (!lista) return <div style={{ color: '#94a3b8' }}>Cargando…</div>
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {exp.activo && <div><button style={s.btn()} onClick={onNuevo}>+ Nuevo consentimiento</button></div>}
+      {lista.length === 0
+        ? <div style={{ ...s.card, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Sin consentimientos firmados</div>
+        : <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
+            {lista.map(c => <ConsentimientoFila key={c.id} c={c} onCambio={(n) => setLista(l => l.map(x => x.id === n.id ? n : x))} />)}
+          </div>}
+    </div>
+  )
+}
+
 // Órdenes de laboratorio del paciente; se abren en la página de resultados
 function Laboratorio({ exp }) {
   const navigate = useNavigate()
@@ -322,6 +346,7 @@ export default function ExpedienteDetalle() {
   const [modal, setModal] = useState(null)        // 'editar' | 'nota' | 'cita' | { cita } | 'receta' | { receta: nota }
   const [versionCitas, setVersionCitas] = useState(0)
   const [versionRecetas, setVersionRecetas] = useState(0)
+  const [versionConsentimientos, setVersionConsentimientos] = useState(0)
 
   const cargar = () => req(`/api/clinica/expedientes/${id}`).then(setExp).catch(e => setError(e.message))
   useEffect(() => { setExp(null); setError(''); cargar() }, [id])
@@ -408,6 +433,8 @@ export default function ExpedienteDetalle() {
 
       {tab === 'laboratorio' && <Laboratorio exp={exp} />}
 
+      {tab === 'consentimientos' && <Consentimientos exp={exp} version={versionConsentimientos} onNuevo={() => setModal('consentimiento')} />}
+
       {tab === 'citas' && <Citas exp={exp} version={versionCitas} onReprogramar={(c) => setModal({ cita: c })} />}
 
       {tab === 'archivos' && <Archivos exp={exp} onSubido={cargar} />}
@@ -435,6 +462,13 @@ export default function ExpedienteDetalle() {
           nota={modal?.receta}
           cerrar={() => setModal(null)}
           onGuardada={() => { setModal(null); setTab('recetas'); setVersionRecetas(v => v + 1) }}
+        />
+      )}
+      {modal === 'consentimiento' && (
+        <ConsentimientoModal
+          expediente={exp}
+          cerrar={() => setModal(null)}
+          onGuardado={() => { setModal(null); setTab('consentimientos'); setVersionConsentimientos(v => v + 1) }}
         />
       )}
       {modal === 'nota' && (

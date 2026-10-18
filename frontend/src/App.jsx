@@ -24,6 +24,7 @@ import AgendaDiaPage     from './modules/clinica/AgendaDiaPage'
 import RecetasPage       from './modules/clinica/RecetasPage'
 import VerificarReceta   from './modules/clinica/VerificarReceta'
 import FarmaciaPage      from './modules/clinica/FarmaciaPage'
+import ConsentimientosPage from './modules/clinica/ConsentimientosPage'
 import Layout    from './components/Layout'
 import { NegocioProvider } from './context/NegocioContext'
 
@@ -122,6 +123,7 @@ export default function App() {
             <Route path="clinica/agenda/dia" element={<AgendaDiaPage />} />
             <Route path="clinica/recetas" element={<RecetasPage />} />
             <Route path="clinica/farmacia" element={<FarmaciaPage />} />
+            <Route path="clinica/consentimientos" element={<ConsentimientosPage />} />
           </Route>
 
           <Route

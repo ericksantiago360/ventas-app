@@ -111,4 +111,10 @@ async def _crear_indices(db: AsyncIOMotorDatabase) -> None:
     await db.farmacia_movimientos.create_index([("articulo_id", 1), ("fecha", -1)])
     await db.farmacia_movimientos.create_index([("negocio_id", 1), ("receta_id", 1)])
 
+    # ── Clínica: consentimientos ──────────────────────────────────────────
+    await db.consentimientos.create_index([("negocio_id", 1), ("folio", 1)], unique=True)
+    await db.consentimientos.create_index([("negocio_id", 1), ("fecha_firma", -1)])
+    await db.consentimientos.create_index([("expediente_id", 1), ("fecha_firma", -1)])
+    await db.consentimientos_plantillas.create_index([("negocio_id", 1), ("tipo", 1), ("activo", 1)])
+
     print("✓ Índices MongoDB creados")

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>{{ c.titulo }} · {{ c.folio }}</title>
+<style>
+  @page {
+    size: letter;
+    margin: 14mm 16mm 18mm;
+    @bottom-left {
+      content: "{{ c.folio }} · {{ c.paciente.nombre }}";
+      font-size: 7pt; color: #94a3b8; font-family: Helvetica, Arial, sans-serif;
+    }
+    @bottom-right {
+      content: "Página " counter(page) " de " counter(pages);
+      font-size: 7pt; color: #94a3b8; font-family: Helvetica, Arial, sans-serif;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 9.5pt; color: #1e293b; margin: 0; }
+
+  .encabezado { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+                border-bottom: 2px solid #1d4ed8; padding-bottom: 8px; }
+  .clinica { display: flex; gap: 12px; align-items: center; }
+  .clinica img { max-height: 50px; max-width: 120px; }
+  .clinica .nombre { font-size: 13pt; font-weight: bold; color: #0f172a; }
+  .clinica .dato { font-size: 7.5pt; color: #64748b; margin-top: 2px; }
+  .folio { text-align: right; font-family: "Courier New", monospace; font-weight: bold; font-size: 11pt; }
+  .folio .fecha { font-family: Helvetica, Arial, sans-serif; font-weight: normal; font-size: 8pt; color: #64748b; margin-top: 2px; }
+
+  h1 { font-size: 12pt; text-align: center; margin: 14px 0 10px; color: #0f172a; }
+
+  .datos { border: 1px solid #e2e8f0; border-radius: 6px; background: #f8fafc; padding: 6px 10px;
+           display: flex; flex-wrap: wrap; gap: 4px 22px; margin-bottom: 12px; }
+  .datos .k { color: #94a3b8; font-size: 6.8pt; text-transform: uppercase; letter-spacing: .04em; }
+  .datos .v { font-weight: bold; font-size: 8.5pt; }
+
+  .texto { white-space: pre-wrap; line-height: 1.42; text-align: justify; }
+
+  .cierre { page-break-inside: avoid; }
+  .firmas { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 36px; }
+  .firma { text-align: center; }
+  .firma .imagen { height: 52px; display: flex; align-items: flex-end; justify-content: center; }
+  .firma img { max-height: 52px; max-width: 220px; }
+  .firma .linea { border-top: 1px solid #1e293b; margin-top: 3px; padding-top: 3px; font-size: 8.5pt; font-weight: bold; }
+  .firma .rol { font-size: 7.5pt; color: #64748b; }
+
+  .constancia { margin-top: 12px; border-top: 1px solid #e2e8f0; padding-top: 6px; font-size: 7pt; color: #94a3b8; line-height: 1.5; }
+  .constancia .huella { font-family: "Courier New", monospace; word-break: break-all; }
+
+  .revocado-marca { position: fixed; top: 38%; left: 0; right: 0; text-align: center; font-size: 64pt; font-weight: bold;
+                    color: rgba(220, 38, 38, .16); transform: rotate(-24deg); }
+  .revocado { margin-top: 12px; border: 1.5px solid #dc2626; color: #b91c1c; border-radius: 6px; padding: 6px 10px; font-size: 8.5pt; }
+</style>
+</head>
+<body>
+  {% if c.estado == "revocado" %}<div class="revocado-marca">REVOCADO</div>{% endif %}
+
+  <div class="encabezado">
+    <div class="clinica">
+      {% if clinica.logo %}<img src="{{ clinica.logo }}" alt="">{% endif %}
+      <div>
+        <div class="nombre">{{ clinica.nombre }}</div>
+        {% if clinica.direccion %}<div class="dato">{{ clinica.direccion }}</div>{% endif %}
+        {% if clinica.contacto %}<div class="dato">{{ clinica.contacto }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="folio">
+      {{ c.folio }}
+      <div class="fecha">{{ fecha }}</div>
+    </div>
+  </div>
+
+  <h1>{{ c.titulo }}</h1>
+
+  <div class="datos">
+    <div><div class="k">Paciente</div><div class="v">{{ c.paciente.nombre }}</div></div>
+    {% if c.paciente.edad %}<div><div class="k">Edad</div><div class="v">{{ c.paciente.edad }} años</div></div>{% endif %}
+    {% if c.paciente.sexo %}<div><div class="k">Sexo</div><div class="v">{{ c.paciente.sexo | capitalize }}</div></div>{% endif %}
+    {% if c.paciente.curp %}<div><div class="k">CURP</div><div class="v">{{ c.paciente.curp }}</div></div>{% endif %}
+    <div><div class="k">Expediente</div><div class="v">{{ c.expediente_folio }}</div></div>
+    <div><div class="k">Lugar y fecha</div><div class="v">{{ clinica.nombre }}, {{ fecha }}</div></div>
+  </div>
+
+  <div class="texto">{{ c.texto }}</div>
+
+  {% if c.revocacion %}
+    <div class="revocado">
+      <strong>Consentimiento revocado</strong> el {{ revocado_el }}{% if c.revocacion.usuario %} (registró {{ c.revocacion.usuario }}){% endif %}.
+      Motivo: {{ c.revocacion.motivo }}
+    </div>
+  {% endif %}
+
+  <div class="cierre">
+  <div class="firmas">
+    <div class="firma">
+      <div class="imagen"><img src="{{ c.firma_paciente_base64 }}" alt=""></div>
+      <div class="linea">{{ c.firmante.nombre }}</div>
+      <div class="rol">
+        {% if c.firmante.tipo == "representante" %}Representante legal ({{ c.firmante.parentesco }}){% else %}Paciente{% endif %}
+      </div>
+    </div>
+    <div class="firma">
+      <div class="imagen">{% if c.medico.firma_base64 %}<img src="{{ c.medico.firma_base64 }}" alt="">{% endif %}</div>
+      <div class="linea">{{ c.medico.nombre }}</div>
+      <div class="rol">Médico que informa · Céd. {{ c.medico.cedula_profesional }}{% if c.medico.especialidad %} · {{ c.medico.especialidad }}{% endif %}</div>
+    </div>
+    {% for t in c.testigos %}
+    <div class="firma">
+      <div class="imagen"><img src="{{ t.firma_base64 }}" alt=""></div>
+      <div class="linea">{{ t.nombre }}</div>
+      <div class="rol">Testigo {{ loop.index }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="constancia">
+    Firmado electrónicamente el {{ fecha }} desde la dirección IP {{ c.ip_firma or "—" }}.
+    Huella SHA-256 del contenido firmado: <span class="huella">{{ c.huella }}</span>
+  </div>
+  </div>
+</body>
+</html>

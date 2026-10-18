@@ -34,6 +34,7 @@ const NAV_GROUPS = [
       { to: '/clinica/expedientes', label: 'Expedientes' },
       { to: '/clinica/recetas',     label: 'Recetas'     },
       { to: '/clinica/farmacia',    label: 'Farmacia', badge: 'farmacia' },
+      { to: '/clinica/consentimientos', label: 'Consentimientos' },
     ],
   },
   {
