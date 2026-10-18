@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { cotizacionesApi } from '../api/client'
 import axios from 'axios'
 import { useNegocio } from '../context/NegocioContext'
+import useEsMovil from '../hooks/useEsMovil'
 const ESTADOS = [
 ['borrador', 'Borrador'],
 ['enviada', 'Enviada'],
@@ -36,6 +37,7 @@ setNegocioId: setNegocio,
 negocioActual,
 negociosDisponibles,
 } = useNegocio()
+const esMovil = useEsMovil()
 const [cotizaciones, setCotizaciones] = useState([])
 const [clientes, setClientes] = useState([])
 const [productos, setProductos] = useState([])
@@ -589,7 +591,6 @@ function obtenerIdCotizacion(cot) {
 return (
 <div
 style={{
-padding: '24px',
 maxWidth: 1400,
 margin: '0 auto',
 }}
@@ -628,6 +629,7 @@ style={{
 display: 'flex',
 gap: 10,
 alignItems: 'center',
+...(esMovil && { width: '100%' }),
 }}
 >
 <select
@@ -648,7 +650,7 @@ value={n.id}
 </select>
 <button
 onClick={abrirNueva}
-style={styles.primaryButton}
+style={{ ...styles.primaryButton, whiteSpace: 'nowrap', ...(esMovil && { padding: '10px 14px' }) }}
 >
 + Nueva cotización
 </button>
@@ -659,7 +661,7 @@ style={styles.primaryButton}
 {error}
 </div>
 )}
-<div style={styles.card}>
+<div style={esMovil ? {} : styles.card}>
 {loading ? (
 <p>Cargando cotizaciones...</p>
 ) : cotizaciones.length === 0 ? (
@@ -683,6 +685,56 @@ No hay cotizaciones
 Crea la primera cotización
 para este negocio.
 </div>
+</div>
+) : esMovil ? (
+// En celular, cada cotización es una tarjeta; tocarla abre la consulta
+<div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+{cotizaciones.map(cot => {
+const id = obtenerIdCotizacion(cot)
+const boton = { ...styles.actionButton, flex: 1, padding: '10px 6px', fontSize: 13, fontWeight: 600 }
+return (
+<div
+key={cot.id}
+onClick={() => consultarCotizacion(id)}
+style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', cursor: 'pointer' }}
+>
+<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+<div style={{ minWidth: 0 }}>
+<div style={{ fontWeight: 600, fontSize: 15, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+{cot.cliente_nombre || cot.cliente_id || 'Sin cliente'}
+</div>
+<div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+<span style={{ fontFamily: 'monospace' }}>{cot.numero || cot.folio || `#${cot.id?.slice(-6)}`}</span>
+{' · '}{fecha(cot.fecha_emision)}
+</div>
+</div>
+<div style={{ fontWeight: 700, fontSize: 16, color: '#0f172a', whiteSpace: 'nowrap' }}>{dinero(cot.total)}</div>
+</div>
+<div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 10 }}>
+<span style={{ fontSize: 12, color: '#64748b' }}>Vence {fecha(cot.fecha_vencimiento)}</span>
+<select
+value={cot.estado || 'borrador'}
+onChange={e => cambiarEstado(cot.id, e.target.value)}
+style={{ ...styles.input, width: 'auto', padding: '6px 8px' }}
+>
+{ESTADOS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+</select>
+</div>
+<div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #f1f5f9' }}>
+<button onClick={() => cargarCotizacionParaEdicion(id)} style={boton}>Editar</button>
+<button onClick={() => descargarPdfCotizacion(id)} style={boton}>PDF</button>
+<button
+onClick={() => enviarCotizacion(id)}
+disabled={cot.estado === 'enviada'}
+style={{ ...boton, opacity: cot.estado === 'enviada' ? 0.5 : 1 }}
+>
+Enviar
+</button>
+<button onClick={() => eliminarCotizacion(id)} style={{ ...boton, flex: '0 0 auto', color: '#b91c1c' }} aria-label="Eliminar">🗑</button>
+</div>
+</div>
+)
+})}
 </div>
 ) : (
 <div
