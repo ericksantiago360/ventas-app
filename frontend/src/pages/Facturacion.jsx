@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNegocio } from '../context/NegocioContext'
+import useEsMovil from '../hooks/useEsMovil'
 
 async function req(url, opts = {}) {
   const token = localStorage.getItem('token')
@@ -65,6 +66,10 @@ function Chip({ estado, vencida }) {
   return <span style={{ background: e.bg, color: e.color, borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 600 }}>{e.label}</span>
 }
 
+// Renglón en formato tarjeta para celular
+const tarjeta = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 14px' }
+const filaAcciones = { display: 'flex', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #f1f5f9' }
+
 const esVencida = (f) => f.estado === 'emitida' && f.fecha_vencimiento && f.fecha_vencimiento < hoy()
 
 function calcularTotales(conceptos, descuentoGeneral) {
@@ -82,6 +87,7 @@ function calcularTotales(conceptos, descuentoGeneral) {
 
 export default function Facturacion() {
   const { negocioId } = useNegocio()
+  const esMovil = useEsMovil()
   const [vista, setVista] = useState('pendientes')      // 'resumen' | 'pendientes' | 'facturas'
   const [error, setError] = useState('')
   const [aviso, setAviso] = useState('')
@@ -375,13 +381,38 @@ export default function Facturacion() {
 
       {/* ── POR FACTURAR ───────────────────────────────────────────────── */}
       {!detalle && vista === 'pendientes' && (
-        <div style={s.card}>
+        <div style={esMovil ? {} : s.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
             <div style={{ fontSize: 13, color: '#64748b' }}>Pedidos y órdenes de laboratorio sin factura. Factura en un clic.</div>
-            <input style={{ ...s.input, maxWidth: 280 }} placeholder="Buscar folio o nombre…" value={busquedaPend} onChange={(e) => setBusquedaPend(e.target.value)} />
+            <input style={{ ...s.input, maxWidth: esMovil ? 'none' : 280 }} placeholder="Buscar folio o nombre…" value={busquedaPend} onChange={(e) => setBusquedaPend(e.target.value)} />
           </div>
           {cargando ? <div style={s.empty}>Cargando…</div> : pendientesFiltrados.length === 0 ? (
             <div style={s.empty}>Todo está facturado.</div>
+          ) : esMovil ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {pendientesFiltrados.map((p) => {
+                const ocupado = procesando === p.origen_id
+                return (
+                  <div key={p.origen_id} style={tarjeta}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.nombre || 'Sin nombre'}</div>
+                        <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+                          {ORIGEN[p.origen_tipo]} · <span style={{ fontFamily: 'monospace' }}>{p.folio}</span> · {p.fecha}
+                        </div>
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: 16, whiteSpace: 'nowrap' }}>{money(p.total)}</div>
+                    </div>
+                    <div style={filaAcciones}>
+                      <button style={{ ...s.btn('ghost'), flex: 1, padding: '10px 12px', fontSize: 14 }} disabled={ocupado} onClick={() => facturarOrigen(p, false)}>Revisar</button>
+                      <button style={{ ...s.btn(), flex: 2, padding: '10px 12px', fontSize: 14 }} disabled={ocupado} onClick={() => facturarOrigen(p, true)}>
+                        {ocupado ? 'Facturando…' : 'Facturar ⚡'}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={s.table}>
@@ -418,16 +449,44 @@ export default function Facturacion() {
 
       {/* ── FACTURAS ───────────────────────────────────────────────────── */}
       {!detalle && vista === 'facturas' && (
-        <div style={s.card}>
+        <div style={esMovil ? {} : s.card}>
           <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
             {[['', 'Todas'], ['borrador', 'Borradores'], ['emitida', 'Por cobrar'], ['vencida', 'Vencidas'], ['pagada', 'Pagadas'], ['cancelada', 'Canceladas']].map(([k, l]) => (
               <button key={k} onClick={() => setFiltroEstado(k)}
                 style={{ ...s.btn(filtroEstado === k ? 'primary' : 'ghost'), padding: '5px 12px', fontSize: 12 }}>{l}</button>
             ))}
-            <input style={{ ...s.input, maxWidth: 280, marginLeft: 'auto' }} placeholder="Folio, receptor, RFC…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+            <input style={{ ...s.input, maxWidth: esMovil ? 'none' : 280, marginLeft: esMovil ? 0 : 'auto' }} placeholder="Folio, receptor, RFC…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
           </div>
           {cargando ? <div style={s.empty}>Cargando…</div> : facturas.length === 0 ? (
             <div style={s.empty}>Sin facturas.</div>
+          ) : esMovil ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {facturas.map((f) => (
+                <div key={f.id} style={{ ...tarjeta, cursor: 'pointer' }} onClick={() => verDetalle(f.id)}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.receptor?.nombre}</div>
+                      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+                        <span style={{ fontFamily: 'monospace' }}>{f.folio || 'Borrador'}</span> · {f.fecha}
+                        {f.receptor?.rfc && <> · {f.receptor.rfc}</>}
+                      </div>
+                    </div>
+                    <Chip estado={f.estado} vencida={esVencida(f)} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 10, marginTop: 10 }}>
+                    <div style={{ fontSize: 12, color: '#64748b', minWidth: 0 }}>
+                      {ORIGEN[f.origen_tipo]}{f.origen_folio ? ` · ${f.origen_folio}` : ''}
+                      {f.estado === 'emitida' && f.saldo > 0 && <div style={{ fontSize: 13, fontWeight: 600, color: '#b45309' }}>Por cobrar {money(f.saldo)}</div>}
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: 16, whiteSpace: 'nowrap' }}>{money(f.total)}</div>
+                  </div>
+                  <div style={filaAcciones} onClick={(e) => e.stopPropagation()}>
+                    <button style={{ ...s.btn('ghost'), flex: 1, padding: '10px 12px', fontSize: 14 }} onClick={() => verDetalle(f.id)}>Ver</button>
+                    <button style={{ ...s.btn('success'), flex: 1, padding: '10px 12px', fontSize: 14 }} onClick={() => pdf(f.id)}>PDF</button>
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={s.table}>
@@ -470,7 +529,9 @@ export default function Facturacion() {
             <span style={{ fontFamily: 'monospace', fontSize: 16, fontWeight: 700 }}>{detalle.folio || 'Borrador'}</span>
             <Chip estado={detalle.estado} vencida={esVencida(detalle)} />
             {detalle.origen_folio && <span style={{ fontSize: 12, color: '#64748b' }}>{ORIGEN[detalle.origen_tipo]} {detalle.origen_folio}</span>}
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={esMovil
+              ? { flex: '1 1 100%', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8 }
+              : { marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {detalle.estado === 'borrador' && <>
                 <button style={s.btn('ghost')} onClick={() => abrirEditar(detalle)}>Editar</button>
                 <button style={{ ...s.btn('ghost'), color: '#b91c1c' }} onClick={() => eliminarBorrador(detalle)}>Eliminar</button>
@@ -504,6 +565,23 @@ export default function Facturacion() {
           </div>
 
           <div style={s.card}>
+            {esMovil ? (
+              <div>
+                {detalle.conceptos.map((c, i) => (
+                  <div key={i} style={{ padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>{c.descripcion}</span>
+                      <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{money(c.importe)}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+                      {c.cantidad} × {money(c.precio_unitario)}
+                      {c.descuento ? ` · desc. ${money(c.descuento)}` : ''} · IVA {Math.round(c.iva_tasa * 100)}%
+                      {c.clave && ` · ${c.clave}`}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={s.table}>
                 <thead>
@@ -526,8 +604,9 @@ export default function Facturacion() {
                 </tbody>
               </table>
             </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-              <div style={{ minWidth: 240, fontSize: 13 }}>
+              <div style={{ minWidth: esMovil ? '100%' : 240, fontSize: 13 }}>
                 {[['Subtotal', detalle.subtotal], detalle.descuento ? ['Descuento', -detalle.descuento] : null, ['IVA', detalle.iva]].filter(Boolean).map(([l, v]) => (
                   <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span style={{ color: '#64748b' }}>{l}</span><span>{money(v)}</span></div>
                 ))}
@@ -542,11 +621,28 @@ export default function Facturacion() {
 
           {['emitida', 'pagada'].includes(detalle.estado) && (
             <div style={s.card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
                 <div style={{ fontWeight: 700 }}>Pagos</div>
                 <div style={{ fontSize: 13 }}>Pagado <b>{money(detalle.total_pagado)}</b> · Saldo <b style={{ color: detalle.saldo > 0 ? '#b45309' : '#15803d' }}>{money(detalle.saldo)}</b></div>
               </div>
-              {detalle.pagos?.length > 0 && (
+              {detalle.pagos?.length > 0 && esMovil && (
+                <div style={{ marginBottom: 12 }}>
+                  {detalle.pagos.map((p) => (
+                    <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
+                      <div style={{ minWidth: 0, fontSize: 12, color: '#64748b' }}>
+                        <div style={{ fontSize: 14, color: '#1e293b' }}>{p.fecha} · {Object.fromEntries(FORMAS_PAGO)[p.forma_pago] || p.forma_pago}</div>
+                        <div>{[p.cuenta_nombre, p.referencia, p.cobro_numero && `Cobro ${p.cobro_numero}`].filter(Boolean).join(' · ')}</div>
+                        {p.poliza_error && <div style={{ color: '#b45309' }}>Sin póliza contable</div>}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <span style={{ fontWeight: 700 }}>{money(p.monto)}</span>
+                        <button style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 16, padding: 6 }} aria-label="Eliminar pago" onClick={() => eliminarPago(p)}>✕</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {detalle.pagos?.length > 0 && !esMovil && (
                 <table style={{ ...s.table, marginBottom: 12 }}>
                   <tbody>
                     {detalle.pagos.map((p) => (
@@ -575,23 +671,23 @@ export default function Facturacion() {
               )}
               {detalle.estado === 'emitida' && cuentas.length > 0 && (
                 <form onSubmit={registrarPago} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <div style={{ ...s.fg, width: 140 }}>
+                  <div style={{ ...s.fg, width: esMovil ? 'calc(50% - 4px)' : 140 }}>
                     <label style={s.lbl}>Monto</label>
                     <input style={s.input} type="number" step="0.01" min="0" value={pago.monto} onChange={(e) => setPago({ ...pago, monto: e.target.value })} />
                   </div>
-                  <div style={{ ...s.fg, width: 170 }}>
+                  <div style={{ ...s.fg, width: esMovil ? 'calc(50% - 4px)' : 170 }}>
                     <label style={s.lbl}>Cuenta destino</label>
                     <select style={s.input} value={cuentaPago} onChange={(e) => setPago({ ...pago, cuenta_id: e.target.value })}>
                       {cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                     </select>
                   </div>
-                  <div style={{ ...s.fg, width: 170 }}>
+                  <div style={{ ...s.fg, width: esMovil ? 'calc(50% - 4px)' : 170 }}>
                     <label style={s.lbl}>Forma</label>
                     <select style={s.input} value={pago.forma_pago} onChange={(e) => setPago({ ...pago, forma_pago: e.target.value })}>
                       {FORMAS_PAGO.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                     </select>
                   </div>
-                  <div style={{ ...s.fg, width: 150 }}>
+                  <div style={{ ...s.fg, width: esMovil ? 'calc(50% - 4px)' : 150 }}>
                     <label style={s.lbl}>Fecha</label>
                     <input style={s.input} type="date" value={pago.fecha} onChange={(e) => setPago({ ...pago, fecha: e.target.value })} />
                   </div>
@@ -599,8 +695,8 @@ export default function Facturacion() {
                     <label style={s.lbl}>Referencia</label>
                     <input style={s.input} value={pago.referencia} onChange={(e) => setPago({ ...pago, referencia: e.target.value })} />
                   </div>
-                  <button type="button" style={s.btn('ghost')} onClick={() => setPago({ ...pago, monto: String(detalle.saldo) })}>Saldo total</button>
-                  <button type="submit" style={s.btn('success')}>Registrar pago</button>
+                  <button type="button" style={esMovil ? { ...s.btn('ghost'), flex: 1, padding: '10px 12px' } : s.btn('ghost')} onClick={() => setPago({ ...pago, monto: String(detalle.saldo) })}>Saldo total</button>
+                  <button type="submit" style={esMovil ? { ...s.btn('success'), flex: 1, padding: '10px 12px' } : s.btn('success')}>Registrar pago</button>
                 </form>
               )}
             </div>
