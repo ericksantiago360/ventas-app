@@ -34,7 +34,8 @@
         [style*="grid-template-columns: 1fr 1fr 1fr;"] > *,
         [style*="grid-template-columns: repeat(3, 1fr);"] > * { grid-column: auto !important; }
         [style*="grid-template-columns: 1fr 1fr 1fr 1fr;"],
-        [style*="grid-template-columns: repeat(4, minmax(0px, 1fr));"] { grid-template-columns: 1fr 1fr !important; }
+        [style*="grid-template-columns: repeat(4, minmax(0px, 1fr));"],
+        [style*="grid-template-columns: repeat(3, minmax(0px, 1fr));"] { grid-template-columns: 1fr 1fr !important; }
 
         /* Tablas anchas: desplazamiento horizontal en lugar de desbordar la pantalla */
         main table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -61,6 +62,11 @@
         /* Campos con altura mínima para tocarlos con el dedo */
         div[style*="position: fixed"][style*="inset: 0px"][style*="background: rgba"] :is(input:not([type="checkbox"]):not([type="radio"]), select) {
           min-height: 40px;
+        }
+        /* Formularios en línea de una fila que terminan en botón (registrar pago, agregar
+           movimiento a la póliza…) → dos columnas */
+        div[style*="position: fixed"][style*="inset: 0px"][style*="background: rgba"] [style*="grid-template-columns"][style*="fr auto;"] {
+          grid-template-columns: 1fr 1fr !important;
         }
         /* Fila de botones al final del formulario: fija abajo y con botones más fáciles de tocar */
         div[style*="position: fixed"][style*="inset: 0px"][style*="background: rgba"] div[style*="justify-content: flex-end"]:last-child:has(> button) {
