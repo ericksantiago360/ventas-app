@@ -1,4 +1,5 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useNegocio } from '../context/NegocioContext'
 
 // Subtítulo del menú según el giro del negocio (config_negocios.tipo)
@@ -53,10 +54,48 @@ const NAV_GROUPS = [
   },
 ]
 
+const ANCHO_MOVIL = 768
+
+function useEsMovil() {
+  const consulta = `(max-width: ${ANCHO_MOVIL}px)`
+  const [esMovil, setEsMovil] = useState(() => window.matchMedia(consulta).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(consulta)
+    const cambio = (e) => setEsMovil(e.matches)
+    mq.addEventListener('change', cambio)
+    return () => mq.removeEventListener('change', cambio)
+  }, [consulta])
+  return esMovil
+}
+
+// Chrome/Android ofrece instalar la app; iOS no tiene este evento (se instala desde Compartir)
+function useInstalarApp() {
+  const [aviso, setAviso] = useState(null)
+  useEffect(() => {
+    const guardar = (e) => { e.preventDefault(); setAviso(e) }
+    const instalada = () => setAviso(null)
+    window.addEventListener('beforeinstallprompt', guardar)
+    window.addEventListener('appinstalled', instalada)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', guardar)
+      window.removeEventListener('appinstalled', instalada)
+    }
+  }, [])
+  if (!aviso) return null
+  return () => { aviso.prompt(); aviso.userChoice.finally(() => setAviso(null)) }
+}
+
 export default function Layout() {
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const user = JSON.parse(localStorage.getItem('user') || '{}')
   const { negocioActual, cargandoNegocios, errorNegocios } = useNegocio()
+  const esMovil = useEsMovil()
+  const instalar = useInstalarApp()
+  const [menuAbierto, setMenuAbierto] = useState(false)
+
+  // Al navegar desde el cajón del menú, se cierra solo
+  useEffect(() => { setMenuAbierto(false) }, [pathname])
 
   const logout = () => {
     localStorage.removeItem('token')
@@ -64,19 +103,61 @@ export default function Layout() {
     navigate('/login')
   }
 
+  const titulo = negocioActual?.nombre || 'Gestión'
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
 
+      {/* ── Barra superior (celular) ── */}
+      {esMovil && (
+        <header style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 900,
+          background: '#0f172a', color: '#fff',
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: 'env(safe-area-inset-top) 12px 0',
+          paddingLeft: 'max(12px, env(safe-area-inset-left))',
+          height: 'calc(52px + env(safe-area-inset-top))',
+        }}>
+          <button onClick={() => setMenuAbierto(true)} aria-label="Abrir menú" style={{
+            background: 'none', border: 'none', color: '#fff', cursor: 'pointer',
+            width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M3 6h18M3 12h18M3 18h18" />
+            </svg>
+          </button>
+          <div style={{ fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {titulo}
+          </div>
+        </header>
+      )}
+
+      {/* Fondo oscuro detrás del cajón */}
+      {esMovil && menuAbierto && (
+        <div onClick={() => setMenuAbierto(false)} style={{
+          position: 'fixed', inset: 0, background: 'rgba(15,23,42,.5)', zIndex: 950,
+        }} />
+      )}
+
       {/* ── Sidebar ── */}
       <aside style={{
-        width: 220, flexShrink: 0,
+        width: esMovil ? 260 : 220, flexShrink: 0,
         background: '#0f172a',
         display: 'flex', flexDirection: 'column',
-        position: 'sticky', top: 0, height: '100vh',
+        ...(esMovil ? {
+          position: 'fixed', top: 0, bottom: 0, left: 0, zIndex: 1000,
+          transform: menuAbierto ? 'translateX(0)' : 'translateX(-100%)',
+          transition: 'transform 0.2s ease',
+          boxShadow: menuAbierto ? '0 0 30px rgba(0,0,0,.4)' : 'none',
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        } : {
+          position: 'sticky', top: 0, height: '100vh',
+        }),
       }}>
         {/* Logo */}
         <div style={{ padding: '1.25rem 1.25rem 1rem', borderBottom: '1px solid #1e293b' }}>
-          <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>{negocioActual?.nombre || 'Gestión'}</div>
+          <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>{titulo}</div>
           <div style={{ color: '#475569', fontSize: 11, marginTop: 2 }}>
             {GIROS[negocioActual?.tipo] || 'Plataforma multi-negocio'}
           </div>
@@ -100,10 +181,10 @@ export default function Layout() {
                   style={({ isActive }) => ({
                     display:        'flex',
                     alignItems:     'center',
-                    padding:        '7px 10px',
+                    padding:        esMovil ? '11px 10px' : '7px 10px',
                     borderRadius:   6,
                     marginBottom:   1,
-                    fontSize:       13.5,
+                    fontSize:       esMovil ? 15 : 13.5,
                     textDecoration: 'none',
                     fontWeight:     isActive ? 600 : 400,
                     color:          isActive ? '#fff' : '#94a3b8',
@@ -120,13 +201,22 @@ export default function Layout() {
 
         {/* Pie */}
         <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid #1e293b' }}>
+          {instalar && (
+            <button onClick={instalar} style={{
+              width: '100%', padding: '8px 10px', marginBottom: 8,
+              background: '#1e40af', border: 'none', borderRadius: 6,
+              color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}>
+              Instalar app
+            </button>
+          )}
           <div style={{ fontSize: 12, color: '#64748b', marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {user.nombre || 'Usuario'}
           </div>
           <button onClick={logout} style={{
-            width: '100%', padding: '6px 10px', background: 'none',
+            width: '100%', padding: esMovil ? '10px' : '6px 10px', background: 'none',
             border: '1px solid #1e293b', borderRadius: 6,
-            color: '#64748b', fontSize: 12, cursor: 'pointer', textAlign: 'left',
+            color: '#64748b', fontSize: esMovil ? 14 : 12, cursor: 'pointer', textAlign: 'left',
           }}>
             Cerrar sesión
           </button>
@@ -134,8 +224,14 @@ export default function Layout() {
       </aside>
 
       {/* ── Contenido ── */}
-      <main style={{ flex: 1, overflow: 'auto', background: '#f8fafc' }}>
-        <div style={{ padding: '2rem' }}>
+      <main style={{
+        flex: 1, minWidth: 0, overflow: 'auto', background: '#f8fafc',
+        paddingTop: esMovil ? 'calc(52px + env(safe-area-inset-top))' : 0,
+      }}>
+        <div style={{
+          padding: esMovil ? '1rem' : '2rem',
+          paddingBottom: esMovil ? 'calc(1rem + env(safe-area-inset-bottom))' : '2rem',
+        }}>
           {/* Las páginas esperan la lista de negocios para no pedir datos de uno no asignado */}
           {cargandoNegocios ? (
             <div style={{ color: '#94a3b8' }}>Cargando…</div>

@@ -2,11 +2,42 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ventas App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Gestión</title>
+
+    <!-- App instalable (PWA) -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Gestión" />
+
     <style>
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; color: #1e293b; }
+      body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; color: #1e293b; -webkit-tap-highlight-color: transparent; }
+
+      /* Ajustes para celular. Las páginas usan estilos en línea, por eso se
+         seleccionan por su atributo style y se usa !important. */
+      @media (max-width: 768px) {
+        /* iOS hace zoom al enfocar campos con letra menor a 16px */
+        input, select, textarea { font-size: 16px !important; }
+
+        /* Formularios de 2 y 3 columnas → una sola columna */
+        [style*="grid-template-columns: 1fr 1fr;"],
+        [style*="grid-template-columns: 1fr 1fr 1fr;"],
+        [style*="grid-template-columns: repeat(3, 1fr);"] { grid-template-columns: 1fr !important; }
+        [style*="grid-template-columns: 1fr 1fr 1fr 1fr;"],
+        [style*="grid-template-columns: repeat(4, minmax(0px, 1fr));"] { grid-template-columns: 1fr 1fr !important; }
+
+        /* Tablas anchas: desplazamiento horizontal en lugar de desbordar la pantalla */
+        main table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+        /* Modales: ocupan el ancho disponible y se desplazan si son altos */
+        div[style*="position: fixed"] > div { max-width: 100% !important; max-height: 100%; overflow-y: auto; }
+      }
     </style>
   </head>
   <body>
