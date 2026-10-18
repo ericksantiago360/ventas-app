@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNegocio } from '../context/NegocioContext'
+import useEsMovil from '../hooks/useEsMovil'
 
 const fmt = (n) => Number(n || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
 const fmtNum = (n) => Number(n || 0).toLocaleString('es-MX')
@@ -54,8 +55,40 @@ const PRESTACIONES_LEY = { aguinaldo_dias: 15, prima_pct: 25, vacaciones_extra: 
 const factorPrimerAnio = (c) =>
   1 + (Number(c.aguinaldo_dias) + (12 + Number(c.vacaciones_extra)) * Number(c.prima_pct) / 100) / 365
 
+// Recibo de nómina como tarjeta para celular: el neto es lo que más se busca
+function ReciboTarjeta({ r, onEditar }) {
+  const monto = (label, valor, color, grande) => (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 11, color: '#94a3b8' }}>{label}</div>
+      <div style={{ fontWeight: grande ? 700 : 600, fontSize: grande ? 16 : 14, color, whiteSpace: 'nowrap' }}>{fmt(valor)}</div>
+    </div>
+  )
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 14px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.empleado_nombre}</div>
+          {r.puesto && <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{r.puesto}</div>}
+        </div>
+        <Chip tipo={r.estado} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 10 }}>
+        {monto('Percepciones', r.total_percepciones, '#15803d')}
+        {monto('Deducciones', r.total_deducciones, '#b91c1c')}
+        <div style={{ textAlign: 'right' }}>{monto('Neto', r.total_neto, '#1e293b', true)}</div>
+      </div>
+      {onEditar && (
+        <button onClick={onEditar} style={{ width: '100%', marginTop: 12, padding: '10px 12px', border: 'none', borderRadius: 6, background: '#f1f5f9', color: '#334155', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+          Editar recibo
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function Personal() {
   const { negocioId, setNegocioId, negociosDisponibles } = useNegocio()
+  const esMovil = useEsMovil()
   const esAdmin = JSON.parse(localStorage.getItem('user') || '{}').rol === 'admin'
   const [vista, setVista] = useState('dashboard')
   const [cargando, setCargando] = useState(false)
@@ -804,7 +837,21 @@ export default function Personal() {
               <button style={{ ...s.btn('ghost'), fontSize: 18, padding: '2px 10px' }} onClick={() => setModalRecibos(false)}>×</button>
             </div>
 
-            {/* Totales */}
+            {/* Totales: en celular, una sola tarjeta con un renglón por total */}
+            {esMovil ? (
+              <div style={{ ...s.card, padding: '10px 14px', marginBottom: 12 }}>
+                {[
+                  ['Percepciones', fmt(periodoActivo.total_percepciones), '#15803d'],
+                  ['Deducciones',  fmt(periodoActivo.total_deducciones),  '#b91c1c'],
+                  ['Neto a pagar', fmt(periodoActivo.total_neto),          '#1d4ed8'],
+                ].map(([l, v, c], i) => (
+                  <div key={l} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '5px 0', borderTop: i ? '1px solid #f1f5f9' : 'none' }}>
+                    <span style={{ fontSize: 13, color: '#64748b' }}>{l}</span>
+                    <span style={{ fontWeight: 700, fontSize: i === 2 ? 17 : 15, color: c }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 16 }}>
               {[
                 ['Total percepciones', fmt(periodoActivo.total_percepciones), '#15803d'],
@@ -817,7 +864,18 @@ export default function Personal() {
                 </div>
               ))}
             </div>
+            )}
 
+            {esMovil ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {recibos.length === 0 && (
+                  <div style={{ ...s.card, padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+                    Sin recibos — usa el botón "Calcular" en el período para generarlos.
+                  </div>
+                )}
+                {recibos.map(r => <ReciboTarjeta key={r.id} r={r} onEditar={periodoActivo.estado !== 'cerrado' ? () => abrirReciboEdit(r) : null} />)}
+              </div>
+            ) : (
             <table style={s.table}>
               <thead>
                 <tr>
@@ -849,6 +907,7 @@ export default function Personal() {
                 ))}
               </tbody>
             </table>
+            )}
           </div>
         </div>
       )}
