@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useNegocio } from '../context/NegocioContext'
 import useEsMovil from '../hooks/useEsMovil'
 import ModalFormulario from '../components/ModalFormulario'
+import {
+  calcularFlag, textoReferencia, textoCritico, textoMuestra, ChipsOrden, PanelCriticos, AvisoCriticoModal, MuestraModal, RangosReferencia,
+} from '../modules/clinica/laboratorio'
 
 async function req(url, opts = {}) {
   const token = localStorage.getItem('token')
@@ -58,18 +61,6 @@ function EstadoChip({ estado, map }) {
   return <span style={{ background: e.bg, color: e.color, borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 600, textTransform: 'capitalize' }}>{estado?.replace('_', ' ')}</span>
 }
 
-function calcularFlagJS(valor, tipo, min, max) {
-  if (tipo === 'cualitativo') return 'normal'
-  const num = parseFloat(valor)
-  if (isNaN(num) || valor === '') return 'pendiente'
-  if (min != null && max != null) {
-    if (num < min) return (min > 0 && num < min * 0.7) ? 'critico' : 'bajo'
-    if (num > max) return num > max * 1.3 ? 'critico' : 'alto'
-    return 'normal'
-  }
-  return 'pendiente'
-}
-
 // ── Estilos ────────────────────────────────────────────────────────────────────
 const S = {
   page:    { fontFamily: 'system-ui,sans-serif', color: '#1e293b', maxWidth: 1280 },
@@ -95,13 +86,8 @@ const S = {
   err:     { background: '#fef2f2', color: '#b91c1c', borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 12 },
 }
 
-// Rango de referencia según el sexo del paciente
-function referenciaAnalito(a, sexo = 'masculino') {
-  if (a.tipo === 'cualitativo') return a.referencia_texto || '—'
-  const min = sexo === 'femenino' ? a.referencia_mujer_min : a.referencia_hombre_min
-  const max = sexo === 'femenino' ? a.referencia_mujer_max : a.referencia_hombre_max
-  return min != null && max != null ? `${min} – ${max}` : '—'
-}
+// Rango de referencia: el fijado a la orden por edad y sexo (o el de la plantilla en órdenes anteriores)
+const referenciaAnalito = textoReferencia
 
 // Analito en celular: nombre y flag arriba, valor grande con su referencia abajo
 function AnalitoFila({ a, sexo, ultimo }) {
@@ -238,6 +224,7 @@ function OrdenTarjeta({ o, onAbrir, acciones }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.paciente_nombre}</div>
+          {(o.urgente || o.resultados_criticos) && <div style={{ display: 'flex', gap: 4, marginTop: 3 }}><ChipsOrden o={o} /></div>}
           <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
             <span style={{ fontFamily: 'monospace' }}>{o.folio}</span>
             {o.fecha && <> · {o.fecha}</>}
@@ -261,10 +248,10 @@ function OrdenTarjeta({ o, onAbrir, acciones }) {
   )
 }
 
-const EMPTY_ORDEN = { paciente_id: '', paciente_nombre: '', medico_solicitante: '', fecha: hoy(), observaciones: '', estudios: [] }
+const EMPTY_ORDEN = { paciente_id: '', paciente_nombre: '', expediente_id: '', medico_solicitante: '', medico_solicitante_id: '', urgente: false, fecha: hoy(), observaciones: '', estudios: [] }
 const EMPTY_PLANTILLA = { codigo: '', nombre: '', categoria: '', muestra: 'Sangre', tiempo_entrega: 2, precio: '', analitos: [] }
 const EMPTY_ANALITO = { nombre: '', unidad: '', tipo: 'numerico', referencia_hombre_min: '', referencia_hombre_max: '', referencia_mujer_min: '', referencia_mujer_max: '', referencia_texto: '' }
-const EMPTY_CONFIG = { nombre: '', nombre_corto: '', direccion: '', colonia: '', ciudad: '', estado_rep: '', cp: '', telefono: '', email: '', rfc: '', director: '', cedula_director: '', aviso_pie: '' }
+const EMPTY_CONFIG = { nombre: '', nombre_corto: '', direccion: '', colonia: '', ciudad: '', estado_rep: '', cp: '', telefono: '', email: '', rfc: '', director: '', cedula_director: '', firma_director_base64: '', aviso_pie: '' }
 
 export default function Resultados() {
   const { negocioId } = useNegocio()
@@ -306,6 +293,10 @@ export default function Resultados() {
   const [resultadoEditando, setResultadoEditando] = useState(null)
   const [formCaptura, setFormCaptura] = useState({ analitos: [], observaciones: '', tecnico_nombre: '' })
   const [guardandoCaptura, setGuardandoCaptura] = useState(false)
+
+  const [medicos, setMedicos] = useState([])
+  const [modalAviso, setModalAviso] = useState(false)
+  const [modalMuestra, setModalMuestra] = useState(false)
 
   const [modalCorreo, setModalCorreo] = useState(null)   // orden a enviar
   const [formCorreo, setFormCorreo] = useState({ email: '', mensaje: '', marcar_entregado: true })
@@ -361,11 +352,20 @@ export default function Resultados() {
     } catch (e) { setError(e.message) }
   }
 
-  // Otras pantallas (como el historial del paciente) abren una orden con ?orden=<id>
+  // Otras pantallas abren una orden con ?orden=<id>, o una orden nueva para un expediente con ?nueva_orden=<expediente>
   useEffect(() => {
     const id = searchParams.get('orden')
-    if (!id) return
-    cargarOrdenDetalle(id)
+    const expedienteId = searchParams.get('nueva_orden')
+    if (!id && !expedienteId) return
+    if (id) cargarOrdenDetalle(id)
+    if (expedienteId) {
+      req(`/api/clinica/expedientes/${expedienteId}`).then(exp => {
+        abrirNuevaOrden()
+        const nombre = [exp.paciente?.nombre, exp.paciente?.apellido_paterno, exp.paciente?.apellido_materno].filter(Boolean).join(' ')
+        setFormOrden(f => ({ ...f, paciente_id: exp.paciente_id, expediente_id: exp.id, paciente_nombre: nombre, medico_solicitante_id: exp.medico_id || '' }))
+        setBusquedaPac(nombre)
+      }).catch(e => setError(e.message))
+    }
     setSearchParams({}, { replace: true })
   }, [searchParams])
 
@@ -411,6 +411,7 @@ export default function Resultados() {
     req(`/api/lab/plantillas?negocio_id=${encodeURIComponent(negocioId)}`)
       .then(setPlantillas)
       .catch(e => setError(e.message))
+    req(`/api/clinica/medicos?negocio_id=${encodeURIComponent(negocioId)}`).then(setMedicos).catch(() => setMedicos([]))
   }
 
   function seleccionarPaciente(p) {
@@ -432,7 +433,10 @@ export default function Resultados() {
         body: JSON.stringify({
           negocio_id:         negocioId,
           paciente_id:        formOrden.paciente_id,
-          medico_solicitante: formOrden.medico_solicitante,
+          expediente_id:      formOrden.expediente_id,
+          medico_solicitante: formOrden.medico_solicitante_id ? '' : formOrden.medico_solicitante,
+          medico_solicitante_id: formOrden.medico_solicitante_id,
+          urgente:            formOrden.urgente,
           fecha:              formOrden.fecha,
           observaciones:      formOrden.observaciones,
           estudios:           formOrden.estudios.map(id => ({ plantilla_id: id })),
@@ -476,10 +480,7 @@ export default function Resultados() {
     setFormCaptura(f => {
       const analitos = f.analitos.map((a, i) => {
         if (i !== idx) return a
-        const sexo = ordenDetalle?.paciente_sexo || 'masculino'
-        const min = sexo === 'femenino' ? a.referencia_mujer_min : a.referencia_hombre_min
-        const max = sexo === 'femenino' ? a.referencia_mujer_max : a.referencia_hombre_max
-        return { ...a, valor, flag: calcularFlagJS(valor, a.tipo, min, max) }
+        return { ...a, valor, flag: calcularFlag(valor, a, ordenDetalle?.paciente_sexo || 'masculino') }
       })
       return { ...f, analitos }
     })
@@ -494,6 +495,7 @@ export default function Resultados() {
         body: JSON.stringify(formCaptura),
       })
       setModalCaptura(false)
+      window.dispatchEvent(new Event('lab:cambio'))
       await cargarOrdenDetalle(ordenDetalle.id)
       await cargarOrdenes()
     } catch (e) { setError(e.message) }
@@ -615,7 +617,7 @@ export default function Resultados() {
 
       {!ordenDetalle && (
         <div style={esMovil ? { ...S.tabs, overflowX: 'auto', marginTop: 14, marginBottom: 16, scrollbarWidth: 'none' } : S.tabs}>
-          {[['resumen','Resumen del día'],['ordenes','Órdenes'],['plantillas','Catálogo de estudios'],['configuracion','Configuración']].map(([k, l]) => (
+          {[['resumen','Resumen del día'],['ordenes','Órdenes'],['plantillas','Catálogo de estudios'],['rangos','Rangos de referencia'],['configuracion','Configuración']].map(([k, l]) => (
             <button key={k} style={esMovil ? { ...S.tab(vista === k), whiteSpace: 'nowrap', padding: '8px 12px', flexShrink: 0 } : S.tab(vista === k)} onClick={() => { setError(''); setVista(k) }}>{l}</button>
           ))}
         </div>
@@ -626,6 +628,24 @@ export default function Resultados() {
       {/* ── RESUMEN ─────────────────────────────────────────────────────── */}
       {vista === 'resumen' && !ordenDetalle && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {dash?.criticos_sin_notificar?.length > 0 && (
+            <div style={{ ...S.card, border: '1.5px solid #dc2626', background: '#fef2f2', ...(esMovil && { padding: 14 }) }}>
+              <div style={{ fontWeight: 800, color: '#b91c1c', marginBottom: 8 }}>
+                ⚠ {dash.criticos_sin_notificar.length} orden{dash.criticos_sin_notificar.length > 1 ? 'es' : ''} con resultados críticos sin avisar al médico
+              </div>
+              {dash.criticos_sin_notificar.map(o => (
+                <button key={o.id} onClick={() => { setVista('ordenes'); cargarOrdenDetalle(o.id) }} style={{
+                  display: 'flex', gap: 10, width: '100%', textAlign: 'left', background: '#fff', border: '1px solid #fecaca', borderRadius: 8,
+                  padding: '8px 12px', marginTop: 6, cursor: 'pointer', fontSize: 13, alignItems: 'center', flexWrap: 'wrap',
+                }}>
+                  <span style={{ fontFamily: 'monospace', color: '#64748b' }}>{o.folio}</span>
+                  <span style={{ fontWeight: 600 }}>{o.paciente_nombre}</span>
+                  <span style={{ color: '#b91c1c' }}>{(o.criticos || []).map(c => `${c.analito} ${c.valor}`).join(' · ')}</span>
+                  {o.medico_solicitante && <span style={{ color: '#94a3b8', marginLeft: 'auto' }}>Dr(a). {o.medico_solicitante}</span>}
+                </button>
+              ))}
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 14 }}>
             {[
               { label: 'Órdenes hoy',      val: dash?.ordenes_hoy     ?? '—', color: '#1e293b' },
@@ -633,6 +653,7 @@ export default function Resultados() {
               { label: 'En proceso',        val: dash?.en_proceso      ?? '—', color: '#1d4ed8' },
               { label: 'Completadas hoy',   val: dash?.completadas_hoy ?? '—', color: '#15803d' },
               { label: 'Por entregar',      val: dash?.por_entregar    ?? '—', color: '#7e22ce' },
+              { label: 'Urgentes abiertas', val: dash?.urgentes_abiertas ?? '—', color: '#dc2626' },
               { label: 'Ingresos del día',  val: dash ? fmt(dash.ingresos_hoy) : '—', color: '#15803d' },
             ].map(c => (
               <div key={c.label} style={S.card}>
@@ -658,7 +679,7 @@ export default function Resultados() {
                   {dash.ultimas_ordenes.map(o => (
                     <tr key={o.id} style={{ cursor: 'pointer' }} onClick={() => { setVista('ordenes'); cargarOrdenDetalle(o.id).then(() => {}) }}>
                       <td style={S.td}><span style={{ fontFamily: 'monospace', fontSize: 12 }}>{o.folio}</span></td>
-                      <td style={{ ...S.td, fontWeight: 600 }}>{o.paciente_nombre}</td>
+                      <td style={{ ...S.td, fontWeight: 600 }}>{o.paciente_nombre} <ChipsOrden o={o} /></td>
                       <td style={S.td}>{o.medico_solicitante || '—'}</td>
                       <td style={S.td}>{o.estudios?.length ?? 0}</td>
                       <td style={{ ...S.td, fontWeight: 600 }}>{fmt(o.total)}</td>
@@ -714,7 +735,10 @@ export default function Resultados() {
                   {ordenes.map(o => (
                     <tr key={o.id} style={{ cursor: 'pointer' }} onClick={() => cargarOrdenDetalle(o.id)}>
                       <td style={S.td}><span style={{ fontFamily: 'monospace', fontSize: 12, color: '#64748b' }}>{o.folio}</span></td>
-                      <td style={{ ...S.td, fontWeight: 600 }}>{o.paciente_nombre}<div style={{ fontSize: 11, color: '#94a3b8' }}>{o.paciente_folio}</div></td>
+                      <td style={{ ...S.td, fontWeight: 600 }}>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>{o.paciente_nombre} <ChipsOrden o={o} /></div>
+                        <div style={{ fontSize: 11, color: '#94a3b8' }}>{o.expediente_folio || o.paciente_folio}</div>
+                      </td>
                       <td style={S.td}>{o.fecha}</td>
                       <td style={S.td}>{o.medico_solicitante || '—'}</td>
                       <td style={S.td}>{o.estudios?.length ?? 0} estudio{o.estudios?.length !== 1 ? 's' : ''}</td>
@@ -753,6 +777,7 @@ export default function Resultados() {
             <button style={S.btn('ghost')} onClick={() => { setOrdenDetalle(null); cargarOrdenes() }}>← Volver</button>
             <span style={{ fontFamily: 'monospace', fontSize: 14, color: '#64748b', fontWeight: 700 }}>{ordenDetalle.folio}</span>
             <EstadoChip estado={ordenDetalle.estado} map={ESTADO_ORDEN} />
+            <ChipsOrden o={ordenDetalle} />
             {/* En celular las acciones bajan a su propia fila y se reparten el ancho */}
             <div style={esMovil
               ? { flex: '1 1 100%', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }
@@ -771,6 +796,11 @@ export default function Resultados() {
                 </button>
               )}
               {['en_proceso', 'pendiente'].includes(ordenDetalle.estado) && (
+                <button style={{ ...S.btn('ghost'), color: '#334155' }} onClick={() => setModalMuestra(true)}>
+                  {ordenDetalle.muestra ? 'Editar toma de muestra' : 'Registrar toma de muestra'}
+                </button>
+              )}
+              {['en_proceso', 'pendiente'].includes(ordenDetalle.estado) && (
                 <button style={{ ...S.btn('ghost'), color: '#334155' }} onClick={() => verPdf(ordenDetalle.id)}>
                   Vista previa PDF
                 </button>
@@ -778,14 +808,19 @@ export default function Resultados() {
             </div>
           </div>
 
+          <PanelCriticos orden={ordenDetalle} onAvisar={() => setModalAviso(true)} />
+
           {/* Cabecera del paciente */}
           <div style={{ ...S.card, marginBottom: 16, ...(esMovil && { padding: 16 }) }}>
             <div style={{ display: 'grid', gridTemplateColumns: esMovil ? '1fr 1fr' : '1fr 1fr 1fr 1fr', gap: esMovil ? 12 : 16, fontSize: 13 }}>
               {[
-                ['Paciente', `${ordenDetalle.paciente_nombre} (${ordenDetalle.paciente_folio})`],
+                ['Paciente', ordenDetalle.expediente_id
+                  ? <Link to={`/clinica/expedientes/${ordenDetalle.expediente_id}`} style={{ color: '#1d4ed8', textDecoration: 'none' }}>{ordenDetalle.paciente_nombre} ({ordenDetalle.expediente_folio})</Link>
+                  : `${ordenDetalle.paciente_nombre} (${ordenDetalle.paciente_folio})`],
                 ['Sexo / Edad', `${ordenDetalle.paciente_sexo} · ${ordenDetalle.paciente_edad} años`],
                 ['Médico solicitante', ordenDetalle.medico_solicitante || '—'],
                 ['Fecha', ordenDetalle.fecha],
+                ['Toma de muestra', textoMuestra(ordenDetalle.muestra) || 'Sin registrar'],
               ].map(([k, v]) => (
                 <div key={k}>
                   <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>{k}</div>
@@ -852,7 +887,7 @@ export default function Resultados() {
                         {res.analitos.map((a, i) => {
                           const refStr = referenciaAnalito(a, ordenDetalle.paciente_sexo)
                           return (
-                            <tr key={i}>
+                            <tr key={i} style={a.flag === 'critico' ? { background: '#fef2f2' } : undefined}>
                               <td style={S.td}>{a.nombre}</td>
                               <td style={{ ...S.td, fontWeight: 700, fontSize: 14 }}>{a.valor || '—'}</td>
                               <td style={S.td}>{a.unidad || '—'}</td>
@@ -1011,6 +1046,30 @@ export default function Resultados() {
                 </div>
               </div>
 
+              <div style={{ ...S.fg, marginTop: 12 }}>
+                <label style={S.lbl}>Firma del responsable (aparece en el reporte)</label>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ width: 200, height: 70, border: '1px solid #e2e8f0', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff' }}>
+                    {config.firma_director_base64
+                      ? <img src={config.firma_director_base64} alt="Firma" style={{ maxWidth: 180, maxHeight: 60 }} />
+                      : <span style={{ fontSize: 12, color: '#94a3b8' }}>Sin firma</span>}
+                  </div>
+                  <label style={{ ...S.btn('ghost'), cursor: 'pointer' }}>
+                    Subir imagen
+                    <input type="file" accept="image/png,image/jpeg" style={{ display: 'none' }} onChange={e => {
+                      const f = e.target.files?.[0]; e.target.value = ''
+                      if (!f) return
+                      const lector = new FileReader()
+                      lector.onload = () => lector.result.length > 400000
+                        ? setError('La imagen es demasiado grande (máx. ~300 KB)')
+                        : setConfig(c => ({ ...c, firma_director_base64: lector.result }))
+                      lector.readAsDataURL(f)
+                    }} />
+                  </label>
+                  {config.firma_director_base64 && <button type="button" style={{ ...S.btn('ghost'), color: '#b91c1c' }} onClick={() => setConfig(c => ({ ...c, firma_director_base64: '' }))}>Quitar</button>}
+                </div>
+              </div>
+
               <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, margin: '20px 0 12px' }}>Aviso al pie del reporte</div>
               <div style={S.fg}>
                 <label style={S.lbl}>Texto del aviso</label>
@@ -1030,6 +1089,17 @@ export default function Resultados() {
             </div>
           </form>
         </div>
+      )}
+
+      {vista === 'rangos' && !ordenDetalle && <RangosReferencia negocioId={negocioId} />}
+
+      {modalAviso && ordenDetalle && (
+        <AvisoCriticoModal orden={ordenDetalle} cerrar={() => setModalAviso(false)}
+          onGuardado={(o) => { setModalAviso(false); setOrdenDetalle(d => ({ ...d, ...o, resultados: d.resultados })); window.dispatchEvent(new Event('lab:cambio')) }} />
+      )}
+      {modalMuestra && ordenDetalle && (
+        <MuestraModal orden={ordenDetalle} cerrar={() => setModalMuestra(false)}
+          onGuardado={(o) => { setModalMuestra(false); setOrdenDetalle(d => ({ ...d, ...o, resultados: d.resultados })) }} />
       )}
 
       {/* ── MODAL NUEVA ORDEN ────────────────────────────────────────────── */}
@@ -1058,7 +1128,7 @@ export default function Resultados() {
                   style={S.input}
                   placeholder="Buscar paciente por nombre o folio…"
                   value={busquedaPac}
-                  onChange={e => { setBusquedaPac(e.target.value); setFormOrden(f => ({ ...f, paciente_id: '', paciente_nombre: '' })) }}
+                  onChange={e => { setBusquedaPac(e.target.value); setFormOrden(f => ({ ...f, paciente_id: '', paciente_nombre: '', expediente_id: '' })) }}
                   autoComplete="off"
                 />
                 {sugerencias.length > 0 && (
@@ -1079,7 +1149,16 @@ export default function Resultados() {
               <div style={S.row3}>
                 <div style={S.fg}>
                   <label style={S.lbl}>Médico solicitante</label>
-                  <input style={S.input} value={formOrden.medico_solicitante} onChange={e => setFormOrden(f => ({ ...f, medico_solicitante: e.target.value }))} />
+                  {medicos.length > 0 && (
+                    <select style={{ ...S.select, marginBottom: formOrden.medico_solicitante_id ? 0 : 6 }} value={formOrden.medico_solicitante_id}
+                      onChange={e => setFormOrden(f => ({ ...f, medico_solicitante_id: e.target.value }))}>
+                      <option value="">Externo / escribir nombre</option>
+                      {medicos.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                    </select>
+                  )}
+                  {!formOrden.medico_solicitante_id && (
+                    <input style={S.input} placeholder="Nombre del médico" value={formOrden.medico_solicitante} onChange={e => setFormOrden(f => ({ ...f, medico_solicitante: e.target.value }))} />
+                  )}
                 </div>
                 <div style={S.fg}>
                   <label style={S.lbl}>Fecha *</label>
@@ -1090,6 +1169,10 @@ export default function Resultados() {
                   <input style={S.input} value={formOrden.observaciones} onChange={e => setFormOrden(f => ({ ...f, observaciones: e.target.value }))} />
                 </div>
               </div>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12, fontSize: 13, fontWeight: 600, color: formOrden.urgente ? '#b91c1c' : '#334155', cursor: 'pointer' }}>
+                <input type="checkbox" checked={formOrden.urgente} onChange={e => setFormOrden(f => ({ ...f, urgente: e.target.checked }))} />
+                Urgente: procesar antes que las demás
+              </label>
 
               {/* Selector de estudios */}
               <div style={{ ...S.sect, marginTop: 20 }}>Estudios a solicitar</div>
@@ -1143,9 +1226,8 @@ export default function Resultados() {
               <div style={{ marginBottom: 16 }}>
                 {formCaptura.analitos.map((a, i) => {
                   const sexo = ordenDetalle?.paciente_sexo || 'masculino'
-                  const min  = sexo === 'femenino' ? a.referencia_mujer_min : a.referencia_hombre_min
-                  const max  = sexo === 'femenino' ? a.referencia_mujer_max : a.referencia_hombre_max
-                  const refStr = a.tipo === 'cualitativo' ? (a.referencia_texto || '—') : (min != null && max != null ? `${min} – ${max} ${a.unidad}` : '—')
+                  const critico = textoCritico(a, sexo)
+                  const refStr = `${textoReferencia(a, sexo)}${a.tipo !== 'cualitativo' && a.unidad ? ` ${a.unidad}` : ''}${critico ? ` · ${critico}` : ''}`
                   const f = FLAG_STYLE[a.flag] || FLAG_STYLE.pendiente
                   return (
                     <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr auto', gap: 8, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>

@@ -4,11 +4,16 @@ from typing import Optional, Literal, List
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.negocios import validar_referencia, verificar_acceso
+from app.core.negocios import negocios_del_usuario, validar_referencia, verificar_acceso
+from app.modules.clinica.routes.expedientes import validar_medico
+from app.routers.pacientes import calcular_edad
+from app.services.rangos_lab import (
+    RANGOS_SEED, calcular_flag, catalogo_de_rangos, normalizar, referencia_de_plantilla, resolver_referencia,
+)
 from app.services.reporte_lab import generar_pdf_resultados, nombre_archivo_pdf
 from app.services.correo import CorreoError, correo_configurado
 from app.services.notificaciones_lab import enviar_resultados, url_publica
@@ -18,6 +23,9 @@ router = APIRouter(prefix="/lab", tags=["Laboratorio"])
 ESTADOS_ORDEN    = Literal["pendiente", "en_proceso", "completado", "entregado"]
 ESTADOS_RESULT   = Literal["pendiente", "capturado", "validado"]
 FLAGS            = Literal["pendiente", "normal", "alto", "bajo", "critico"]
+TIPOS_MUESTRA    = Literal["sangre", "orina", "heces", "cultivo", "otro"]
+SEXOS_RANGO      = Literal["ambos", "masculino", "femenino"]
+MEDIOS_AVISO     = Literal["telefono", "en_persona", "correo", "mensaje", "otro"]
 
 
 # ── Utilidades ────────────────────────────────────────────────────────────────
@@ -44,22 +52,29 @@ async def siguiente_folio(db, coleccion: str, negocio_id: str, prefijo: str) -> 
     return f"{prefijo}-{str(counter['seq']).zfill(5)}"
 
 
-def calcular_flag(valor: str, analito: dict, sexo: str = "masculino") -> str:
-    if analito.get("tipo") == "cualitativo":
-        return "normal"
-    try:
-        num = float(valor)
-    except (ValueError, TypeError):
-        return "pendiente"
-    ref_min = analito.get("referencia_mujer_min" if sexo == "femenino" else "referencia_hombre_min")
-    ref_max = analito.get("referencia_mujer_max" if sexo == "femenino" else "referencia_hombre_max")
-    if ref_min is None or ref_max is None:
-        return "pendiente"
-    if num < ref_min:
-        return "critico" if (ref_min > 0 and num < ref_min * 0.7) else "bajo"
-    if num > ref_max:
-        return "critico" if num > ref_max * 1.3 else "alto"
-    return "normal"
+def criticos_de(resultados: list[dict]) -> list[dict]:
+    return [
+        {"estudio": r.get("estudio_nombre", ""), "analito": a.get("nombre", ""), "valor": a.get("valor", ""), "unidad": a.get("unidad", "")}
+        for r in resultados for a in r.get("analitos", []) if a.get("flag") == "critico"
+    ]
+
+
+async def actualizar_criticos(db, orden_id: str, now: datetime) -> None:
+    """
+    Marca la orden con resultados críticos. Queda como notificada solo si el médico ya
+    recibió aviso de todos los críticos actuales: uno nuevo vuelve a pedir aviso.
+    """
+    resultados = await db.resultados_lab.find({"orden_id": orden_id}, {"estudio_nombre": 1, "analitos": 1}).to_list(50)
+    criticos = criticos_de(resultados)
+    orden = await db.ordenes_trabajo.find_one({"_id": validar_oid(orden_id)}, {"criticos_notificados": 1})
+    avisados = orden.get("criticos_notificados", []) if orden else []
+    claves = lambda lista: {(c["estudio"], c["analito"], c["valor"]) for c in lista}
+    await db.ordenes_trabajo.update_one({"_id": validar_oid(orden_id)}, {"$set": {
+        "resultados_criticos": bool(criticos),
+        "criticos":            criticos,
+        "notificado_medico":   bool(criticos) and claves(criticos) <= claves(avisados),
+        "updated_at":          now,
+    }})
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -102,11 +117,64 @@ class EstudioOrden(BaseModel):
 
 class OrdenCreate(BaseModel):
     negocio_id: str
-    paciente_id: str
-    medico_solicitante: str = ""
+    paciente_id: str = ""         # o expediente_id: se toma su paciente
+    expediente_id: str = ""       # vacío: se liga al expediente del paciente si tiene
+    medico_solicitante: str = ""  # nombre (médico externo o el de la clínica)
+    medico_solicitante_id: str = ""
+    urgente: bool = False
     fecha: str                    # YYYY-MM-DD
     observaciones: str = ""
     estudios: List[EstudioOrden]  # lista de plantilla_ids
+
+
+class MuestraRegistro(BaseModel):
+    tipo: TIPOS_MUESTRA = "sangre"
+    fecha_toma: Optional[datetime] = None   # vacío → ahora
+    tecnico_id: str = ""                    # vacío → quien registra
+    observaciones: str = ""
+
+
+class NotificacionCritico(BaseModel):
+    notificado_a: str = Field(min_length=1, max_length=120)   # quién recibió el aviso
+    medio: MEDIOS_AVISO = "telefono"
+    nota: str = ""
+
+
+class RangoEdad(BaseModel):
+    sexo: SEXOS_RANGO = "ambos"
+    edad_min: int = Field(default=0, ge=0, le=999)
+    edad_max: int = Field(default=999, ge=0, le=999)
+    min: float
+    max: float
+    critico_min: Optional[float] = None
+    critico_max: Optional[float] = None
+
+    @model_validator(mode="after")
+    def coherente(self):
+        if self.edad_min > self.edad_max:
+            raise ValueError("La edad mínima no puede ser mayor que la máxima")
+        if self.min > self.max:
+            raise ValueError("El mínimo de referencia no puede ser mayor que el máximo")
+        if self.critico_min is not None and self.critico_min > self.min:
+            raise ValueError("El crítico bajo debe ser menor o igual al mínimo de referencia")
+        if self.critico_max is not None and self.critico_max < self.max:
+            raise ValueError("El crítico alto debe ser mayor o igual al máximo de referencia")
+        return self
+
+
+class RangoParametro(BaseModel):
+    negocio_id: str
+    parametro: str = Field(min_length=1, max_length=120)
+    unidad: str = ""
+    aliases: List[str] = []
+    rangos: List[RangoEdad] = Field(min_length=1)
+
+
+class RangoParametroUpdate(BaseModel):
+    parametro: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    unidad: Optional[str] = None
+    aliases: Optional[List[str]] = None
+    rangos: Optional[List[RangoEdad]] = Field(default=None, min_length=1)
 
 
 class AnalitoResultado(BaseModel):
@@ -129,7 +197,7 @@ class EnvioCorreo(BaseModel):
 
 
 class ResultadoCaptura(BaseModel):
-    analitos: List[AnalitoResultado]
+    analitos: List[AnalitoResultado]      # de cada analito solo se toma el valor; lo demás es de la orden
     observaciones: str = ""
     tecnico_nombre: str = ""
 
@@ -255,12 +323,18 @@ async def listar_ordenes(
     fecha: str = Query(""),
     estado: str = Query(""),
     paciente_id: str = Query(""),
+    expediente_id: str = Query(""),
     busqueda: str = Query(""),
+    criticos: bool = Query(False, description="Solo con resultados críticos sin notificar al médico"),
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
     verificar_acceso(user, negocio_id)
     filtro: dict = {"negocio_id": negocio_id}
+    if expediente_id.strip():
+        filtro["expediente_id"] = expediente_id.strip()
+    if criticos:
+        filtro.update({"resultados_criticos": True, "notificado_medico": False})
     if fecha.strip():
         filtro["fecha"] = fecha.strip()
     if estado.strip():
@@ -287,10 +361,25 @@ async def crear_orden(
     if not body.estudios:
         raise HTTPException(400, "Debe seleccionar al menos un estudio")
 
-    # Obtener datos del paciente
-    paciente = await validar_referencia(db.pacientes, body.paciente_id, body.negocio_id, "Paciente")
+    # El paciente llega directo o por su expediente clínico
+    expediente = None
+    if body.expediente_id:
+        expediente = await validar_referencia(db.expedientes, body.expediente_id, body.negocio_id, "Expediente")
+        if body.paciente_id and body.paciente_id != expediente["paciente_id"]:
+            raise HTTPException(400, "El expediente es de otro paciente")
+    paciente_id = body.paciente_id or (expediente or {}).get("paciente_id", "")
+    if not paciente_id:
+        raise HTTPException(400, "Indica el paciente o su expediente")
+    paciente = await validar_referencia(db.pacientes, paciente_id, body.negocio_id, "Paciente")
     if not paciente:
         raise HTTPException(404, "Paciente no encontrado")
+    if not expediente:
+        expediente = await db.expedientes.find_one({"negocio_id": body.negocio_id, "paciente_id": paciente_id})
+
+    medico_nombre = body.medico_solicitante.strip()
+    if body.medico_solicitante_id:
+        medico = await validar_medico(db, body.medico_solicitante_id, body.negocio_id)
+        medico_nombre = medico_nombre or medico.get("nombre", "")
 
     # Obtener plantillas
     plantilla_ids = [validar_oid(e.plantilla_id) for e in body.estudios]
@@ -319,26 +408,29 @@ async def crear_orden(
         })
         total += float(p.get("precio", 0))
 
-    from datetime import date as dt_date
-    edad = 0
-    fn = paciente.get("fecha_nacimiento", "")
-    if fn:
-        try:
-            nac = dt_date.fromisoformat(fn)
-            hoy = dt_date.today()
-            edad = hoy.year - nac.year - ((hoy.month, hoy.day) < (nac.month, nac.day))
-        except Exception:
-            pass
+    edad = calcular_edad(paciente.get("fecha_nacimiento", ""))
+    sexo = paciente.get("sexo", "masculino")
+    catalogo = await catalogo_de_rangos(db, body.negocio_id)
 
     orden_doc = {
         "negocio_id":          body.negocio_id,
         "folio":               folio,
-        "paciente_id":         body.paciente_id,
+        "paciente_id":         paciente_id,
+        "expediente_id":       str(expediente["_id"]) if expediente else "",
+        "expediente_folio":    expediente["folio"] if expediente else "",
         "paciente_nombre":     f"{paciente.get('nombre','')} {paciente.get('apellido_paterno','')} {paciente.get('apellido_materno','')}".strip(),
         "paciente_folio":      paciente.get("folio", ""),
         "paciente_sexo":       paciente.get("sexo", "masculino"),
         "paciente_edad":       edad,
-        "medico_solicitante":  body.medico_solicitante.strip(),
+        "medico_solicitante":  medico_nombre,
+        "medico_solicitante_id": body.medico_solicitante_id,
+        "urgente":             body.urgente,
+        "muestra":             None,
+        "resultados_criticos": False,
+        "criticos":            [],
+        "notificado_medico":   False,
+        "criticos_notificados": [],
+        "notificaciones":      [],
         "fecha":               body.fecha,
         "estudios":            estudios_list,
         "total":               round(total, 2),
@@ -350,8 +442,7 @@ async def crear_orden(
     result = await db.ordenes_trabajo.insert_one(orden_doc)
     orden_id = str(result.inserted_id)
 
-    # Crear un registro de resultado por cada estudio
-    sexo = paciente.get("sexo", "masculino")
+    # Crear un registro de resultado por cada estudio, con el rango que le toca al paciente
     for e, p_doc in zip(body.estudios, [plantillas_map[e.plantilla_id] for e in body.estudios]):
         analitos_init = []
         for a in p_doc.get("analitos", []):
@@ -365,12 +456,13 @@ async def crear_orden(
                 "referencia_mujer_min":    a.get("referencia_mujer_min"),
                 "referencia_mujer_max":    a.get("referencia_mujer_max"),
                 "referencia_texto":        a.get("referencia_texto", ""),
+                "referencia_aplicada":     resolver_referencia(a, catalogo, edad, sexo),
                 "flag":                    "pendiente",
             })
         await db.resultados_lab.insert_one({
             "negocio_id":       body.negocio_id,
             "orden_id":         orden_id,
-            "paciente_id":      body.paciente_id,
+            "paciente_id":      paciente_id,
             "paciente_sexo":    sexo,
             "plantilla_id":     e.plantilla_id,
             "estudio_nombre":   p_doc["nombre"],
@@ -503,11 +595,17 @@ async def capturar_resultado(
     if resultado.get("estado") == "validado":
         raise HTTPException(400, "El resultado ya está validado")
 
+    # Nombre, unidad y rangos vienen de la orden, no del navegador: solo se captura el valor
     sexo = resultado.get("paciente_sexo", "masculino")
+    valores = {normalizar(a.nombre): a.valor for a in body.analitos}
     analitos_guardados = []
-    for a in body.analitos:
-        flag = calcular_flag(a.valor, a.model_dump(), sexo)
-        analitos_guardados.append({**a.model_dump(), "flag": flag})
+    for a in resultado.get("analitos", []):
+        valor = str(valores.get(normalizar(a["nombre"]), a.get("valor", ""))).strip()
+        referencia = a.get("referencia_aplicada")
+        if referencia is None and a.get("tipo") != "cualitativo":
+            referencia = referencia_de_plantilla(a, sexo)    # órdenes creadas antes del catálogo
+        analitos_guardados.append({**a, "valor": valor, "referencia_aplicada": referencia,
+                                   "flag": calcular_flag(valor, a, referencia)})
 
     now = datetime.now(timezone.utc)
     campos = {
@@ -527,6 +625,7 @@ async def capturar_resultado(
         {"_id": validar_oid(resultado["orden_id"]), "estado": "pendiente"},
         {"$set": {"estado": "en_proceso", "updated_at": now}},
     )
+    await actualizar_criticos(db, resultado["orden_id"], now)
 
     return serializar(doc)
 
@@ -551,7 +650,7 @@ async def validar_resultado(
         {"_id": oid},
         {"$set": {
             "estado":            "validado",
-            "validado_por":      validado_por.strip() or str(user.get("_id", "")),
+            "validado_por":      validado_por.strip() or user.get("nombre") or str(user.get("_id", "")),
             "fecha_validacion":  now,
             "updated_at":        now,
         }},
@@ -597,6 +696,14 @@ async def dashboard(
     ingresos_res = await db.ordenes_trabajo.aggregate(pipeline).to_list(1)
     ingresos_hoy = round(ingresos_res[0]["total"] if ingresos_res else 0, 2)
 
+    # Críticos que el médico aún no conoce: lo primero que hay que atender
+    criticos = await db.ordenes_trabajo.find(
+        {"negocio_id": negocio_id, "resultados_criticos": True, "notificado_medico": False}
+    ).sort("updated_at", -1).to_list(50)
+    urgentes = await db.ordenes_trabajo.count_documents(
+        {"negocio_id": negocio_id, "urgente": True, "estado": {"$in": ["pendiente", "en_proceso"]}}
+    )
+
     # Últimas 10 órdenes
     ultimas = await db.ordenes_trabajo.find(
         {"negocio_id": negocio_id}
@@ -610,8 +717,190 @@ async def dashboard(
         "completadas_hoy": completadas_hoy,
         "por_entregar":    por_entregar,
         "ingresos_hoy":    ingresos_hoy,
+        "urgentes_abiertas":      urgentes,
+        "criticos_sin_notificar": [serializar(o) for o in criticos],
         "ultimas_ordenes": [serializar(o) for o in ultimas],
     }
+
+
+# ── Toma de muestra y resultados críticos ─────────────────────────────────────
+
+@router.put("/ordenes/{id}/muestra")
+async def registrar_muestra(
+    id: str,
+    body: MuestraRegistro,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    oid = validar_oid(id)
+    orden = await db.ordenes_trabajo.find_one({"_id": oid})
+    if not orden:
+        raise HTTPException(404, "Orden no encontrada")
+    verificar_acceso(user, orden["negocio_id"])
+
+    tecnico = user
+    if body.tecnico_id and body.tecnico_id != user["_id"]:
+        tecnico = await db.usuarios.find_one({"_id": validar_oid(body.tecnico_id), "activo": {"$ne": False}})
+        if not tecnico or orden["negocio_id"] not in negocios_del_usuario(tecnico):
+            raise HTTPException(404, "Técnico: no existe en este negocio")
+    fecha = body.fecha_toma or datetime.now(timezone.utc)
+    if fecha.tzinfo is None:
+        fecha = fecha.replace(tzinfo=timezone.utc)
+    muestra = {
+        "tipo":           body.tipo,
+        "fecha_toma":     fecha,
+        "tecnico_id":     str(tecnico["_id"]),
+        "tecnico_nombre": tecnico.get("nombre", ""),
+        "observaciones":  body.observaciones.strip(),
+    }
+    doc = await db.ordenes_trabajo.find_one_and_update(
+        {"_id": oid}, {"$set": {"muestra": muestra, "updated_at": datetime.now(timezone.utc)}}, return_document=True
+    )
+    return serializar(doc)
+
+
+@router.post("/ordenes/{id}/notificar")
+async def notificar_criticos(
+    id: str,
+    body: NotificacionCritico,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Deja constancia de que el médico recibió aviso de los resultados críticos (quién, cómo, cuándo)."""
+    oid = validar_oid(id)
+    orden = await db.ordenes_trabajo.find_one({"_id": oid})
+    if not orden:
+        raise HTTPException(404, "Orden no encontrada")
+    verificar_acceso(user, orden["negocio_id"])
+    if not orden.get("resultados_criticos"):
+        raise HTTPException(400, "La orden no tiene resultados críticos")
+
+    now = datetime.now(timezone.utc)
+    aviso = {
+        "fecha":        now,
+        "usuario":      user.get("nombre", ""),
+        "notificado_a": body.notificado_a.strip(),
+        "medio":        body.medio,
+        "nota":         body.nota.strip(),
+        "criticos":     orden.get("criticos", []),
+    }
+    doc = await db.ordenes_trabajo.find_one_and_update(
+        {"_id": oid},
+        {"$set": {"notificado_medico": True, "criticos_notificados": orden.get("criticos", []), "updated_at": now},
+         "$push": {"notificaciones": aviso}},
+        return_document=True,
+    )
+    return serializar(doc)
+
+
+# ── Rangos de referencia por edad y sexo ──────────────────────────────────────
+
+async def obtener_rango(db, id: str, user: dict) -> dict:
+    doc = await db.rangos_referencia.find_one({"_id": validar_oid(id)})
+    if not doc:
+        raise HTTPException(404, "Parámetro no encontrado")
+    verificar_acceso(user, doc["negocio_id"])
+    return doc
+
+
+async def clave_libre(db, negocio_id: str, parametro: str, aliases: list[str], excluir=None) -> None:
+    """Un nombre o alias solo puede pertenecer a un parámetro, o el analito no sabría qué rango usar."""
+    nombres = {normalizar(n) for n in [parametro, *aliases] if n.strip()}
+    filtro = {"negocio_id": negocio_id, "activo": True}
+    if excluir:
+        filtro["_id"] = {"$ne": excluir}
+    async for otro in db.rangos_referencia.find(filtro, {"parametro": 1, "aliases": 1}):
+        if nombres & {normalizar(n) for n in [otro["parametro"], *otro.get("aliases", [])]}:
+            raise HTTPException(409, f"Ese nombre ya lo usa el parámetro {otro['parametro']}")
+
+
+@router.get("/rangos")
+async def listar_rangos(
+    negocio_id: str = Query(...),
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    verificar_acceso(user, negocio_id)
+    docs = await db.rangos_referencia.find({"negocio_id": negocio_id, "activo": True}).sort("parametro", 1).to_list(500)
+    return [serializar(d) for d in docs]
+
+
+@router.post("/rangos", status_code=201)
+async def crear_rango(
+    body: RangoParametro,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    verificar_acceso(user, body.negocio_id)
+    aliases = [a.strip() for a in body.aliases if a.strip()]
+    await clave_libre(db, body.negocio_id, body.parametro, aliases)
+    now = datetime.now(timezone.utc)
+    doc = {
+        **body.model_dump(), "parametro": body.parametro.strip(), "clave": normalizar(body.parametro),
+        "aliases": aliases, "activo": True, "created_at": now, "updated_at": now,
+    }
+    doc["_id"] = (await db.rangos_referencia.insert_one(doc)).inserted_id
+    return serializar(doc)
+
+
+@router.put("/rangos/{id}")
+async def actualizar_rango(
+    id: str,
+    body: RangoParametroUpdate,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Aplica a las órdenes nuevas; las ya creadas conservan el rango con que se abrieron."""
+    actual = await obtener_rango(db, id, user)
+    cambios = body.model_dump(exclude_none=True)
+    if not cambios:
+        raise HTTPException(400, "Sin campos a actualizar")
+    if "aliases" in cambios:
+        cambios["aliases"] = [a.strip() for a in cambios["aliases"] if a.strip()]
+    if "parametro" in cambios:
+        cambios["parametro"] = cambios["parametro"].strip()
+        cambios["clave"] = normalizar(cambios["parametro"])
+    await clave_libre(db, actual["negocio_id"], cambios.get("parametro", actual["parametro"]),
+                      cambios.get("aliases", actual.get("aliases", [])), excluir=actual["_id"])
+    doc = await db.rangos_referencia.find_one_and_update(
+        {"_id": actual["_id"]}, {"$set": {**cambios, "updated_at": datetime.now(timezone.utc)}}, return_document=True
+    )
+    return serializar(doc)
+
+
+@router.delete("/rangos/{id}")
+async def eliminar_rango(
+    id: str,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    actual = await obtener_rango(db, id, user)
+    await db.rangos_referencia.update_one(
+        {"_id": actual["_id"]}, {"$set": {"activo": False, "updated_at": datetime.now(timezone.utc)}}
+    )
+    return {"ok": True}
+
+
+@router.post("/rangos/seed", status_code=201)
+async def seed_rangos(
+    negocio_id: str = Query(...),
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Carga los parámetros comunes que aún no existan (por nombre); no toca los ya configurados."""
+    verificar_acceso(user, negocio_id)
+    existentes = await catalogo_de_rangos(db, negocio_id)
+    now = datetime.now(timezone.utc)
+    creados = 0
+    for p in RANGOS_SEED:
+        if normalizar(p["parametro"]) in existentes:
+            continue
+        await db.rangos_referencia.insert_one({
+            **p, "negocio_id": negocio_id, "clave": normalizar(p["parametro"]),
+            "activo": True, "created_at": now, "updated_at": now,
+        })
+        creados += 1
+    return {"creados": creados, "total_seed": len(RANGOS_SEED)}
 
 
 # ── Configuración del laboratorio ────────────────────────────────────────────
@@ -630,7 +919,17 @@ class LabConfig(BaseModel):
     rfc: str = ""
     director: str = ""
     cedula_director: str = ""
+    firma_director_base64: str = ""     # data:image/png;base64,… para el reporte
     aviso_pie: str = ""
+
+    @model_validator(mode="after")
+    def firma_valida(self):
+        f = self.firma_director_base64
+        if f and not f.startswith(("data:image/png;base64,", "data:image/jpeg;base64,")):
+            raise ValueError("La firma debe ser una imagen PNG o JPG")
+        if len(f) > 400_000:
+            raise ValueError("La imagen de la firma es demasiado grande (máx. ~300 KB)")
+        return self
 
 
 @router.get("/config")

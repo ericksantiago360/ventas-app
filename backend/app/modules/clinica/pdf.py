@@ -52,15 +52,20 @@ def fecha_larga(dt) -> str:
     return f"{local.day} de {MESES[local.month - 1]} de {local.year}, {local:%H:%M}"
 
 
-def pdf_receta(receta: dict, config: dict, url_verificacion: str) -> bytes:
+def render_pdf(plantilla: str, **contexto) -> bytes:
     # WeasyPrint se importa aquí: carga Pango al importarse y solo se necesita al generar
     from weasyprint import HTML
 
-    html = _jinja.get_template("receta.html").render(
+    html = _jinja.get_template(plantilla).render(**contexto)
+    return HTML(string=html, base_url=str(PLANTILLAS)).write_pdf()
+
+
+def pdf_receta(receta: dict, config: dict, url_verificacion: str) -> bytes:
+    return render_pdf(
+        "receta.html",
         r=receta,
         clinica=datos_clinica(config),
         fecha=fecha_larga(receta["fecha"]),
         qr=qr_svg(url_verificacion),
         url_verificacion_corta=url_verificacion.split("://", 1)[-1].rsplit("/", 1)[0],
     )
-    return HTML(string=html, base_url=str(PLANTILLAS)).write_pdf()

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Resultados {{ orden.folio }}</title>
+<style>
+  @page {
+    size: letter;
+    margin: 13mm 14mm 16mm;
+    @bottom-left {
+      content: "{{ orden.folio }} · {{ orden.paciente_nombre }}";
+      font-size: 7pt; color: #94a3b8; font-family: Helvetica, Arial, sans-serif;
+    }
+    @bottom-right {
+      content: "Página " counter(page) " de " counter(pages);
+      font-size: 7pt; color: #94a3b8; font-family: Helvetica, Arial, sans-serif;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 9pt; color: #1e293b; margin: 0; }
+
+  .encabezado { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+                border-bottom: 2px solid #1d4ed8; padding-bottom: 8px; }
+  .clinica { display: flex; gap: 12px; align-items: center; }
+  .clinica img { max-height: 50px; max-width: 120px; }
+  .clinica .nombre { font-size: 14pt; font-weight: bold; color: #0f172a; }
+  .clinica .dato { font-size: 7.5pt; color: #64748b; margin-top: 2px; }
+  .titulo { text-align: right; }
+  .titulo .t { font-size: 10pt; font-weight: bold; color: #1d4ed8; letter-spacing: .04em; }
+  .titulo .folio { font-family: "Courier New", monospace; font-weight: bold; font-size: 11pt; margin-top: 2px; }
+  .urgente { display: inline-block; background: #dc2626; color: #fff; font-weight: bold; font-size: 7.5pt;
+             border-radius: 3px; padding: 1px 6px; margin-top: 3px; letter-spacing: .05em; }
+
+  .datos { margin-top: 10px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f8fafc;
+           display: grid; grid-template-columns: repeat(4, 1fr); }
+  .datos > div { padding: 5px 9px; border-bottom: 1px solid #e2e8f0; }
+  .datos .k { color: #94a3b8; font-size: 6.8pt; text-transform: uppercase; letter-spacing: .04em; }
+  .datos .v { font-weight: bold; font-size: 8.5pt; }
+
+  .aviso-critico { margin-top: 8px; border: 1.5px solid #dc2626; color: #b91c1c; border-radius: 6px; padding: 5px 10px;
+                   font-weight: bold; font-size: 8.5pt; }
+  .parcial { margin-top: 8px; color: #a16207; font-size: 8pt; }
+
+  .estudio { margin-top: 14px; page-break-inside: avoid; }
+  .estudio h2 { font-size: 10pt; color: #1d4ed8; margin: 0 0 4px; display: flex; justify-content: space-between; }
+  .estudio h2 .cat { font-weight: normal; color: #94a3b8; font-size: 8pt; }
+  .sin-validar { color: #a16207; font-size: 7.5pt; font-weight: bold; }
+  table { width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; table-layout: fixed; }
+  th { text-align: left; font-size: 7pt; color: #64748b; text-transform: uppercase; letter-spacing: .04em;
+       background: #f1f5f9; padding: 4px 7px; border-bottom: 1px solid #e2e8f0; }
+  td { padding: 4px 7px; border-bottom: 1px solid #f1f5f9; }
+  td.valor { text-align: right; font-weight: bold; font-size: 9.5pt; }
+  th.valor { text-align: right; }
+  td.unidad, td.ref { color: #64748b; font-size: 8pt; }
+  td.estado { text-align: center; }
+  .chip { display: inline-block; border-radius: 3px; padding: 1px 6px; font-size: 7.5pt; font-weight: bold; }
+  tr.alto td.valor   { color: #a16207; }  .alto .chip    { background: #fef9c3; color: #a16207; }
+  tr.bajo td.valor   { color: #1d4ed8; }  .bajo .chip    { background: #dbeafe; color: #1d4ed8; }
+  tr.normal .chip    { color: #15803d; }
+  tr.critico td      { background: #fef2f2; }
+  tr.critico td.valor, tr.critico td.nombre { color: #b91c1c; }
+  tr.critico .chip   { background: #dc2626; color: #fff; }
+  .pie-estudio { font-size: 7.5pt; color: #64748b; margin-top: 3px; }
+
+  .leyenda { margin-top: 14px; border-top: 1px solid #e2e8f0; padding-top: 5px; font-size: 7pt; color: #94a3b8; text-align: center; }
+  .firmas { margin-top: 26px; display: flex; justify-content: flex-end; page-break-inside: avoid; }
+  .firma { width: 260px; text-align: center; }
+  .firma .imagen { height: 60px; display: flex; align-items: flex-end; justify-content: center; }
+  .firma img { max-height: 60px; max-width: 220px; }
+  .firma .linea { border-top: 1px solid #1e293b; margin-top: 4px; padding-top: 4px; font-size: 8pt; }
+  .firma .validado { font-size: 7.5pt; color: #64748b; margin-top: 3px; }
+  .generado { margin-top: 10px; font-size: 7pt; color: #94a3b8; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="encabezado">
+    <div class="clinica">
+      {% if clinica.logo %}<img src="{{ clinica.logo }}" alt="">{% endif %}
+      <div>
+        <div class="nombre">{{ clinica.nombre or "Laboratorio de Análisis Clínico" }}</div>
+        {% if clinica.direccion %}<div class="dato">{{ clinica.direccion }}</div>{% endif %}
+        {% if clinica.contacto %}<div class="dato">{{ clinica.contacto }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="titulo">
+      <div class="t">REPORTE DE RESULTADOS</div>
+      <div class="folio">{{ orden.folio }}</div>
+      {% if orden.urgente %}<div class="urgente">URGENTE</div>{% endif %}
+    </div>
+  </div>
+
+  <div class="datos">
+    <div style="grid-column: span 2"><div class="k">Paciente</div><div class="v">{{ orden.paciente_nombre }}</div></div>
+    <div><div class="k">Sexo / Edad</div><div class="v">{{ (orden.paciente_sexo or "—") | capitalize }} · {{ orden.paciente_edad }} años</div></div>
+    <div><div class="k">Expediente</div><div class="v">{{ orden.expediente_folio or orden.paciente_folio or "—" }}</div></div>
+    <div style="grid-column: span 2"><div class="k">Médico solicitante</div><div class="v">{{ orden.medico_solicitante or "—" }}</div></div>
+    <div><div class="k">Toma de muestra</div><div class="v">{{ fecha_toma }}{% if tipo_muestra %} · {{ tipo_muestra }}{% endif %}</div></div>
+    <div><div class="k">Fecha de reporte</div><div class="v">{{ fecha_reporte }}</div></div>
+  </div>
+
+  {% if hay_criticos %}
+    <div class="aviso-critico">⚠ Este reporte contiene resultados en rango crítico, señalados en rojo.</div>
+  {% endif %}
+  {% if parcial %}
+    <div class="parcial">Reporte parcial: hay estudios de esta orden pendientes de resultado o validación.</div>
+  {% endif %}
+
+  {% for s in secciones %}
+  <div class="estudio">
+    <h2>
+      <span>{{ s.nombre }}{% if not s.validado %} <span class="sin-validar">· SIN VALIDAR</span>{% endif %}</span>
+      <span class="cat">{{ s.categoria }}</span>
+    </h2>
+    <table>
+      <colgroup><col style="width:34%"><col style="width:14%"><col style="width:13%"><col style="width:24%"><col style="width:15%"></colgroup>
+      <thead><tr><th>Analito</th><th class="valor">Resultado</th><th>Unidad</th><th>Referencia</th><th style="text-align:center">Estado</th></tr></thead>
+      <tbody>
+        {% for a in s.analitos %}
+        <tr class="{{ a.flag }}">
+          <td class="nombre">{{ a.nombre }}</td>
+          <td class="valor">{{ a.valor }}</td>
+          <td class="unidad">{{ a.unidad }}</td>
+          <td class="ref">{{ a.referencia }}</td>
+          <td class="estado">{% if a.etiqueta %}<span class="chip">{{ a.etiqueta }}</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if s.observaciones %}<div class="pie-estudio">Observaciones: {{ s.observaciones }}</div>{% endif %}
+    {% if s.tecnico %}<div class="pie-estudio">Técnico: {{ s.tecnico }}</div>{% endif %}
+  </div>
+  {% endfor %}
+
+  <div class="leyenda">
+    ↑ Alto · ↓ Bajo · CRÍTICO: valor de alerta que requiere atención médica inmediata.
+    Los intervalos de referencia corresponden a la edad y el sexo del paciente y pueden variar según el método analítico.
+    <br>{{ aviso }}
+  </div>
+
+  <div class="firmas">
+    <div class="firma">
+      <div class="imagen">{% if firma %}<img src="{{ firma }}" alt="">{% endif %}</div>
+      <div class="linea">
+        {{ director or "Responsable del laboratorio" }}
+        {% if cedula %}<br>Céd. Prof. {{ cedula }}{% endif %}
+      </div>
+      {% if validadores %}<div class="validado">Validó: {{ validadores }}</div>{% endif %}
+    </div>
+  </div>
+  <div class="generado">Generado el {{ generado }}</div>
+</body>
+</html>

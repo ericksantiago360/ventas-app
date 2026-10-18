@@ -77,6 +77,9 @@ async def _crear_indices(db: AsyncIOMotorDatabase) -> None:
     # ── Laboratorio / portal del paciente ─────────────────────────────────
     await db.ordenes_trabajo.create_index([("paciente_id", 1), ("created_at", -1)])
     await db.resultados_lab.create_index([("orden_id", 1), ("estado", 1)])
+    await db.ordenes_trabajo.create_index([("negocio_id", 1), ("resultados_criticos", 1), ("notificado_medico", 1)])
+    await db.ordenes_trabajo.create_index([("negocio_id", 1), ("expediente_id", 1), ("created_at", -1)])
+    await db.rangos_referencia.create_index([("negocio_id", 1), ("clave", 1)])
     await db.pacientes.create_index([("email", 1)])
     await db.pacientes.create_index([("negocio_id", 1), ("curp", 1)])
 

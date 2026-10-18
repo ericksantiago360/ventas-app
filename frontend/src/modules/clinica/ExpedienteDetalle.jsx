@@ -8,8 +8,11 @@ import RecetaModal from './RecetaModal'
 import { RecetaFila } from './recetas'
 import { req, qs, nombreCompleto, fechaHora, aFecha, abrirArchivo, s, Chip, SEXO_COLOR, TIPOS_NOTA, BadgeAlergico } from './comun'
 import { TIPOS_CITA, ChipEstado, AccionesCita } from './citas'
+import { ChipsOrden } from './laboratorio'
 
-const TABS = [['ficha', 'Ficha'], ['notas', 'Notas clínicas'], ['recetas', 'Recetas'], ['citas', 'Citas'], ['archivos', 'Archivos']]
+const TABS = [['ficha', 'Ficha'], ['notas', 'Notas clínicas'], ['recetas', 'Recetas'], ['laboratorio', 'Laboratorio'], ['citas', 'Citas'], ['archivos', 'Archivos']]
+
+const ESTADOS_LAB = { pendiente: 'Pendiente', en_proceso: 'En proceso', completado: 'Completado', entregado: 'Entregado' }
 
 const SIGNOS = [
   ['tension_arterial', 'T/A', 'mmHg'], ['frecuencia_cardiaca', 'FC', 'lpm'], ['temperatura', 'Temp.', '°C'],
@@ -226,6 +229,49 @@ function Recetas({ exp, version, onNueva }) {
   )
 }
 
+// Órdenes de laboratorio del paciente; se abren en la página de resultados
+function Laboratorio({ exp }) {
+  const navigate = useNavigate()
+  const [ordenes, setOrdenes] = useState(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    req(`/api/lab/ordenes?${qs({ negocio_id: exp.negocio_id, paciente_id: exp.paciente_id })}`)
+      .then(setOrdenes).catch(e => setError(e.message))
+  }, [exp.id])
+
+  if (error) return <div style={s.err}>{error}</div>
+  if (!ordenes) return <div style={{ color: '#94a3b8' }}>Cargando…</div>
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {exp.activo && <div><button style={s.btn()} onClick={() => navigate(`/resultados?nueva_orden=${exp.id}`)}>+ Solicitar estudios</button></div>}
+      {ordenes.length === 0 ? <div style={{ ...s.card, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Sin órdenes de laboratorio</div> : (
+        <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
+          {ordenes.map((o, i) => (
+            <button key={o.id} onClick={() => navigate(`/resultados?orden=${o.id}`)} style={{
+              display: 'block', width: '100%', textAlign: 'left', background: o.resultados_criticos && !o.notificado_medico ? '#fef2f2' : 'none',
+              border: 'none', borderTop: i ? '1px solid #f1f5f9' : 'none', padding: '12px 16px', cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#64748b' }}>{o.folio}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>{o.fecha}</span>
+                <Chip texto={ESTADOS_LAB[o.estado] || o.estado} />
+                <ChipsOrden o={o} />
+              </div>
+              <div style={{ fontSize: 13, color: '#334155', marginTop: 3 }}>{(o.estudios || []).map(e => e.nombre).join(' · ')}</div>
+              {o.resultados_criticos && (
+                <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 2, fontWeight: 600 }}>
+                  {(o.criticos || []).map(c => `${c.analito}: ${c.valor} ${c.unidad}`).join(' · ')}
+                </div>
+              )}
+              {o.medico_solicitante && <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>Solicitó: {o.medico_solicitante}</div>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Citas({ exp, version, onReprogramar }) {
   const [citas, setCitas] = useState(null)
   const [error, setError] = useState('')
@@ -321,6 +367,14 @@ export default function ExpedienteDetalle() {
       </div>
 
       {/* Barra de alertas: siempre a la vista sin importar la pestaña */}
+      {exp.lab_criticos_pendientes > 0 && (
+        <div role="alert" onClick={() => setTab('laboratorio')} style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#b91c1c', color: '#fff', borderRadius: 8, padding: '10px 14px', marginTop: 16, fontSize: 14, cursor: 'pointer' }}>
+          <span style={{ background: '#fff', color: '#b91c1c', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 800 }}>RESULTADO CRÍTICO</span>
+          <span style={{ fontWeight: 600 }}>
+            {exp.lab_criticos_pendientes === 1 ? 'Hay una orden de laboratorio' : `Hay ${exp.lab_criticos_pendientes} órdenes de laboratorio`} con resultados críticos sin avisar al médico
+          </span>
+        </div>
+      )}
       {exp.alergico && (
         <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 16, fontSize: 14 }}>
           <BadgeAlergico alergias={exp.antecedentes.alergias} />
@@ -351,6 +405,8 @@ export default function ExpedienteDetalle() {
       )}
 
       {tab === 'recetas' && <Recetas exp={exp} version={versionRecetas} onNueva={() => setModal('receta')} />}
+
+      {tab === 'laboratorio' && <Laboratorio exp={exp} />}
 
       {tab === 'citas' && <Citas exp={exp} version={versionCitas} onReprogramar={(c) => setModal({ cita: c })} />}
 

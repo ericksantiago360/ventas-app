@@ -262,6 +262,11 @@ async def obtener_expediente_detalle(
     respuesta = (await a_respuestas(db, [exp]))[0]
     notas = await db.notas_clinicas.find({"expediente_id": respuesta["id"]}).sort("fecha", -1).to_list(None)
     respuesta["notas"] = [a_nota(n) for n in notas]
+    # Resultados de laboratorio críticos que el médico aún no ha recibido
+    respuesta["lab_criticos_pendientes"] = await db.ordenes_trabajo.count_documents({
+        "negocio_id": exp["negocio_id"], "paciente_id": exp["paciente_id"],
+        "resultados_criticos": True, "notificado_medico": False,
+    })
     return respuesta
 
 

@@ -24,7 +24,7 @@ const NAV_GROUPS = [
     label: 'Laboratorio',
     items: [
       { to: '/pacientes',  label: 'Pacientes'   },
-      { to: '/resultados', label: 'Resultados'  },
+      { to: '/resultados', label: 'Resultados', badge: 'lab' },
     ],
   },
   {
@@ -132,20 +132,19 @@ function useInstalarApp() {
   return () => { aviso.prompt(); aviso.userChoice.finally(() => setAviso(null)) }
 }
 
-// Alertas de farmacia (stock bajo, por caducar, caducados) para el badge del menú.
-// Se actualiza al cambiar de negocio, al mover inventario y cada 5 minutos.
-function useAlertasFarmacia(negocioId) {
+// Conteo para un badge del menú. Se actualiza al cambiar de negocio, cuando la página
+// avisa con el evento `evento` y cada 5 minutos.
+function useConteo(url, evento, contar) {
   const [total, setTotal] = useState(0)
   useEffect(() => {
-    if (!negocioId) return
+    if (!url) return
     let vigente = true
-    const cargar = () => req(`/api/clinica/farmacia/alertas?${qs({ negocio_id: negocioId })}`)
-      .then(a => { if (vigente) setTotal(a.total) }).catch(() => {})
+    const cargar = () => req(url).then(d => { if (vigente) setTotal(contar(d)) }).catch(() => {})
     cargar()
     const t = setInterval(() => { if (!document.hidden) cargar() }, 5 * 60_000)
-    window.addEventListener('farmacia:cambio', cargar)
-    return () => { vigente = false; clearInterval(t); window.removeEventListener('farmacia:cambio', cargar) }
-  }, [negocioId])
+    window.addEventListener(evento, cargar)
+    return () => { vigente = false; clearInterval(t); window.removeEventListener(evento, cargar) }
+  }, [url])
   return total
 }
 
@@ -158,7 +157,13 @@ export default function Layout() {
   const instalar = useInstalarApp()
   const enLinea = useEnLinea()
   const [menuAbierto, setMenuAbierto] = useState(false)
-  const badges = { farmacia: useAlertasFarmacia(negocioActual?.id) }
+  const negocio = negocioActual?.id
+  const badges = {
+    // Stock bajo, por caducar y caducados
+    farmacia: useConteo(negocio && `/api/clinica/farmacia/alertas?${qs({ negocio_id: negocio })}`, 'farmacia:cambio', a => a.total),
+    // Órdenes con resultados críticos que el médico aún no conoce
+    lab: useConteo(negocio && `/api/lab/ordenes?${qs({ negocio_id: negocio, criticos: true })}`, 'lab:cambio', o => o.length),
+  }
 
   // Al navegar desde el cajón del menú, se cierra solo
   useEffect(() => { setMenuAbierto(false) }, [pathname])
@@ -301,7 +306,7 @@ export default function Layout() {
                 >
                   {label}
                   {badges[badge] > 0 && (
-                    <span title="Alertas de farmacia" style={{
+                    <span title={badge === 'lab' ? 'Resultados críticos sin avisar' : 'Alertas de farmacia'} style={{
                       marginLeft: 'auto', background: '#dc2626', color: '#fff', borderRadius: 999,
                       minWidth: 18, height: 18, padding: '0 5px', fontSize: 11, fontWeight: 700,
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box',
