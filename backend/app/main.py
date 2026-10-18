@@ -9,7 +9,9 @@ from pymongo.errors import DuplicateKeyError
 from .core.config import settings
 from .core.database import connect_db, close_db
 from .routers import (auth, crm, catalogo, cotizaciones, pedidos, finanzas, contabilidad, inventario, reportes, personal, pacientes, lab, facturacion, portal, negocios, usuarios, )
-from .modules.clinica.routes import citas as clinica_citas, expedientes as clinica_expedientes, recetas as clinica_recetas
+from .modules.clinica.routes import (
+    citas as clinica_citas, expedientes as clinica_expedientes, farmacia as clinica_farmacia, recetas as clinica_recetas,
+)
 
 
 @asynccontextmanager
@@ -77,6 +79,7 @@ app.include_router(usuarios.router, prefix="/api")
 app.include_router(clinica_expedientes.router, prefix="/api")
 app.include_router(clinica_citas.router, prefix="/api")
 app.include_router(clinica_recetas.router, prefix="/api")
+app.include_router(clinica_farmacia.router, prefix="/api")
 
 @app.get("/api/health", tags=["system"])
 async def health():

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useNegocio } from '../context/NegocioContext'
+import { req, qs } from '../modules/clinica/comun'
 import useEsMovil from '../hooks/useEsMovil'
 
 // Subtítulo del menú según el giro del negocio (config_negocios.tipo)
@@ -32,6 +33,7 @@ const NAV_GROUPS = [
       { to: '/clinica/agenda',      label: 'Agenda'      },
       { to: '/clinica/expedientes', label: 'Expedientes' },
       { to: '/clinica/recetas',     label: 'Recetas'     },
+      { to: '/clinica/farmacia',    label: 'Farmacia', badge: 'farmacia' },
     ],
   },
   {
@@ -130,6 +132,23 @@ function useInstalarApp() {
   return () => { aviso.prompt(); aviso.userChoice.finally(() => setAviso(null)) }
 }
 
+// Alertas de farmacia (stock bajo, por caducar, caducados) para el badge del menú.
+// Se actualiza al cambiar de negocio, al mover inventario y cada 5 minutos.
+function useAlertasFarmacia(negocioId) {
+  const [total, setTotal] = useState(0)
+  useEffect(() => {
+    if (!negocioId) return
+    let vigente = true
+    const cargar = () => req(`/api/clinica/farmacia/alertas?${qs({ negocio_id: negocioId })}`)
+      .then(a => { if (vigente) setTotal(a.total) }).catch(() => {})
+    cargar()
+    const t = setInterval(() => { if (!document.hidden) cargar() }, 5 * 60_000)
+    window.addEventListener('farmacia:cambio', cargar)
+    return () => { vigente = false; clearInterval(t); window.removeEventListener('farmacia:cambio', cargar) }
+  }, [negocioId])
+  return total
+}
+
 export default function Layout() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -139,6 +158,7 @@ export default function Layout() {
   const instalar = useInstalarApp()
   const enLinea = useEnLinea()
   const [menuAbierto, setMenuAbierto] = useState(false)
+  const badges = { farmacia: useAlertasFarmacia(negocioActual?.id) }
 
   // Al navegar desde el cajón del menú, se cierra solo
   useEffect(() => { setMenuAbierto(false) }, [pathname])
@@ -263,7 +283,7 @@ export default function Layout() {
                   {group.label}
                 </div>
               )}
-              {group.items.filter(i => !i.soloAdmin || user.rol === 'admin').map(({ to, label, end }) => (
+              {group.items.filter(i => !i.soloAdmin || user.rol === 'admin').map(({ to, label, end, badge }) => (
                 <NavLink key={to} to={to} end={end}
                   style={({ isActive }) => ({
                     display:        'flex',
@@ -280,6 +300,13 @@ export default function Layout() {
                   })}
                 >
                   {label}
+                  {badges[badge] > 0 && (
+                    <span title="Alertas de farmacia" style={{
+                      marginLeft: 'auto', background: '#dc2626', color: '#fff', borderRadius: 999,
+                      minWidth: 18, height: 18, padding: '0 5px', fontSize: 11, fontWeight: 700,
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box',
+                    }}>{badges[badge] > 99 ? '99+' : badges[badge]}</span>
+                  )}
                 </NavLink>
               ))}
             </div>
