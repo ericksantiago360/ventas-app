@@ -39,6 +39,14 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'Carta Porte',
+    items: [
+      { to: '/carta-porte',            label: 'Cartas porte', end: true },
+      { to: '/carta-porte/flota',      label: 'Mi flota', badge: 'carta_porte' },
+      { to: '/carta-porte/operadores', label: 'Operadores' },
+    ],
+  },
+  {
     label: 'Comercial',
     items: [
       { to: '/crm',          label: 'CRM'          },
@@ -165,6 +173,8 @@ export default function Layout() {
     // Stock bajo, por caducar y caducados
     farmacia: useConteo(negocio && permisos.puede('farmacia:read') && `/api/clinica/farmacia/alertas?${qs({ negocio_id: negocio })}`, 'farmacia:cambio', a => a.total),
     // Órdenes con resultados críticos que el médico aún no conoce
+    // Seguros y licencias vencidos o por vencer
+    carta_porte: useConteo(negocio && `/api/carta-porte/alertas?${qs({ negocio_id: negocio })}`, 'carta-porte:cambio', a => a.total),
     lab: useConteo(negocio && permisos.puedeLab('lab:read') && `/api/lab/ordenes?${qs({ negocio_id: negocio, criticos: true })}`, 'lab:cambio', o => o.length),
   }
 
@@ -316,7 +326,7 @@ export default function Layout() {
                 >
                   {label}
                   {badges[badge] > 0 && (
-                    <span title={badge === 'lab' ? 'Resultados críticos sin avisar' : 'Alertas de farmacia'} style={{
+                    <span title={{ lab: 'Resultados críticos sin avisar', farmacia: 'Alertas de farmacia', carta_porte: 'Seguros o licencias por vencer' }[badge]} style={{
                       marginLeft: 'auto', background: '#dc2626', color: '#fff', borderRadius: 999,
                       minWidth: 18, height: 18, padding: '0 5px', fontSize: 11, fontWeight: 700,
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box',

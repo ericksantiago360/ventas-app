@@ -117,4 +117,14 @@ async def _crear_indices(db: AsyncIOMotorDatabase) -> None:
     await db.consentimientos.create_index([("expediente_id", 1), ("fecha_firma", -1)])
     await db.consentimientos_plantillas.create_index([("negocio_id", 1), ("tipo", 1), ("activo", 1)])
 
+    # ── Carta Porte ───────────────────────────────────────────────────────
+    await db.cartas_porte.create_index([("negocio_id", 1), ("folio", 1)], unique=True)
+    await db.cartas_porte.create_index([("negocio_id", 1), ("estado", 1)])
+    await db.cartas_porte.create_index([("negocio_id", 1), ("created_at", -1)])
+    await db.cartas_porte.create_index([("negocio_id", 1), ("origen.fecha_hora_salida", -1)])
+    await db.cartas_porte.create_index([("vehiculo_id", 1), ("estado", 1)])
+    await db.cartas_porte.create_index([("operadores.operador_id", 1), ("estado", 1)])
+    await db.vehiculos.create_index([("negocio_id", 1), ("placa", 1)], unique=True)
+    await db.operadores.create_index([("negocio_id", 1), ("rfc", 1)], unique=True)
+
     print("✓ Índices MongoDB creados")

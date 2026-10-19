@@ -1,7 +1,9 @@
 """Clínica: inventario de farmacia por lotes, salidas FEFO, mermas, alertas y caducidades."""
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
+
+from app.modules.clinica.routes.farmacia import hoy
 
 from .conftest import unico
 
@@ -10,7 +12,8 @@ URL = "/api/clinica/farmacia"
 
 
 def en(dias: int) -> str:
-    return (date.today() + timedelta(days=dias)).isoformat()
+    # El "hoy" del negocio (ZONA_HORARIA), no el del servidor en UTC: de noche en México ya es mañana en UTC
+    return (hoy() + timedelta(days=dias)).isoformat()
 
 
 @pytest.fixture

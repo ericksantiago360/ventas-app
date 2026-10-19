@@ -26,6 +26,11 @@ import VerificarReceta   from './modules/clinica/VerificarReceta'
 import FarmaciaPage      from './modules/clinica/FarmaciaPage'
 import ConsentimientosPage from './modules/clinica/ConsentimientosPage'
 import { RequierePermiso } from './modules/clinica/permisos'
+import CartaPortePage       from './modules/carta_porte/CartaPortePage'
+import NuevaCartaPortePage  from './modules/carta_porte/NuevaCartaPortePage'
+import CartaPorteDetalle    from './modules/carta_porte/CartaPorteDetalle'
+import FlotaPage            from './modules/carta_porte/flota/FlotaPage'
+import OperadoresPage       from './modules/carta_porte/operadores/OperadoresPage'
 import Layout    from './components/Layout'
 import { NegocioProvider } from './context/NegocioContext'
 
@@ -124,6 +129,12 @@ export default function App() {
             <Route path="clinica/agenda/dia" element={<RequierePermiso permiso="citas:read"><AgendaDiaPage /></RequierePermiso>} />
             <Route path="clinica/recetas" element={<RequierePermiso permiso="recetas:read"><RecetasPage /></RequierePermiso>} />
             <Route path="clinica/farmacia" element={<RequierePermiso permiso="farmacia:read"><FarmaciaPage /></RequierePermiso>} />
+            <Route path="carta-porte" element={<CartaPortePage />} />
+            <Route path="carta-porte/nueva" element={<NuevaCartaPortePage />} />
+            <Route path="carta-porte/flota" element={<FlotaPage />} />
+            <Route path="carta-porte/operadores" element={<OperadoresPage />} />
+            <Route path="carta-porte/:id" element={<CartaPorteDetalle />} />
+            <Route path="carta-porte/:id/editar" element={<NuevaCartaPortePage />} />
             <Route path="clinica/consentimientos" element={<RequierePermiso permiso="consentimientos:read"><ConsentimientosPage /></RequierePermiso>} />
           </Route>
 

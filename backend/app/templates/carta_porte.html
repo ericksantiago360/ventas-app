@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Carta Porte {{ c.folio }}</title>
+<style>
+  @page {
+    size: letter;
+    margin: 12mm 12mm 16mm;
+    @bottom-left {
+      content: "Carta Porte {{ c.folio }} · Documento interno sin timbre fiscal";
+      font-size: 7pt; color: #94a3b8; font-family: Helvetica, Arial, sans-serif;
+    }
+    @bottom-right {
+      content: "Página " counter(page) " de " counter(pages);
+      font-size: 7pt; color: #94a3b8; font-family: Helvetica, Arial, sans-serif;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 8.5pt; color: #1e293b; margin: 0; }
+
+  .encabezado { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .negocio { display: flex; gap: 10px; align-items: center; width: 34%; }
+  .negocio img { max-height: 46px; max-width: 110px; }
+  .negocio .nombre { font-weight: bold; font-size: 10pt; }
+  .titulo { text-align: center; flex: 1; }
+  .titulo .t { font-size: 18pt; font-weight: bold; letter-spacing: .06em; color: #0f172a; }
+  .titulo .s { font-size: 8pt; color: #64748b; }
+  .folio { width: 30%; text-align: right; }
+  .folio .num { font-family: "Courier New", monospace; font-size: 13pt; font-weight: bold; color: #1d4ed8; }
+  .folio .dato { font-size: 7.5pt; color: #64748b; }
+  .banner { margin-top: 8px; background: #fef08a; border: 1.5px solid #ca8a04; color: #713f12; text-align: center;
+            font-weight: bold; font-size: 9.5pt; padding: 5px; letter-spacing: .05em; border-radius: 4px; }
+  .cancelado { margin-top: 6px; border: 1.5px solid #dc2626; color: #b91c1c; padding: 5px 10px; border-radius: 4px; font-weight: bold; }
+  .marca { position: fixed; top: 38%; left: 0; right: 0; text-align: center; font-size: 66pt; font-weight: bold;
+           color: rgba(220, 38, 38, .14); transform: rotate(-24deg); }
+
+  h2 { font-size: 8pt; color: #1d4ed8; text-transform: uppercase; letter-spacing: .07em; margin: 12px 0 4px; }
+  .caja { border: 1px solid #e2e8f0; border-radius: 5px; padding: 6px 9px; background: #f8fafc; }
+  .rejilla { display: flex; flex-wrap: wrap; gap: 3px 22px; }
+  .k { color: #94a3b8; font-size: 6.5pt; text-transform: uppercase; letter-spacing: .04em; }
+  .v { font-weight: bold; }
+
+  .ruta { display: flex; align-items: stretch; gap: 0; }
+  .parada { flex: 1; border: 1px solid #cbd5e1; border-radius: 5px; padding: 6px 8px; background: #fff; page-break-inside: avoid; }
+  .parada.origen { border-color: #1d4ed8; background: #eff6ff; }
+  .parada .tipo { font-size: 6.5pt; font-weight: bold; color: #1d4ed8; text-transform: uppercase; letter-spacing: .05em; }
+  .parada .nombre { font-weight: bold; margin-top: 1px; }
+  .parada .dom { color: #475569; font-size: 7.5pt; margin-top: 2px; }
+  .parada .cuando { margin-top: 4px; font-size: 7.5pt; }
+  .flecha { width: 34px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #64748b; font-size: 7pt; }
+  .flecha .linea { font-size: 16pt; color: #94a3b8; line-height: 1; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 6.8pt; color: #64748b; text-transform: uppercase; letter-spacing: .04em;
+       background: #f1f5f9; padding: 4px 6px; border-bottom: 1px solid #cbd5e1; }
+  td { padding: 4px 6px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  td.n, th.n { text-align: right; }
+  tfoot td { font-weight: bold; border-top: 1.5px solid #cbd5e1; background: #f8fafc; }
+  .peligro { color: #b91c1c; font-weight: bold; font-size: 7pt; }
+
+  .dos { display: flex; gap: 12px; }
+  .dos > div { flex: 1; }
+
+  .pie { margin-top: 14px; display: flex; gap: 14px; align-items: center; border-top: 1px solid #e2e8f0; padding-top: 8px; page-break-inside: avoid; }
+  .qr { width: 86px; height: 86px; border: 1.5px dashed #cbd5e1; border-radius: 6px; display: flex; align-items: center;
+        justify-content: center; text-align: center; color: #94a3b8; font-size: 6.5pt; padding: 4px; }
+  .leyenda { font-size: 7.5pt; color: #475569; line-height: 1.5; }
+  .idccp { font-family: "Courier New", monospace; font-size: 7pt; color: #64748b; }
+</style>
+</head>
+<body>
+  {% if c.estado == "cancelado" %}<div class="marca">CANCELADA</div>{% endif %}
+
+  <div class="encabezado">
+    <div class="negocio">
+      {% if clinica.logo %}<img src="{{ clinica.logo }}" alt="">{% endif %}
+      <div class="nombre">{{ clinica.nombre or c.emisor.nombre }}</div>
+    </div>
+    <div class="titulo">
+      <div class="t">CARTA PORTE</div>
+      <div class="s">Traslado propio · CFDI de traslado con complemento Carta Porte 3.1</div>
+    </div>
+    <div class="folio">
+      <div class="num">{{ c.folio }}</div>
+      <div class="dato">Expedición: {{ expedicion }}</div>
+      <div class="dato">Estado: {{ c.estado | replace("_", " ") | capitalize }}</div>
+    </div>
+  </div>
+  <div class="banner">DOCUMENTO INTERNO — SIN TIMBRE FISCAL</div>
+  {% if c.estado == "cancelado" %}<div class="cancelado">Cancelada: {{ c.motivo_cancelacion }}</div>{% endif %}
+
+  <h2>Emisor</h2>
+  <div class="caja rejilla">
+    <div><div class="k">Nombre o razón social</div><div class="v">{{ c.emisor.nombre }}</div></div>
+    <div><div class="k">RFC</div><div class="v">{{ c.emisor.rfc }}</div></div>
+    <div><div class="k">Régimen fiscal</div><div class="v">{{ c.emisor.regimen_fiscal }} {{ regimen }}</div></div>
+    <div><div class="k">Domicilio fiscal (C.P.)</div><div class="v">{{ c.emisor.codigo_postal }}</div></div>
+    <div><div class="k">Receptor</div><div class="v">El mismo emisor (traslado propio) · Uso S01</div></div>
+  </div>
+
+  <h2>Ruta · {{ "%g" | format(c.total_dist_rec) }} km en total</h2>
+  <div class="ruta">
+    <div class="parada origen">
+      <div class="tipo">Origen</div>
+      <div class="nombre">{{ c.origen.nombre_remitente }}</div>
+      <div class="dom">RFC {{ c.origen.rfc_remitente }}</div>
+      <div class="dom">{{ origen_dom.linea1 }}{% if origen_dom.linea1 %}<br>{% endif %}{{ origen_dom.linea2 }}</div>
+      <div class="cuando"><b>Salida:</b> {{ salida }}</div>
+    </div>
+    {% for d in destinos %}
+    <div class="flecha"><div class="linea">→</div><div>{{ "%g" | format(d.distancia_recorrida) }} km</div></div>
+    <div class="parada">
+      <div class="tipo">Destino {{ d.num_destino }}</div>
+      <div class="nombre">{{ d.nombre_destinatario }}</div>
+      <div class="dom">RFC {{ d.rfc_destinatario }}</div>
+      <div class="dom">{{ d.dom.linea1 }}{% if d.dom.linea1 %}<br>{% endif %}{{ d.dom.linea2 }}</div>
+      <div class="cuando"><b>Llegada:</b> {{ d.llegada }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <h2>Mercancías · {{ c.num_total_mercancias }}</h2>
+  <table>
+    <thead><tr>
+      <th>Clave SAT</th><th>Descripción</th><th class="n">Cantidad</th><th>Unidad</th>
+      {% if destinos | length > 1 %}<th>Destino</th>{% endif %}
+      <th class="n">Peso (kg)</th><th class="n">Valor</th>
+    </tr></thead>
+    <tbody>
+      {% for m in c.mercancias %}
+      <tr>
+        <td>{{ m.bienes_transp }}</td>
+        <td>{{ m.descripcion }}
+          {% if m.material_peligroso %}<div class="peligro">MATERIAL PELIGROSO {{ m.cve_material_peligroso }} · Embalaje {{ m.embalaje }}</div>{% endif %}
+        </td>
+        <td class="n">{{ "%g" | format(m.cantidad) }}</td>
+        <td>{{ m.clave_unidad }} {{ unidades[m.clave_unidad] }}</td>
+        {% if destinos | length > 1 %}<td>{{ m.destino }}</td>{% endif %}
+        <td class="n">{{ "{:,.3f}".format(m.peso_kg) }}</td>
+        <td class="n">{% if m.valor_mercancia is not none %}{{ "{:,.2f}".format(m.valor_mercancia) }} {{ m.moneda }}{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot><tr>
+      <td colspan="{{ 5 if destinos | length > 1 else 4 }}">Peso bruto total: {{ "{:,.3f}".format(peso_total) }} {{ c.unidad_peso }}</td>
+      <td class="n">{{ "{:,.3f}".format(c.peso_bruto_total) }}</td>
+      <td class="n">{% if valor_total %}{{ "{:,.2f}".format(valor_total) }} MXN{% endif %}</td>
+    </tr></tfoot>
+  </table>
+
+  <div class="dos">
+    <div>
+      <h2>Vehículo</h2>
+      <div class="caja">
+        <div class="rejilla">
+          <div><div class="k">Unidad</div><div class="v">{{ c.vehiculo_snapshot.nombre }}</div></div>
+          <div><div class="k">Placa</div><div class="v">{{ c.vehiculo_snapshot.placa }}</div></div>
+          <div><div class="k">Año</div><div class="v">{{ c.vehiculo_snapshot.anio_modelo }}</div></div>
+          <div><div class="k">Peso bruto vehicular</div><div class="v">{{ "%g" | format(c.vehiculo_snapshot.peso_bruto_vehicular) }} t</div></div>
+        </div>
+        <div style="margin-top:4px"><span class="k">Configuración</span> <b>{{ c.vehiculo_snapshot.config_vehicular }}</b> {{ config_vehicular }}</div>
+        <div><span class="k">Permiso SCT</span> <b>{{ c.vehiculo_snapshot.tipo_permiso_sct }}</b> {{ permiso }} · No. {{ c.vehiculo_snapshot.num_permiso_sct }}</div>
+        <div><span class="k">Resp. civil</span> {{ c.vehiculo_snapshot.seguro_resp_civil.aseguradora }} · póliza {{ c.vehiculo_snapshot.seguro_resp_civil.num_poliza }}</div>
+        {% if c.vehiculo_snapshot.seguro_carga %}<div><span class="k">Carga</span> {{ c.vehiculo_snapshot.seguro_carga.aseguradora }} · póliza {{ c.vehiculo_snapshot.seguro_carga.num_poliza }}</div>{% endif %}
+        {% if c.vehiculo_snapshot.seguro_medio_ambiente and c.mercancias | selectattr("material_peligroso") | list %}<div><span class="k">Medio ambiente</span> {{ c.vehiculo_snapshot.seguro_medio_ambiente.aseguradora }} · póliza {{ c.vehiculo_snapshot.seguro_medio_ambiente.num_poliza }}</div>{% endif %}
+        {% for r in c.vehiculo_snapshot.remolques %}
+        <div><span class="k">Remolque {{ loop.index }}</span> {{ r.subtipo }} {{ subtipos[r.subtipo] }} · placa {{ r.placa }}</div>
+        {% endfor %}
+      </div>
+    </div>
+    <div>
+      <h2>Operador{% if c.operadores | length > 1 %}es{% endif %}</h2>
+      <div class="caja">
+        {% for op in c.operadores %}
+        <div style="{% if not loop.first %}margin-top:5px;border-top:1px solid #e2e8f0;padding-top:5px{% endif %}">
+          <div class="v">{{ op.snapshot.nombre }}</div>
+          <div>RFC {{ op.snapshot.rfc }} · Licencia {{ op.snapshot.num_licencia }}</div>
+          <div style="color:#64748b">{{ licencias[op.snapshot.tipo_licencia] }} · vence {{ op.snapshot.fecha_vencimiento_licencia }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {% if c.observaciones %}<h2>Observaciones</h2><div class="caja">{{ c.observaciones }}</div>{% endif %}
+
+  <div class="pie">
+    <div class="qr"><div>Código QR del SAT<br>(disponible al timbrar)</div></div>
+    <div class="leyenda">
+      <b>Este documento es una representación impresa interna.</b><br>
+      Para timbrado fiscal ante el SAT se requiere CSD y PAC autorizado. No ampara el traslado como CFDI mientras no tenga folio fiscal (UUID).<br>
+      <span class="idccp">IdCCP {{ c.id_ccp }}</span>
+    </div>
+  </div>
+</body>
+</html>

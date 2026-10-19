@@ -13,6 +13,7 @@ from .modules.clinica.routes import (
     citas as clinica_citas, consentimientos as clinica_consentimientos, expedientes as clinica_expedientes,
     farmacia as clinica_farmacia, recetas as clinica_recetas,
 )
+from .modules.carta_porte.routes import cartas_porte as cp_cartas, operadores as cp_operadores, vehiculos as cp_vehiculos
 
 
 @asynccontextmanager
@@ -82,6 +83,10 @@ app.include_router(clinica_citas.router, prefix="/api")
 app.include_router(clinica_recetas.router, prefix="/api")
 app.include_router(clinica_farmacia.router, prefix="/api")
 app.include_router(clinica_consentimientos.router, prefix="/api")
+# Carta Porte: flota y operadores antes que /carta-porte/{id}
+app.include_router(cp_vehiculos.router, prefix="/api")
+app.include_router(cp_operadores.router, prefix="/api")
+app.include_router(cp_cartas.router, prefix="/api")
 
 @app.get("/api/health", tags=["system"])
 async def health():
