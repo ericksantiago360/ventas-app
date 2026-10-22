@@ -10,10 +10,12 @@ from app.core.database import get_db
 from app.core.negocios import negocio_autorizado, obtener_del_negocio, validar_referencia, verificar_acceso
 from app.core.security import get_current_user
 from app.modules.clinica.pdf import datos_clinica, fecha_larga, render_pdf
+from app.modules.timbrado.qr import qr_data_uri, url_desde_xml
+from app.modules.timbrado.servicio import cancelacion_aceptada, cancelar_en_sat, estado_sat_de, timbrar_xml
 
 from .. import catalogos
 from ..fechas import a_utc, desde_db, zona
-from ..models.carta_porte import TRANSICIONES, CambioEstado, Cancelacion, CartaPorteCreate, CartaPorteUpdate, Emisor
+from ..models.carta_porte import TRANSICIONES, CambioEstado, Cancelacion, CancelacionSAT, CartaPorteCreate, CartaPorteUpdate, Emisor
 from ..models.operador import validar_rfc
 from ..xml_generator import generar_xml_carta_porte
 from .operadores import alertas_operadores
@@ -323,6 +325,8 @@ async def cambiar_estado(
         raise HTTPException(400, "Para cancelar usa la opción Cancelar (pide un motivo)")
     if body.estado not in TRANSICIONES[anterior]:
         raise HTTPException(400, f"No se puede pasar de {anterior.replace('_', ' ')} a {body.estado.replace('_', ' ')}")
+    if body.estado == "borrador" and doc["timbrado"].get("uuid"):
+        raise HTTPException(400, "La carta porte ya está timbrada; no puede regresar a borrador")
 
     now = datetime.now(timezone.utc)
     cambios: dict = {"estado": body.estado, "updated_at": now}
@@ -357,6 +361,8 @@ async def cancelar_carta_porte(
     doc = await obtener_carta(db, id, user)
     if doc["estado"] in ("entregado", "cancelado"):
         raise HTTPException(400, f"La carta porte ya está {doc['estado']}")
+    if doc["timbrado"].get("uuid"):
+        raise HTTPException(400, "La carta porte está timbrada: cancélala ante el SAT (cancelar-timbre)")
     now = datetime.now(timezone.utc)
     nuevo = await db.cartas_porte.find_one_and_update(
         {"_id": doc["_id"]},
@@ -364,6 +370,93 @@ async def cancelar_carta_porte(
          "$push": {"historial": {"estado": "cancelado", "fecha": now, "usuario": user.get("nombre", ""), "nota": body.motivo.strip()}}},
         return_document=True)
     return a_carta(nuevo)
+
+
+@router.post("/{id}/timbrar")
+async def timbrar_carta_porte(
+    id: str,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Sella y timbra ante el SAT una carta porte lista para salir. El XML se regenera en el
+    momento del timbrado para que la fecha del comprobante sea la de hoy.
+    """
+    doc = await obtener_carta(db, id, user)
+    if doc["timbrado"].get("uuid"):
+        raise HTTPException(400, f"La carta porte ya está timbrada (UUID {doc['timbrado']['uuid']})")
+    if doc["estado"] != "listo":
+        raise HTTPException(400, "Solo se timbra una carta porte lista para salir")
+
+    now = datetime.now(timezone.utc)
+    xml = await run_in_threadpool(generar_xml_carta_porte, doc, now)
+    resultado = await timbrar_xml(db, doc["negocio_id"], xml.encode("utf-8"))
+
+    # El timbre ya existe ante el SAT: se guarda sin condiciones para no perder el UUID
+    timbrado = {
+        "uuid":               resultado["uuid"],
+        "fecha_timbrado":     resultado["fecha_timbrado"],
+        "pac":                "SW Sapien",
+        "cadena_original":    None,
+        "sello_sat":          resultado["sello_sat"],
+        "no_certificado_sat": resultado["no_certificado_sat"],
+        "xml_timbrado":       resultado["xml_timbrado"],
+        "estado_sat":         "Vigente",
+    }
+    nuevo = await db.cartas_porte.find_one_and_update(
+        {"_id": doc["_id"]},
+        {"$set": {"timbrado": timbrado, "updated_at": now},
+         "$push": {"historial": {"estado": doc["estado"], "fecha": now, "usuario": user.get("nombre", ""),
+                                 "nota": f"Timbrada ante el SAT (UUID {resultado['uuid']})"}}},
+        return_document=True)
+    return a_carta(nuevo)
+
+
+@router.post("/{id}/cancelar-timbre")
+async def cancelar_timbre_carta_porte(
+    id: str,
+    body: CancelacionSAT,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Cancela el CFDI ante el SAT. Si el SAT confirma, la carta queda cancelada; si aún está
+    en proceso, se guarda su estado y la carta sigue como timbrada.
+    """
+    doc = await obtener_carta(db, id, user)
+    uuid = doc["timbrado"].get("uuid")
+    if not uuid:
+        raise HTTPException(400, "La carta porte no está timbrada")
+    if doc["estado"] == "cancelado":
+        raise HTTPException(400, "La carta porte ya está cancelada")
+
+    respuesta = await cancelar_en_sat(doc["emisor"]["rfc"], uuid, body.motivo, body.folio_sustitucion)
+    now = datetime.now(timezone.utc)
+    aceptada = cancelacion_aceptada(respuesta)
+    cambios = {"timbrado.estado_sat": estado_sat_de(respuesta), "updated_at": now}
+    if aceptada:
+        cambios.update({"estado": "cancelado", "motivo_cancelacion": f"Cancelada ante el SAT (motivo {body.motivo})"})
+    nota = f"Cancelación ante el SAT, motivo {body.motivo}: {estado_sat_de(respuesta)}"
+    nuevo = await db.cartas_porte.find_one_and_update(
+        {"_id": doc["_id"]},
+        {"$set": cambios,
+         "$push": {"historial": {"estado": "cancelado" if aceptada else doc["estado"], "fecha": now,
+                                 "usuario": user.get("nombre", ""), "nota": nota}}},
+        return_document=True)
+    return a_carta(nuevo)
+
+
+@router.get("/{id}/xml-timbrado")
+async def descargar_xml_timbrado(
+    id: str,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    doc = await obtener_carta(db, id, user)
+    if not doc["timbrado"].get("xml_timbrado"):
+        raise HTTPException(404, "La carta porte no está timbrada")
+    return Response(doc["timbrado"]["xml_timbrado"], media_type="application/xml", headers={
+        "Content-Disposition": f'attachment; filename="carta-porte-{doc["folio"]}-timbrada.xml"'})
 
 
 @router.get("/{id}/xml")
@@ -407,8 +500,11 @@ async def descargar_pdf(
 
 def contexto_pdf(doc: dict, config: dict) -> dict:
     v = doc["vehiculo_snapshot"]
+    timbrado = doc["timbrado"]
     return {
         "c": doc,
+        "timbrado": timbrado,
+        "qr": qr_data_uri(url_desde_xml(timbrado["xml_timbrado"])) if timbrado.get("uuid") else None,
         "clinica": datos_clinica(config),
         "expedicion": fecha_larga(doc["created_at"]),
         "salida": fecha_larga(doc["origen"]["fecha_hora_salida"]),

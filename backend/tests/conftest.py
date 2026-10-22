@@ -8,6 +8,7 @@ en una base temporal que se crea y se borra en cada corrida.
     MONGODB_URL=mongodb://localhost:27017 pytest  # Mongo propio
 """
 import asyncio
+import base64
 import os
 import tempfile
 import uuid
@@ -18,6 +19,7 @@ os.environ["MONGODB_DB"] = f"ventas_test_{uuid.uuid4().hex[:8]}"
 os.environ["SECRET_KEY"] = "test-secret-key-0123456789abcdef0123456789"
 os.environ["STORAGE_PATH"] = tempfile.mkdtemp(prefix="ventas_storage_")
 os.environ["DEBUG"] = "false"
+os.environ["CSD_MASTER_KEY"] = base64.urlsafe_b64encode(os.urandom(32)).decode()   # clave Fernet efímera
 for var in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "APP_URL"):
     os.environ[var] = ""
 

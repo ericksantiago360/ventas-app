@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { negociosApi } from '../api/client'
 import { useNegocio } from '../context/NegocioContext'
+import CSDPanel from '../modules/timbrado/CSDPanel'
 
 const GIROS = [
   ['distribucion',        'Distribución'],
@@ -225,6 +226,8 @@ export default function Negocios() {
         </form>
         )}
       </div>
+
+      {editando && <div style={{ marginTop: 20 }}><CSDPanel negocioId={editando.id} /></div>}
     </div>
   )
 }

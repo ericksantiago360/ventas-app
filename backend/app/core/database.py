@@ -127,4 +127,9 @@ async def _crear_indices(db: AsyncIOMotorDatabase) -> None:
     await db.vehiculos.create_index([("negocio_id", 1), ("placa", 1)], unique=True)
     await db.operadores.create_index([("negocio_id", 1), ("rfc", 1)], unique=True)
 
+    # ── Timbrado SAT ──────────────────────────────────────────────────────
+    await db.csd_negocios.create_index([("negocio_id", 1), ("activo", 1)])
+    await db.facturas.create_index("uuid", sparse=True)
+    await db.cartas_porte.create_index("timbrado.uuid", sparse=True)
+
     print("✓ Índices MongoDB creados")
