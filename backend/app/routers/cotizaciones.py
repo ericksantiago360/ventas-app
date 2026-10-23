@@ -71,7 +71,7 @@ async def listar_cotizaciones(
 ):
     verificar_acceso(user, negocio_id)
 
-    filtro = {"negocio_id": negocio_id}
+    filtro = {"negocio_id": negocio_id, "eliminado": {"$ne": True}}
 
     if estado:
         filtro["estado"] = estado
