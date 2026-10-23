@@ -32,7 +32,7 @@ from reportlab.platypus import (
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.negocios import validar_referencia, verificar_acceso
+from app.core.negocios import validar_cliente_unificado, validar_referencia, verificar_acceso
 from app.services.cobros import registrar_cobro, cancelar_cobro
 from app.services.contabilidad_integracion import crear_poliza_cobro
 from app.modules.timbrado.cfdi_ingreso import generar_cfdi_ingreso
@@ -212,7 +212,7 @@ async def validar_origen_libre(db, negocio_id: str, origen_tipo: str, origen_id:
 
 
 async def validar_receptor(db, body: FacturaBase, negocio_id: str):
-    await validar_referencia(db.clientes, body.cliente_id, negocio_id, "Cliente")
+    await validar_cliente_unificado(db.clientes, body.cliente_id, "Cliente")
     await validar_referencia(db.pacientes, body.paciente_id, negocio_id, "Paciente")
 
 
@@ -807,7 +807,7 @@ async def facturar_pedido(
     cliente = {}
     if pedido.get("cliente_id") and ObjectId.is_valid(pedido["cliente_id"]):
         cliente = await db.clientes.find_one(
-            {"_id": ObjectId(pedido["cliente_id"]), "negocio_id": pedido["negocio_id"]}
+            {"_id": ObjectId(pedido["cliente_id"])}
         ) or {}
 
     conceptos = []

@@ -6,7 +6,7 @@ from pymongo import ReturnDocument
 
 from ..core.database import get_db
 from ..core.security import get_current_user
-from ..core.negocios import validar_referencia, verificar_acceso
+from ..core.negocios import validar_cliente_unificado, validar_referencia, verificar_acceso
 from ..models.base import serialize_list
 
 from io import BytesIO
@@ -77,7 +77,10 @@ async def listar_cotizaciones(
         filtro["estado"] = estado
 
     if cliente_id:
-        filtro["cliente_id"] = cliente_id
+        # Los documentos nuevos guardan ObjectId; los anteriores guardaron texto
+        filtro["cliente_id"] = (
+            {"$in": [cliente_id, ObjectId(cliente_id)]} if ObjectId.is_valid(cliente_id) else cliente_id
+        )
 
     skip = (page - 1) * limit
 
@@ -142,7 +145,9 @@ async def crear_cotizacion(
         )
 
     verificar_acceso(user, negocio_id)
-    await validar_referencia(db.clientes, body.get("cliente_id"), negocio_id, "Cliente")
+    await validar_cliente_unificado(db.clientes, body.get("cliente_id"), "Cliente")
+    if body.get("cliente_id"):
+        body["cliente_id"] = ObjectId(body["cliente_id"])
 
     numero = await generar_numero_cotizacion(
         db,
@@ -234,7 +239,9 @@ async def editar_cotizacion(
             detail="No hay datos para actualizar",
         )
 
-    await validar_referencia(db.clientes, cambios.get("cliente_id"), negocio_id, "Cliente")
+    await validar_cliente_unificado(db.clientes, cambios.get("cliente_id"), "Cliente")
+    if cambios.get("cliente_id"):
+        cambios["cliente_id"] = ObjectId(cambios["cliente_id"])
 
     cambios["updated_at"] = datetime.utcnow()
 

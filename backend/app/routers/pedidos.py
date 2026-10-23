@@ -7,7 +7,7 @@ from pymongo import ReturnDocument
 
 from ..core.security import get_current_user
 from ..core.database import get_db
-from ..core.negocios import validar_referencia, verificar_acceso
+from ..core.negocios import validar_cliente_unificado, validar_referencia, verificar_acceso
 from ..models.base import serialize_list
 from ..services.contabilidad_integracion import crear_poliza_venta_pedido
 from ..services.contabilidad_integracion import (
@@ -336,7 +336,9 @@ async def crear_pedido(
         user,
         negocio_id,
     )
-    await validar_referencia(db.clientes, body.get("cliente_id"), negocio_id, "Cliente")
+    await validar_cliente_unificado(db.clientes, body.get("cliente_id"), "Cliente")
+    if body.get("cliente_id"):
+        body["cliente_id"] = ObjectId(body["cliente_id"])
     await validar_referencia(db.cotizaciones, body.get("cotizacion_id"), negocio_id, "Cotización")
 
     numero = await generar_numero_pedido(
@@ -463,7 +465,9 @@ async def editar_pedido(
         for key, value in body.items()
         if key not in campos_protegidos
     }
-    await validar_referencia(db.clientes, actualizacion.get("cliente_id"), pedido["negocio_id"], "Cliente")
+    await validar_cliente_unificado(db.clientes, actualizacion.get("cliente_id"), "Cliente")
+    if actualizacion.get("cliente_id"):
+        actualizacion["cliente_id"] = ObjectId(actualizacion["cliente_id"])
     await validar_referencia(db.cotizaciones, actualizacion.get("cotizacion_id"), pedido["negocio_id"], "Cotización")
 
     actualizacion[
