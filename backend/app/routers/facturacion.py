@@ -33,6 +33,7 @@ from reportlab.platypus import (
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.negocios import validar_cliente_unificado, validar_referencia, verificar_acceso
+from app.models.crm import ObjectIdStr
 from app.services.cobros import registrar_cobro, cancelar_cobro
 from app.services.contabilidad_integracion import crear_poliza_cobro
 from app.modules.timbrado.cfdi_ingreso import generar_cfdi_ingreso
@@ -80,7 +81,7 @@ class Concepto(BaseModel):
 
 class FacturaBase(BaseModel):
     receptor:          Receptor = Receptor()
-    cliente_id:        str = ""
+    cliente_id:        ObjectIdStr | None = None
     paciente_id:       str = ""
     conceptos:         List[Concepto] = []
     descuento_general: float = Field(0, ge=0)
@@ -833,7 +834,7 @@ async def facturar_pedido(
             direccion=cliente.get("direccion", ""),
             cp=cliente.get("cp", "") or cliente.get("codigo_postal", ""),
         ),
-        cliente_id=str(pedido.get("cliente_id") or ""),
+        cliente_id=str(pedido["cliente_id"]) if pedido.get("cliente_id") else None,
         conceptos=conceptos,
         descuento_general=float(pedido.get("descuento", 0) or 0),
         metodo_pago="PUE" if float(pedido.get("saldo_pendiente", 0) or 0) <= 0 else "PPD",
