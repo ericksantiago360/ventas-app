@@ -15,6 +15,10 @@ from .modules.clinica.routes import (
 )
 from .modules.carta_porte.routes import cartas_porte as cp_cartas, operadores as cp_operadores, vehiculos as cp_vehiculos
 from .modules.timbrado.routes import csd as timbrado_csd
+from .modules.ecommerce.routes import (
+    admin_ordenes as ecommerce_admin_ordenes, catalogo as ecommerce_catalogo,
+    config as ecommerce_config, ordenes as ecommerce_ordenes,
+)
 
 
 @asynccontextmanager
@@ -89,6 +93,11 @@ app.include_router(cp_vehiculos.router, prefix="/api")
 app.include_router(cp_operadores.router, prefix="/api")
 app.include_router(cp_cartas.router, prefix="/api")
 app.include_router(timbrado_csd.router, prefix="/api")
+# Tienda en línea: pública (/api/tienda) y admin (/api/admin/tienda)
+app.include_router(ecommerce_config.router, prefix="/api")
+app.include_router(ecommerce_catalogo.router, prefix="/api")
+app.include_router(ecommerce_ordenes.router, prefix="/api")
+app.include_router(ecommerce_admin_ordenes.router, prefix="/api")
 
 @app.get("/api/health", tags=["system"])
 async def health():

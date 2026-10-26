@@ -351,3 +351,4 @@ Pulsa **Cancelar ante el SAT** en la factura o carta porte timbrada y elige el m
 **Una plataforma, todos los negocios, cero doble captura.**
 
 ¿Preguntas?
+   

@@ -43,6 +43,12 @@ SIN_NEGOCIO = {
     ("portal.py", "mis_ordenes"): "portal del paciente: solo sus propias órdenes",
     ("portal.py", "detalle_orden"): "portal del paciente: _orden_del_paciente valida que sea suya",
     ("portal.py", "pdf_orden"): "portal del paciente: _orden_del_paciente valida que sea suya",
+    ("config.py", "config_tienda_publica"): "tienda pública: el negocio sale del slug de una tienda activa (config_por_slug)",
+    ("catalogo.py", "categorias_publicas"): "tienda pública: el negocio sale del slug de una tienda activa (config_por_slug)",
+    ("catalogo.py", "productos_publicos"): "tienda pública: el negocio sale del slug de una tienda activa (config_por_slug)",
+    ("catalogo.py", "producto_publico"): "tienda pública: el negocio sale del slug de una tienda activa (config_por_slug)",
+    ("ordenes.py", "checkout"): "tienda pública: el negocio sale del slug; sin cuenta de usuario",
+    ("ordenes.py", "estado_orden"): "tienda pública: folio + correo del comprador como acceso",
 }
 
 

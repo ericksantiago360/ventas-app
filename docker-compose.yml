@@ -32,6 +32,13 @@ services:
     networks:
       - app_net
 
+  # Tienda en línea pública (React), servida por Nginx en /tienda/
+  storefront:
+    build: ./storefront
+    restart: unless-stopped
+    networks:
+      - app_net
+
   nginx:
     image: nginx:alpine
     restart: unless-stopped
@@ -42,6 +49,7 @@ services:
     depends_on:
       - backend
       - frontend
+      - storefront
     networks:
       - app_net
 

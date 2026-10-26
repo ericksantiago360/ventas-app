@@ -26,6 +26,10 @@ import VerificarReceta   from './modules/clinica/VerificarReceta'
 import FarmaciaPage      from './modules/clinica/FarmaciaPage'
 import ConsentimientosPage from './modules/clinica/ConsentimientosPage'
 import { RequierePermiso } from './modules/clinica/permisos'
+import TiendaConfigPage     from './modules/ecommerce/TiendaConfigPage'
+import TiendaProductosPage  from './modules/ecommerce/TiendaProductosPage'
+import TiendaOrdenesPage    from './modules/ecommerce/TiendaOrdenesPage'
+import TiendaOrdenDetalle   from './modules/ecommerce/TiendaOrdenDetalle'
 import CartaPortePage       from './modules/carta_porte/CartaPortePage'
 import NuevaCartaPortePage  from './modules/carta_porte/NuevaCartaPortePage'
 import CartaPorteDetalle    from './modules/carta_porte/CartaPorteDetalle'
@@ -129,6 +133,10 @@ export default function App() {
             <Route path="clinica/agenda/dia" element={<RequierePermiso permiso="citas:read"><AgendaDiaPage /></RequierePermiso>} />
             <Route path="clinica/recetas" element={<RequierePermiso permiso="recetas:read"><RecetasPage /></RequierePermiso>} />
             <Route path="clinica/farmacia" element={<RequierePermiso permiso="farmacia:read"><FarmaciaPage /></RequierePermiso>} />
+            <Route path="tienda" element={<TiendaConfigPage />} />
+            <Route path="tienda/productos" element={<TiendaProductosPage />} />
+            <Route path="tienda/ordenes" element={<TiendaOrdenesPage />} />
+            <Route path="tienda/ordenes/:id" element={<TiendaOrdenDetalle />} />
             <Route path="carta-porte" element={<CartaPortePage />} />
             <Route path="carta-porte/nueva" element={<NuevaCartaPortePage />} />
             <Route path="carta-porte/flota" element={<FlotaPage />} />

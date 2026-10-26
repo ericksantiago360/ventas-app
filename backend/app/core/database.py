@@ -41,7 +41,6 @@ async def _crear_indices(db: AsyncIOMotorDatabase) -> None:
     await db.interacciones.create_index([("cliente_id", 1), ("fecha", -1)])
     await db.interacciones.create_index([("oportunidad_id", 1), ("fecha", -1)])
 
-
     # ── Catálogo ──────────────────────────────────────────────────────────
     await db.productos.create_index([("negocio_id", 1), ("activo", 1)])
     await db.productos.create_index(
@@ -139,5 +138,19 @@ async def _crear_indices(db: AsyncIOMotorDatabase) -> None:
     await db.csd_negocios.create_index([("negocio_id", 1), ("activo", 1)])
     await db.facturas.create_index("uuid", sparse=True)
     await db.cartas_porte.create_index("timbrado.uuid", sparse=True)
+
+    # ── Tienda en línea ───────────────────────────────────────────────────
+    # Parciales: un negocio sin slug o sin referencia no debe chocar con otro
+    await db.tienda_config.create_index("negocio_id", unique=True)
+    await db.tienda_config.create_index(
+        "slug", unique=True, partialFilterExpression={"slug": {"$type": "string"}}
+    )
+    await db.clientes_ecommerce.create_index([("negocio_id", 1), ("email", 1)], unique=True)
+    await db.ordenes_ecommerce.create_index([("negocio_id", 1), ("folio", 1)], unique=True)
+    await db.ordenes_ecommerce.create_index([("negocio_id", 1), ("estado", 1), ("created_at", -1)])
+    await db.ordenes_ecommerce.create_index([("negocio_id", 1), ("cliente.email", 1)])
+    await db.ordenes_ecommerce.create_index(
+        "referencia_pago", unique=True, partialFilterExpression={"referencia_pago": {"$type": "string"}}
+    )
 
     print("✓ Índices MongoDB creados")
