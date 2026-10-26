@@ -8,7 +8,7 @@ from pymongo import ReturnDocument
 from ..core.security import get_current_user
 from ..core.database import get_db
 from ..core.negocios import validar_cliente_unificado, validar_referencia, verificar_acceso
-from ..models.base import serialize_list
+from ..models.base import serialize_doc, serialize_list
 from ..services.contabilidad_integracion import crear_poliza_venta_pedido
 from ..services.contabilidad_integracion import (
     crear_poliza_venta_pedido,
@@ -257,13 +257,10 @@ async def kanban(
     )
 
     async for doc in cursor:
-        doc["_id"] = str(
-            doc["_id"]
-        )
-
+        # serialize_doc convierte también cliente_id y demás ObjectId anidados
         resultado[
             doc["estado"]
-        ].append(doc)
+        ].append(serialize_doc(doc))
 
     return resultado
 

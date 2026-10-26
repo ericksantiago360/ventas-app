@@ -108,8 +108,11 @@ def test_editar_negocio(client, admin):
 def test_desactivar_y_reactivar_conserva_datos(client, admin):
     negocio = crear_negocio(client, admin)
     N = {"negocio_id": negocio}
-    r = client.post("/api/crm/clientes", headers=admin, json={**N, "nombre": unico("Cliente")})
+    r = client.post("/api/crm/clientes", headers=admin,
+                    json={"empresa": unico("Cliente"), "telefono": "5550500", "canal_origen": "directo"})
     cliente = id_de(r.json())
+    # La lista de clientes solo muestra los que tienen actividad en el negocio
+    assert client.post("/api/cotizaciones/", headers=admin, json={**N, "cliente_id": cliente}).status_code == 201
 
     assert client.put(f"/api/negocios/{negocio}", headers=admin, json={"activo": False}).status_code == 200
     assert negocio not in {n["id"] for n in client.get("/api/negocios", headers=admin).json()}

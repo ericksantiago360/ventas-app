@@ -13,7 +13,8 @@ from pathlib import Path
 
 APP = Path(__file__).resolve().parents[1] / "app"
 ROUTERS = sorted([*(APP / "routers").glob("*.py"), *(APP / "modules").glob("*/routes/*.py")])
-VERIFICADORES = {"verificar_acceso", "obtener_del_negocio", "negocio_autorizado", "con_permiso"}
+# cliente_accesible_o_403: clientes unificados (SPEC §9); valida creador o actividad en el negocio
+VERIFICADORES = {"verificar_acceso", "obtener_del_negocio", "negocio_autorizado", "con_permiso", "cliente_accesible_o_403"}
 METODOS = {"get", "post", "put", "patch", "delete"}
 
 # (archivo, función): motivo
@@ -23,6 +24,9 @@ SIN_NEGOCIO = {
     ("lab.py", "estado_correo"): "solo dice si el SMTP del servidor está configurado",
     ("negocios.py", "listar_negocios"): "solo lista los negocios del propio usuario",
     ("negocios.py", "crear_negocio"): "alta de un negocio nuevo; solo administradores (require_admin)",
+    # Clientes unificados (SPEC §9): el alta no pertenece a un negocio. La lista sí
+    # verifica el acceso (listar_clientes) y solo muestra clientes con actividad visible.
+    ("crm.py", "crear_cliente"): "alta de cliente unificado: el documento no tiene negocio_id",
     ("usuarios.py", "listar_usuarios"): "solo admin; filtra por los negocios del administrador (visible_para)",
     ("usuarios.py", "crear_usuario"): "solo admin; validar_negocios limita a los negocios del administrador",
     ("usuarios.py", "actualizar_usuario"): "solo admin; visible_para y validar_negocios limitan el alcance",

@@ -135,7 +135,7 @@ def es_pdf(r) -> bool:
 @pytest.fixture
 def cliente_santal(client, admin):
     r = client.post("/api/crm/clientes", headers=admin,
-                    json={"negocio_id": "santal", "nombre": unico("Cliente")})
+                    json={"empresa": unico("Cliente"), "telefono": "5550100", "canal_origen": "directo"})
     assert r.status_code == 201, r.text
     return id_de(r.json())
 

@@ -24,6 +24,8 @@ class Cliente(MongoBaseModel):
     canal_origen: CanalOrigen
     tags: list[str] = []
     notas: str = ""
+    # user_id de quien lo creó: puede ver el cliente aunque aún no tenga actividad
+    creado_por: str | None = None
     activo: bool = True
     created_at: datetime
     updated_at: datetime

@@ -833,7 +833,7 @@ async def facturar_pedido(
             direccion=cliente.get("direccion", ""),
             cp=cliente.get("cp", "") or cliente.get("codigo_postal", ""),
         ),
-        cliente_id=pedido.get("cliente_id", "") or "",
+        cliente_id=str(pedido.get("cliente_id") or ""),
         conceptos=conceptos,
         descuento_general=float(pedido.get("descuento", 0) or 0),
         metodo_pago="PUE" if float(pedido.get("saldo_pendiente", 0) or 0) <= 0 else "PPD",
@@ -886,7 +886,7 @@ async def facturar_orden(
             telefono=paciente.get("telefono", "") or "",
             uso_cfdi="D01",
         ),
-        paciente_id=orden.get("paciente_id", ""),
+        paciente_id=str(orden.get("paciente_id") or ""),
         conceptos=conceptos,
         notas=f"Médico solicitante: {orden['medico_solicitante']}" if orden.get("medico_solicitante") else "",
     )

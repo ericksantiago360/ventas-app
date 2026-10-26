@@ -19,6 +19,10 @@ class ClienteCreate(BaseModel):
     notas: str = ""
 
 
+class ClienteEstado(BaseModel):
+    activo: bool
+
+
 class ClienteUpdate(BaseModel):
     empresa: str | None = Field(default=None, min_length=1)
     contacto: str | None = None

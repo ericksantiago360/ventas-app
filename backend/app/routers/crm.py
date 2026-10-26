@@ -16,6 +16,7 @@ from ..models.base import serialize_doc, serialize_list
 from ..models.crm import TipoLead
 from ..schemas.crm import (
     ClienteCreate,
+    ClienteEstado,
     ClienteUpdate,
     EtapaUpdate,
     InteraccionCreate,
@@ -98,6 +99,37 @@ async def buscar_duplicado(db, empresa: str, telefono: str) -> dict | None:
     })
 
 
+async def clientes_con_actividad(db, negocio_ids: list[str]) -> list[ObjectId]:
+    """Clientes con al menos una oportunidad, cotización o pedido en esos negocios."""
+    ids: set[str] = set()
+    for coleccion in (db.oportunidades, db.cotizaciones, db.pedidos):
+        # cliente_id puede estar guardado como texto o como ObjectId (datos anteriores)
+        ids |= {str(v) for v in await coleccion.distinct("cliente_id", {"negocio_id": {"$in": negocio_ids}}) if v}
+    return [ObjectId(v) for v in ids if ObjectId.is_valid(v)]
+
+
+async def tiene_actividad(db, cliente_id: ObjectId, negocio_ids: list[str]) -> bool:
+    filtro = {"cliente_id": {"$in": [cliente_id, str(cliente_id)]}, "negocio_id": {"$in": negocio_ids}}
+    for coleccion in (db.oportunidades, db.cotizaciones, db.pedidos):
+        if await coleccion.find_one(filtro, {"_id": 1}):
+            return True
+    return False
+
+
+async def cliente_accesible(db, cliente: dict, user) -> bool:
+    """El creador siempre ve su cliente; los demás, solo si tiene actividad en sus negocios."""
+    if cliente.get("creado_por") == user["_id"]:
+        return True
+    return await tiene_actividad(db, cliente["_id"], list(negocios_del_usuario(user)))
+
+
+async def cliente_accesible_o_403(db, id: str, user) -> dict:
+    cliente = await cliente_o_404(db, id)
+    if not await cliente_accesible(db, cliente, user):
+        raise HTTPException(status_code=403, detail="No tienes acceso a este cliente")
+    return cliente
+
+
 # ============================================================
 # CLIENTES
 # ============================================================
@@ -109,10 +141,17 @@ async def listar_clientes(
     activo: bool = True,
     page: int = 1,
     limit: int = 50,
+    negocio_id: str | None = None,
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    filtro = {"activo": activo}
+    # Clientes unificados (SPEC §9): no tienen negocio. Se listan los que tienen
+    # actividad en los negocios del usuario, o en el ?negocio_id= si se pide uno.
+    if negocio_id:
+        verificar_acceso(user, negocio_id)
+    negocios = [negocio_id] if negocio_id else sorted(negocios_del_usuario(user))
+
+    filtro = {"activo": activo, "_id": {"$in": await clientes_con_actividad(db, negocios)}}
 
     if q:
         filtro["$or"] = [
@@ -147,6 +186,9 @@ async def crear_cliente(
         if existente:
             # Spec §7: HTTP 200 + duplicate_warning, no se crea; forzar=true crea de todos modos
             response.status_code = 200
+            # Sin acceso al duplicado no se revelan sus datos
+            if not await cliente_accesible(db, existente, user):
+                return {"duplicate_warning": True}
             return {
                 "duplicate_warning": True,
                 "mensaje": "Ya existe un cliente con esta empresa y teléfono. Considera vincularlo.",
@@ -154,7 +196,13 @@ async def crear_cliente(
             }
 
     marca = ahora()
-    doc = {**body.model_dump(), "activo": True, "created_at": marca, "updated_at": marca}
+    doc = {
+        **body.model_dump(),
+        "creado_por": user["_id"],
+        "activo": True,
+        "created_at": marca,
+        "updated_at": marca,
+    }
     resultado = await db.clientes.insert_one(doc)
     doc["_id"] = resultado.inserted_id
 
@@ -167,7 +215,7 @@ async def obtener_cliente(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    cliente = await cliente_o_404(db, id)
+    cliente = await cliente_accesible_o_403(db, id, user)
 
     # Todas las oportunidades (abiertas y cerradas), solo de los negocios del usuario
     ops = await (
@@ -193,7 +241,7 @@ async def editar_cliente(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    cliente = await cliente_o_404(db, id)
+    cliente = await cliente_accesible_o_403(db, id, user)
     cambios = body.model_dump(exclude_unset=True)
     cambios["updated_at"] = ahora()
 
@@ -208,12 +256,27 @@ async def eliminar_cliente(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    cliente = await cliente_o_404(db, id)
+    cliente = await cliente_accesible_o_403(db, id, user)
     await db.clientes.update_one(
         {"_id": cliente["_id"]},
         {"$set": {"activo": False, "updated_at": ahora()}},
     )
     return {"ok": True}
+
+
+@router.patch("/clientes/{id}/estado")
+async def cambiar_estado_cliente(
+    id: str,
+    body: ClienteEstado,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    cliente = await cliente_accesible_o_403(db, id, user)
+    await db.clientes.update_one(
+        {"_id": cliente["_id"]},
+        {"$set": {"activo": body.activo, "updated_at": ahora()}},
+    )
+    return {"data": serialize_doc(await db.clientes.find_one({"_id": cliente["_id"]}))}
 
 
 @router.get("/clientes/{id}/timeline")
@@ -222,7 +285,7 @@ async def timeline_cliente(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    cliente = await cliente_o_404(db, id)
+    cliente = await cliente_accesible_o_403(db, id, user)
     docs = await (
         db.interacciones
         .find({"cliente_id": cliente["_id"], "negocio_id": {"$in": list(negocios_del_usuario(user))}})
