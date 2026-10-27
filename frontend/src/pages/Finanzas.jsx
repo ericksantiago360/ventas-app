@@ -91,6 +91,7 @@ export default function Finanzas() {
   const [formCuenta, setFormCuenta] = useState(cuentaInicial)
   const [formMovimiento, setFormMovimiento] =
     useState(movimientoInicial)
+  const [editandoMovimiento, setEditandoMovimiento] = useState(null)
 
   const [formCobro, setFormCobro] =
     useState(cobroInicial)
@@ -251,15 +252,12 @@ export default function Finanzas() {
     if (!confirmar) return
 
     try {
-      // FIX: cuenta.id, no cuenta._id
-      await api.delete(
-        `/api/finanzas/cuentas/${cuenta.id}`,
-        {
-          params: {
-            negocio_id: negocioId,
-          },
-        }
-      )
+      // Desactivar usa DELETE (baja lógica); activar usa PUT con activo: true
+      if (activar) {
+        await api.put(`/api/finanzas/cuentas/${cuenta.id}`, { activo: true })
+      } else {
+        await api.delete(`/api/finanzas/cuentas/${cuenta.id}`)
+      }
 
       await cargarDatos()
     } catch (error) {
@@ -283,20 +281,57 @@ export default function Finanzas() {
     // FIX: primeraCuenta.id, no primeraCuenta._id
     // (antes esto siempre quedaba undefined -> el <select> nunca
     // preseleccionaba una cuenta válida)
+    setEditandoMovimiento(null)
     setFormMovimiento({
       ...movimientoInicial,
       cuenta_id: primeraCuenta?.id || '',
     })
- 
+
 
     setModalMovimiento(true)
   }
-  
+
+  const abrirEditarMovimiento = (movimiento) => {
+    setEditandoMovimiento(movimiento)
+    setFormMovimiento({
+      tipo: movimiento.tipo,
+      cuenta_id: movimiento.cuenta_id || '',
+      categoria: movimiento.categoria || 'otro',
+      importe: movimiento.importe ?? '',
+      fecha: movimiento.fecha
+        ? String(movimiento.fecha).slice(0, 10)
+        : movimientoInicial.fecha,
+      concepto: movimiento.concepto || '',
+    })
+
+    setModalMovimiento(true)
+  }
+
+  const eliminarMovimiento = async (movimiento) => {
+    const confirmar = window.confirm(
+      `¿Eliminar el movimiento "${movimiento.concepto}" por ${dinero(movimiento.importe)}? Esto cambia el saldo de la cuenta.`
+    )
+
+    if (!confirmar) return
+
+    try {
+      await api.delete(`/api/finanzas/movimientos/${movimiento.id}`)
+      await cargarDatos()
+    } catch (error) {
+      console.error('Error eliminando movimiento:', error)
+
+      alert(
+        error.response?.data?.detail ||
+          'No se pudo eliminar el movimiento.'
+      )
+    }
+  }
 
   const cerrarModalMovimiento = () => {
     if (guardandoMovimiento) return
 
     setModalMovimiento(false)
+    setEditandoMovimiento(null)
     setFormMovimiento(movimientoInicial)
   }
 
@@ -351,10 +386,17 @@ export default function Finanzas() {
           : new Date().toISOString(),
       }
 
-      await api.post(
-        '/api/finanzas/movimientos',
-        body
-      )
+      if (editandoMovimiento?.id) {
+        await api.put(
+          `/api/finanzas/movimientos/${editandoMovimiento.id}`,
+          body
+        )
+      } else {
+        await api.post(
+          '/api/finanzas/movimientos',
+          body
+        )
+      }
 
       cerrarModalMovimiento()
       await cargarDatos()
@@ -1000,6 +1042,17 @@ export default function Finanzas() {
                     >
                       Importe
                     </th>
+
+                    <th
+                      style={{
+                        padding: '12px',
+                        textAlign: 'right',
+                        borderBottom:
+                          '1px solid #ddd',
+                      }}
+                    >
+                      Acciones
+                    </th>
                   </tr>
                 </thead>
 
@@ -1099,6 +1152,40 @@ export default function Finanzas() {
                             : '-'}{' '}
                           {dinero(
                             movimiento.importe
+                          )}
+                        </td>
+
+                        <td
+                          style={{
+                            padding: '12px',
+                            borderBottom:
+                              '1px solid #eee',
+                            textAlign: 'right',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {movimiento.referencia_tipo ? (
+                            <span
+                              title="Viene de un cobro: anula el cobro para cambiarlo"
+                              style={{ color: '#888', fontSize: '0.85em' }}
+                            >
+                              Cobro
+                            </span>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => abrirEditarMovimiento(movimiento)}
+                              >
+                                Editar
+                              </button>{' '}
+                              <button
+                                type="button"
+                                onClick={() => eliminarMovimiento(movimiento)}
+                              >
+                                Eliminar
+                              </button>
+                            </>
                           )}
                         </td>
                       </tr>
@@ -1371,7 +1458,7 @@ export default function Finanzas() {
             }}
           >
             <h2>
-              Nuevo movimiento
+              {editandoMovimiento ? 'Editar movimiento' : 'Nuevo movimiento'}
             </h2>
 
             <div
