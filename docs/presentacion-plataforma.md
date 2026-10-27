@@ -46,6 +46,7 @@ Una sola plataforma web que:
 | **Portal del paciente** | Recetas | Cotizaciones | Operadores | Inventario | |
 | | Farmacia | Pedidos | | **Personal y nómina** | |
 | | Consentimientos | Facturación | | | |
+| | | **Tienda en línea** | | | |
 
 ---
 
@@ -97,8 +98,8 @@ Una sola plataforma web que:
 
 ## Ciclo comercial
 
-1. **CRM**: prospectos por etapa (nuevo → contactado → calificado → cotización → ganado / perdido) y conversión a cliente
-2. **Catálogo**: productos y servicios con categorías, variantes, atributos y listas de precios
+1. **CRM**: oportunidades en el pipeline de cada negocio, con etapas configurables; en Bienes Raíces por tipo de lead (propietario, comprador o arrendatario). Los clientes son unificados entre negocios
+2. **Catálogo**: productos y servicios con categorías, variantes, atributos, listas de precios e imagen por producto (JPG, PNG o WebP, hasta 5 MB)
 3. **Cotizaciones**: plantillas PDF con la imagen de cada negocio
 4. **Pedidos**: tablero Kanban (confirmado → en proceso → listo → entregado → cobrado), etapas internas de producción y registro de pagos
 
@@ -114,6 +115,19 @@ Una sola plataforma web que:
 - Candado contra duplicados: un pedido u orden no se factura dos veces
 
 > Notas: es facturación interna; el timbrado CFDI ante el SAT es una fase posterior.
+
+---
+
+## Tienda en línea — *nuevo*
+
+- **Catálogo público** por negocio, en su propia dirección (`/tienda/{slug}`)
+- **Dos modos**: catálogo con precio y pago por transferencia SPEI u OXXO, o propiedades para Bienes Raíces
+- **Cotizaciones y solicitudes de contacto** sin pago: llegan al CRM como oportunidad en la primera etapa del pipeline
+- **Imágenes de producto** que se suben desde Catálogo y se muestran en la tienda
+- Consulta de orden por folio y correo
+- Límite de solicitudes por IP en la API pública
+
+> Notas: la tienda no cobra con tarjeta; el pago se confirma al recibir la transferencia u OXXO.
 
 ---
 
@@ -147,8 +161,9 @@ Factura ──► Pago ──► Cobro en Finanzas ──► Ingreso en la cuent
 ## Finanzas y contabilidad
 
 **Finanzas**
-- Cuentas de caja, banco y monedero con saldo en tiempo real
+- Cuentas de caja, banco y monedero con saldo en tiempo real, activables y desactivables
 - Ingresos, egresos, cobros y métodos de pago
+- Movimientos editables y eliminables; los que vienen de un cobro se anulan desde el cobro
 
 **Contabilidad**
 - Catálogo de cuentas, periodos contables y pólizas (manuales y automáticas)
@@ -193,7 +208,7 @@ Factura ──► Pago ──► Cobro en Finanzas ──► Ingreso en la cuent
 | Base de datos | MongoDB |
 | Documentos PDF | ReportLab · WeasyPrint |
 | Despliegue | Docker Compose · Nginx (listo para Coolify) |
-| Pruebas | pytest contra MongoDB real (507 pruebas automatizadas) |
+| Pruebas | pytest contra MongoDB real (572 pruebas automatizadas) |
 
 - Acceso con usuario y contraseña (tokens JWT con expiración)
 - Cada usuario solo ve los negocios que tiene asignados
@@ -209,6 +224,8 @@ Factura ──► Pago ──► Cobro en Finanzas ──► Ingreso en la cuent
 - Clínica: expediente, agenda, recetas, farmacia y consentimientos
 - Carta Porte 3.1: captura, flota, operadores y XML validado (sin timbrar)
 - Facturación conectada con Finanzas
+- Finanzas con alta, edición y baja de movimientos y cuentas
+- Tienda en línea con imágenes de producto; las solicitudes llegan al CRM
 - Envío de resultados por correo y portal del paciente
 - Nómina con ISR, IMSS y SBC integrado
 - App instalable y adaptada al celular
