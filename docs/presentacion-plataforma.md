@@ -127,7 +127,7 @@ Una sola plataforma web que:
 - Consulta de orden por folio y correo
 - Límite de solicitudes por IP en la API pública
 
-> Notas: la tienda no cobra con tarjeta; el pago se confirma al recibir la transferencia u OXXO.
+> Notas: la tienda solo acepta transferencia SPEI y pago en OXXO, no tarjeta. El administrador marca el pago como recibido y después confirma la orden, lo que crea el pedido y descuenta el stock.
 
 ---
 
