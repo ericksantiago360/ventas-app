@@ -13,6 +13,7 @@ from bson import ObjectId
 from fastapi import HTTPException
 from pymongo import ReturnDocument
 
+from app.routers.crm import config_crm
 from app.routers.pedidos import generar_numero_pedido
 from app.services.contabilidad_integracion import crear_poliza_venta_pedido
 
@@ -318,20 +319,27 @@ async def cliente_crm_por_correo(db, negocio_id: str, cliente: dict) -> str:
     return str(resultado.inserted_id)
 
 
-async def crear_lead_desde_orden(db, orden: dict) -> None:
-    """Solicitudes de cotización o contacto entran al CRM como lead."""
-    cliente = orden["cliente"]
+async def crear_oportunidad_desde_orden(db, orden: dict) -> None:
+    """Solicitudes de cotización o contacto entran al CRM como oportunidad en la primera etapa del pipeline."""
+    negocio_id = orden["negocio_id"]
+    # Bienes Raíces exige tipo_lead; un interesado en una propiedad es comprador
+    tipo_lead = "comprador" if negocio_id == "bienes_raices" else None
+    pipeline, terminales = await config_crm(db, negocio_id, tipo_lead)
+    cliente_id = await cliente_crm_por_correo(db, negocio_id, orden["cliente"])
     interes = ", ".join(f"{p['cantidad']} × {p['nombre']}" for p in orden["partidas"])
-    await db.leads.insert_one({
-        "negocio_id": orden["negocio_id"],
-        "nombre": cliente["nombre"],
-        "email": cliente["email"],
-        "telefono": cliente["telefono"],
-        "etapa": "nuevo",
+    etapa = pipeline[0]
+    marca = ahora()
+    await db.oportunidades.insert_one({
+        "cliente_id": ObjectId(cliente_id),
+        "negocio_id": negocio_id,
+        "etapa": etapa,
+        "tipo_lead": tipo_lead,
+        "valor_estimado": orden.get("total"),
+        "activo": etapa not in terminales,
         "origen": "tienda",
         "notas": f"Orden {orden['folio']} ({orden['tipo']}). Interés: {interes}. {orden.get('notas_cliente', '')}".strip(),
-        "created_at": ahora(),
-        "updated_at": ahora(),
+        "created_at": marca,
+        "updated_at": marca,
     })
 
 

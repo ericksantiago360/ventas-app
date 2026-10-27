@@ -21,7 +21,7 @@ from ..services import (
     config_por_slug,
     generar_referencia,
     instrucciones_pago,
-    crear_lead_desde_orden,
+    crear_oportunidad_desde_orden,
     registrar_cliente_ecommerce,
     siguiente_folio,
     tipo_de_orden,
@@ -82,8 +82,8 @@ async def checkout(slug: str, body: CheckoutBody, db=Depends(get_db)):
 
     await registrar_cliente_ecommerce(db, negocio_id, cliente)
     if not con_pago:
-        # Cotización o contacto: el lead del CRM existe desde que el cliente lo envía
-        await crear_lead_desde_orden(db, orden)
+        # Cotización o contacto: la oportunidad del CRM existe desde que el cliente la envía
+        await crear_oportunidad_desde_orden(db, orden)
 
     if con_pago:
         await enviar_orden_recibida(orden, config)

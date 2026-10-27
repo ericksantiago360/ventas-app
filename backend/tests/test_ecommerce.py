@@ -257,5 +257,6 @@ def test_contacto_de_propiedad_llega_como_lead(client, admin):
     assert r.json()["total"] == 0
     assert "instrucciones_pago" not in r.json()
 
-    leads = datos(client.get("/api/crm/leads", headers=admin, params={"negocio_id": "bienes_raices"}).json())
-    assert any(l.get("email") == cliente["email"] for l in leads)
+    oportunidades = datos(client.get("/api/crm/oportunidades", headers=admin,
+                                     params={"negocio_id": "bienes_raices", "limit": 100}).json())
+    assert any(o.get("origen") == "tienda" and f"Casa {codigo}" in o.get("notas", "") for o in oportunidades)
