@@ -50,6 +50,7 @@ export default function Catalogo() {
   const [mostrarFormulario, setMostrarFormulario] = useState(false)
   const [productoEditando, setProductoEditando] = useState(null)
   const [productoVariantes, setProductoVariantes] = useState(null)
+  const [subiendoImagen, setSubiendoImagen] = useState(false)
 
 
   const [form, setForm] = useState({
@@ -121,6 +122,41 @@ export default function Catalogo() {
       ...actual,
       [campo]: valor,
     }))
+  }
+
+  async function subirImagenProducto(e) {
+    const archivo = e.target.files?.[0]
+    e.target.value = ''
+    if (!archivo || !productoEditando) return
+
+    const productoId = productoEditando._id || productoEditando.id
+    const datos = new FormData()
+    datos.append('archivo', archivo)
+
+    try {
+      setError('')
+      setSubiendoImagen(true)
+
+      const res = await api.post(
+        `/api/catalogo/productos/${productoId}/imagen?negocio_id=${encodeURIComponent(negocioId)}`,
+        datos
+      )
+
+      setProductoEditando({
+        ...productoEditando,
+        imagen: res.data.data.imagen,
+      })
+
+      await cargarCatalogo()
+    } catch (err) {
+      console.error(err)
+      setError(
+        err?.response?.data?.detail ||
+        'No fue posible subir la imagen.'
+      )
+    } finally {
+      setSubiendoImagen(false)
+    }
   }
 
   async function guardarProducto(e) {
@@ -586,6 +622,42 @@ export default function Catalogo() {
                     style={styles.textarea}
                     rows={3}
                   />
+                </div>
+
+                <div style={styles.full}>
+                  <label style={styles.label}>Imagen</label>
+
+                  {productoEditando ? (
+                    <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+                      {productoEditando.imagen ? (
+                        <img
+                          src={productoEditando.imagen}
+                          alt={productoEditando.nombre}
+                          style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8, border: '1px solid #e2e8f0' }}
+                        />
+                      ) : (
+                        <div style={{ width: 96, height: 96, borderRadius: 8, border: '1px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 12 }}>
+                          Sin imagen
+                        </div>
+                      )}
+
+                      <div>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          onChange={subirImagenProducto}
+                          disabled={subiendoImagen}
+                        />
+                        <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 12 }}>
+                          {subiendoImagen ? 'Subiendo...' : 'JPG, PNG o WebP. Máximo 5 MB.'}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p style={{ margin: 0, color: '#64748b', fontSize: 13 }}>
+                      Guarda el producto primero; después podrás subir su imagen.
+                    </p>
+                  )}
                 </div>
 
                 <div>

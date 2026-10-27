@@ -2,35 +2,41 @@ import { useEffect, useState } from 'react'
 import { crmApi } from '../api/client'
 import { useNegocio } from '../context/NegocioContext'
 
-const ETAPAS = [
-  ['nuevo', 'Nuevo'],
-  ['contactado', 'Contactado'],
-  ['calificado', 'Calificado'],
-  ['cotizacion', 'Cotización'],
-  ['ganado', 'Ganado'],
-  ['perdido', 'Perdido'],
+const CANALES = [
+  ['whatsapp', 'WhatsApp'],
+  ['referido', 'Referido'],
+  ['instagram', 'Instagram'],
+  ['directo', 'Directo'],
+  ['visita', 'Visita'],
+  ['otro', 'Otro'],
+]
+
+const TIPOS_LEAD = [
+  ['propietario', 'Propietario'],
+  ['comprador', 'Comprador'],
+  ['arrendatario', 'Arrendatario'],
 ]
 
 const emptyCliente = {
-  nombre: '',
   empresa: '',
+  contacto: '',
   telefono: '',
-  whatsapp: '',
-  email: '',
-  direccion: '',
+  correo: '',
+  canal_origen: 'directo',
   notas: '',
 }
 
-const emptyLead = {
-  nombre: '',
-  empresa: '',
-  telefono: '',
-  whatsapp: '',
-  email: '',
-  origen: '',
+const emptyOportunidad = {
+  cliente_id: '',
+  etapa: '',
+  tipo_lead: 'comprador',
   valor_estimado: '',
-  notas: '',
-  etapa: 'nuevo',
+  fecha_cierre_estimada: '',
+}
+
+function mensajeError(e, respaldo) {
+  const detalle = e.response?.data?.detail
+  return typeof detalle === 'string' ? detalle : respaldo
 }
 
 export default function CRM() {
@@ -38,10 +44,10 @@ export default function CRM() {
   const [tab, setTab] = useState('clientes')
 
   const [clientes, setClientes] = useState([])
-  const [leads, setLeads] = useState([])
+  const [columnas, setColumnas] = useState([])
 
   const [busqueda, setBusqueda] = useState('')
-  const [etapa, setEtapa] = useState('')
+  const [tipoLead, setTipoLead] = useState('comprador')
 
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(emptyCliente)
@@ -50,9 +56,14 @@ export default function CRM() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  const esBR = negocio === 'bienes_raices'
+  const etapas = columnas.map(c => c.etapa)
+  const totalOportunidades = columnas.reduce((n, c) => n + c.oportunidades.length, 0)
+  const clientesPorId = Object.fromEntries(clientes.map(c => [c._id, c]))
+
   useEffect(() => {
     cargar()
-  }, [negocio, tab, etapa])
+  }, [negocio, tab, tipoLead])
 
   async function cargar() {
     setLoading(true)
@@ -63,23 +74,21 @@ export default function CRM() {
         const res = await crmApi.clientes.listar({
           negocio_id: negocio,
           q: busqueda || undefined,
+          limit: 100,
         })
 
         setClientes(res.data.data || [])
       } else {
-        const res = await crmApi.leads.listar({
-          negocio_id: negocio,
-          q: busqueda || undefined,
-          etapa: etapa || undefined,
-        })
+        const [resClientes, resKanban] = await Promise.all([
+          crmApi.clientes.listar({ negocio_id: negocio, limit: 100 }),
+          crmApi.oportunidades.kanban(negocio, esBR ? tipoLead : null),
+        ])
 
-        setLeads(res.data.data || [])
+        setClientes(resClientes.data.data || [])
+        setColumnas(resKanban.data.data || [])
       }
     } catch (e) {
-      setError(
-        e.response?.data?.detail ||
-        'No se pudo cargar la información'
-      )
+      setError(mensajeError(e, 'No se pudo cargar la información'))
     } finally {
       setLoading(false)
     }
@@ -91,21 +100,30 @@ export default function CRM() {
     setModal('cliente')
   }
 
-  function nuevoLead() {
+  function nuevaOportunidad() {
+    if (!clientes.length) {
+      setError('Primero registra un cliente en la pestaña Clientes')
+      return
+    }
+
     setEditId(null)
-    setForm(emptyLead)
-    setModal('lead')
+    setForm({
+      ...emptyOportunidad,
+      cliente_id: clientes[0]._id,
+      etapa: etapas[0] || '',
+      tipo_lead: tipoLead,
+    })
+    setModal('oportunidad')
   }
 
   function editarCliente(cliente) {
     setEditId(cliente._id)
     setForm({
-      nombre: cliente.nombre || '',
       empresa: cliente.empresa || '',
+      contacto: cliente.contacto || '',
       telefono: cliente.telefono || '',
-      whatsapp: cliente.whatsapp || '',
-      email: cliente.email || '',
-      direccion: cliente.direccion || '',
+      correo: cliente.correo || '',
+      canal_origen: cliente.canal_origen || 'directo',
       notas: cliente.notas || '',
     })
     setModal('cliente')
@@ -113,7 +131,7 @@ export default function CRM() {
 
   async function eliminarCliente(cliente) {
     const confirmado = window.confirm(
-      `¿Deseas eliminar al cliente "${cliente.nombre}"?`
+      `¿Deseas eliminar al cliente "${cliente.empresa}"?`
     )
 
     if (!confirmado) return
@@ -126,32 +144,24 @@ export default function CRM() {
       await cargar()
     } catch (e) {
       console.error(e)
-      setError(
-        e.response?.data?.detail ||
-        'No se pudo eliminar el cliente'
-      )
+      setError(mensajeError(e, 'No se pudo eliminar el cliente'))
     }
   }
 
-  function editarLead(lead) {
-    setEditId(lead._id)
+  function editarOportunidad(op) {
+    setEditId(op._id)
     setForm({
-      nombre: lead.nombre || '',
-      empresa: lead.empresa || '',
-      telefono: lead.telefono || '',
-      whatsapp: lead.whatsapp || '',
-      email: lead.email || '',
-      origen: lead.origen || '',
-      valor_estimado: lead.valor_estimado || '',
-      notas: lead.notas || '',
-      etapa: lead.etapa || 'nuevo',
+      ...emptyOportunidad,
+      valor_estimado: op.valor_estimado || '',
+      fecha_cierre_estimada: fechaCorta(op.fecha_cierre_estimada),
     })
-    setModal('lead')
+    setModal('oportunidad')
   }
 
-  async function eliminarLead(lead) {
+  async function eliminarOportunidad(op) {
+    const cliente = clientesPorId[op.cliente_id]
     const confirmado = window.confirm(
-      `¿Deseas eliminar el lead "${lead.nombre}"?`
+      `¿Deseas eliminar la oportunidad de "${cliente?.empresa || 'este cliente'}"?`
     )
 
     if (!confirmado) return
@@ -159,15 +169,12 @@ export default function CRM() {
     try {
       setError('')
 
-      await crmApi.leads.eliminar(lead._id)
+      await crmApi.oportunidades.eliminar(op._id)
 
       await cargar()
     } catch (e) {
       console.error(e)
-      setError(
-        e.response?.data?.detail ||
-        'No se pudo eliminar el lead'
-      )
+      setError(mensajeError(e, 'No se pudo eliminar la oportunidad'))
     }
   }
 
@@ -179,29 +186,39 @@ export default function CRM() {
       if (modal === 'cliente') {
         const body = {
           ...form,
-          negocio_id: negocio,
+          correo: form.correo || null,
         }
 
         if (editId) {
           await crmApi.clientes.editar(editId, body)
         } else {
-          await crmApi.clientes.crear(body)
+          const res = await crmApi.clientes.crear(body)
+
+          if (res.data.duplicate_warning) {
+            setError(res.data.mensaje || 'Ya existe un cliente con esta empresa y teléfono')
+            return
+          }
         }
       }
 
-      if (modal === 'lead') {
-        const body = {
-          ...form,
-          negocio_id: negocio,
-          valor_estimado: form.valor_estimado
-            ? Number(form.valor_estimado)
-            : 0,
-        }
+      if (modal === 'oportunidad') {
+        const valor = form.valor_estimado === '' ? null : Number(form.valor_estimado)
+        const fecha = form.fecha_cierre_estimada || null
 
         if (editId) {
-          await fetchLeadEditar(editId, body)
+          await crmApi.oportunidades.editar(editId, {
+            valor_estimado: valor,
+            fecha_cierre_estimada: fecha,
+          })
         } else {
-          await crmApi.leads.crear(body)
+          await crmApi.oportunidades.crear({
+            cliente_id: form.cliente_id,
+            negocio_id: negocio,
+            etapa: form.etapa,
+            tipo_lead: esBR ? form.tipo_lead : null,
+            valor_estimado: valor,
+            fecha_cierre_estimada: fecha,
+          })
         }
       }
 
@@ -209,37 +226,19 @@ export default function CRM() {
       setEditId(null)
       await cargar()
     } catch (e) {
-      setError(
-        e.response?.data?.detail ||
-        'No se pudo guardar'
-      )
+      setError(mensajeError(e, 'No se pudo guardar'))
     }
   }
 
-  async function fetchLeadEditar(id, body) {
-    await fetch(`/api/crm/leads/${id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('token')}`,
-      },
-      body: JSON.stringify(body),
-    })
-  }
-
-  async function cambiarEtapa(lead, nuevaEtapa) {
+  async function cambiarEtapa(op, nuevaEtapa) {
     try {
-      await crmApi.leads.avanzarEtapa(
-        lead._id,
-        nuevaEtapa
-      )
+      setError('')
+
+      await crmApi.oportunidades.moverEtapa(op._id, nuevaEtapa)
 
       await cargar()
     } catch (e) {
-      setError(
-        e.response?.data?.detail ||
-        'No se pudo cambiar la etapa'
-      )
+      setError(mensajeError(e, 'No se pudo cambiar la etapa'))
     }
   }
 
@@ -261,13 +260,36 @@ export default function CRM() {
     )
   }
 
+  function selector(label, name, opciones) {
+    return (
+      <label style={styles.field}>
+        <span>{label}</span>
+        <select
+          value={form[name] ?? ''}
+          onChange={e =>
+            setForm({
+              ...form,
+              [name]: e.target.value,
+            })
+          }
+        >
+          {opciones.map(([id, texto]) => (
+            <option key={id} value={id}>
+              {texto}
+            </option>
+          ))}
+        </select>
+      </label>
+    )
+  }
+
   return (
     <div>
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>CRM</h1>
           <p style={styles.subtitle}>
-            Clientes y prospectos
+            Clientes y oportunidades
           </p>
         </div>
 
@@ -294,7 +316,6 @@ export default function CRM() {
         <button
           onClick={() => {
             setTab('clientes')
-            setEtapa('')
             setBusqueda('')
           }}
           style={
@@ -304,66 +325,63 @@ export default function CRM() {
           }
         >
           Clientes
-          <b>{clientes.length}</b>
+          <b>{tab === 'clientes' ? clientes.length : ''}</b>
         </button>
 
         <button
           onClick={() => {
-            setTab('leads')
+            setTab('oportunidades')
             setBusqueda('')
           }}
           style={
-            tab === 'leads'
+            tab === 'oportunidades'
               ? styles.tabActive
               : styles.tab
           }
         >
-          Leads
-          <b>{leads.length}</b>
+          Oportunidades
+          <b>{tab === 'oportunidades' ? totalOportunidades : ''}</b>
         </button>
       </div>
 
       <div style={styles.toolbar}>
-        <input
-          placeholder={
-            tab === 'clientes'
-              ? 'Buscar cliente...'
-              : 'Buscar prospecto...'
-          }
-          value={busqueda}
-          onChange={e => setBusqueda(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter') cargar()
-          }}
-          style={styles.search}
-        />
-
-        {tab === 'leads' && (
+        {tab === 'clientes' ? (
+          <input
+            placeholder="Buscar cliente..."
+            value={busqueda}
+            onChange={e => setBusqueda(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') cargar()
+            }}
+            style={styles.search}
+          />
+        ) : esBR ? (
           <select
-            value={etapa}
-            onChange={e => setEtapa(e.target.value)}
+            value={tipoLead}
+            onChange={e => setTipoLead(e.target.value)}
             style={styles.filter}
           >
-            <option value="">Todas las etapas</option>
-            {ETAPAS.map(([id, label]) => (
+            {TIPOS_LEAD.map(([id, texto]) => (
               <option key={id} value={id}>
-                {label}
+                {texto}
               </option>
             ))}
           </select>
+        ) : (
+          <div style={{ flex: 1 }} />
         )}
 
         <button
           onClick={
             tab === 'clientes'
               ? nuevoCliente
-              : nuevoLead
+              : nuevaOportunidad
           }
           style={styles.primary}
         >
           + {tab === 'clientes'
             ? 'Nuevo cliente'
-            : 'Nuevo lead'}
+            : 'Nueva oportunidad'}
         </button>
       </div>
 
@@ -378,11 +396,12 @@ export default function CRM() {
           eliminar={eliminarCliente}
         />
       ) : (
-        <Leads
-          leads={leads}
-          editar={editarLead}
+        <Oportunidades
+          columnas={columnas}
+          clientesPorId={clientesPorId}
+          editar={editarOportunidad}
           cambiarEtapa={cambiarEtapa}
-          eliminar={eliminarLead}
+          eliminar={eliminarOportunidad}
         />
       )}
 
@@ -400,7 +419,7 @@ export default function CRM() {
                     : 'Nuevo'}{' '}
                   {modal === 'cliente'
                     ? 'cliente'
-                    : 'lead'}
+                    : 'oportunidad'}
                 </h2>
               </div>
 
@@ -413,59 +432,54 @@ export default function CRM() {
               </button>
             </div>
 
-            <div style={styles.grid}>
-              {campo('Nombre *', 'nombre')}
-              {campo('Empresa', 'empresa')}
-              {campo('Teléfono', 'telefono')}
-              {campo('WhatsApp', 'whatsapp')}
-              {campo('Correo electrónico', 'email')}
+            {modal === 'cliente' && (
+              <div style={styles.grid}>
+                {campo('Empresa *', 'empresa')}
+                {campo('Contacto', 'contacto')}
+                {campo('Teléfono *', 'telefono')}
+                {campo('Correo electrónico', 'correo', 'email')}
+                {selector('Canal de origen', 'canal_origen', CANALES)}
+              </div>
+            )}
 
-              {modal === 'cliente'
-                ? campo('Dirección', 'direccion')
-                : campo('Origen', 'origen')}
-
-              {modal === 'lead' &&
-                campo(
-                  'Valor estimado',
-                  'valor_estimado',
-                  'number'
+            {modal === 'oportunidad' && (
+              <div style={styles.grid}>
+                {!editId && (
+                  selector(
+                    'Cliente *',
+                    'cliente_id',
+                    clientes.map(c => [c._id, c.empresa])
+                  )
                 )}
 
-              {modal === 'lead' && (
-                <label style={styles.field}>
-                  <span>Etapa</span>
-                  <select
-                    value={form.etapa}
-                    onChange={e =>
-                      setForm({
-                        ...form,
-                        etapa: e.target.value,
-                      })
-                    }
-                  >
-                    {ETAPAS.map(([id, label]) => (
-                      <option key={id} value={id}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-            </div>
+                {!editId && etapas.length > 0 && selector(
+                  'Etapa *',
+                  'etapa',
+                  etapas.map(e => [e, e])
+                )}
 
-            <label style={styles.field}>
-              <span>Notas</span>
-              <textarea
-                rows="4"
-                value={form.notas}
-                onChange={e =>
-                  setForm({
-                    ...form,
-                    notas: e.target.value,
-                  })
-                }
-              />
-            </label>
+                {!editId && esBR && selector('Tipo *', 'tipo_lead', TIPOS_LEAD)}
+
+                {campo('Valor estimado', 'valor_estimado', 'number')}
+                {campo('Fecha de cierre estimada', 'fecha_cierre_estimada', 'date')}
+              </div>
+            )}
+
+            {modal === 'cliente' && (
+              <label style={styles.field}>
+                <span>Notas</span>
+                <textarea
+                  rows="4"
+                  value={form.notas}
+                  onChange={e =>
+                    setForm({
+                      ...form,
+                      notas: e.target.value,
+                    })
+                  }
+                />
+              </label>
+            )}
 
             <div style={styles.actions}>
               <button
@@ -491,6 +505,11 @@ export default function CRM() {
 }
 
 
+function fechaCorta(valor) {
+  return valor ? String(valor).slice(0, 10) : ''
+}
+
+
 function Clientes({ clientes, editar, eliminar }) {
   if (!clientes.length) {
     return (
@@ -508,27 +527,27 @@ function Clientes({ clientes, editar, eliminar }) {
   return (
     <div style={styles.table}>
       <div style={styles.thead}>
-        <div>Cliente</div>
-        <div>Contacto</div>
         <div>Empresa</div>
+        <div>Contacto</div>
+        <div>Teléfono</div>
         <div>Acciones</div>
       </div>
 
       {clientes.map(c => (
         <div key={c._id} style={styles.tr}>
           <div>
-            <strong>{c.nombre}</strong>
-            {c.email && (
-              <small>{c.email}</small>
+            <strong>{c.empresa}</strong>
+            {c.correo && (
+              <small>{c.correo}</small>
             )}
           </div>
 
           <div>
-            {c.telefono || c.whatsapp || '—'}
+            {c.contacto || '—'}
           </div>
 
           <div>
-            {c.empresa || '—'}
+            {c.telefono || '—'}
           </div>
 
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -558,19 +577,23 @@ function Clientes({ clientes, editar, eliminar }) {
 }
 
 
-function Leads({
-  leads,
+function Oportunidades({
+  columnas,
+  clientesPorId,
   editar,
-  cambiarEtapa, eliminar,
+  cambiarEtapa,
+  eliminar,
 }) {
-  if (!leads.length) {
+  const total = columnas.reduce((n, c) => n + c.oportunidades.length, 0)
+
+  if (!total) {
     return (
       <div style={styles.empty}>
         <div style={styles.emptyTitle}>
-          No hay leads
+          No hay oportunidades abiertas
         </div>
         <div>
-          Registra un nuevo prospecto para comenzar.
+          Registra una oportunidad para un cliente existente.
         </div>
       </div>
     )
@@ -578,83 +601,93 @@ function Leads({
 
   return (
     <div style={styles.leads}>
-      {leads.map(lead => (
-        <div
-          key={lead._id}
-          style={styles.leadCard}
-        >
-          <div style={styles.leadTop}>
-            <div>
-              <strong>{lead.nombre}</strong>
-              <div style={styles.muted}>
-                {lead.empresa || 'Sin empresa'}
+      {columnas.map(columna => (
+        <div key={columna.etapa}>
+          <div style={styles.colTitle}>
+            {columna.etapa} · {columna.oportunidades.length}
+          </div>
+
+          {columna.oportunidades.map(op => {
+            const cliente = clientesPorId[op.cliente_id]
+
+            return (
+              <div
+                key={op._id}
+                style={{ ...styles.leadCard, marginBottom: 12 }}
+              >
+                <div style={styles.leadTop}>
+                  <div>
+                    <strong>{cliente?.empresa || 'Cliente no disponible'}</strong>
+                    <div style={styles.muted}>
+                      {cliente?.contacto || 'Sin contacto'}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <button
+                      onClick={() => editar(op)}
+                      style={styles.action}
+                    >
+                      Editar
+                    </button>
+
+                    <button
+                      onClick={() => eliminar(op)}
+                      style={{
+                        ...styles.action,
+                        color: '#dc2626',
+                        borderColor: '#fecaca',
+                        background: '#fff',
+                      }}
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                </div>
+
+                <div style={styles.leadInfo}>
+                  <span>
+                    📞 {cliente?.telefono || 'Sin teléfono'}
+                  </span>
+
+                  <span>
+                    ✉ {cliente?.correo || 'Sin correo'}
+                  </span>
+
+                  {op.valor_estimado > 0 && (
+                    <span>
+                      Valor: $
+                      {Number(
+                        op.valor_estimado
+                      ).toLocaleString('es-MX')}
+                    </span>
+                  )}
+
+                  {op.fecha_cierre_estimada && (
+                    <span>
+                      Cierre: {fechaCorta(op.fecha_cierre_estimada)}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ marginTop: 14 }}>
+                  <select
+                    value={op.etapa}
+                    onChange={e =>
+                      cambiarEtapa(op, e.target.value)
+                    }
+                    style={styles.filter}
+                  >
+                    {columnas.map(c => (
+                      <option key={c.etapa} value={c.etapa}>
+                        {c.etapa}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button
-                onClick={() => editar(lead)}
-                style={styles.action}
-              >
-                Editar
-              </button>
-
-              <button
-                onClick={() => eliminar(lead)}
-                style={{
-                  ...styles.action,
-                  color: '#dc2626',
-                  borderColor: '#fecaca',
-                  background: '#fff',
-                }}
-              >
-                Eliminar
-              </button>
-            </div>
-          </div>
-
-          <div style={styles.leadInfo}>
-            <span>
-              📞 {lead.telefono || 'Sin teléfono'}
-            </span>
-
-            <span>
-              ✉ {lead.email || 'Sin correo'}
-            </span>
-
-            {lead.origen && (
-              <span>
-                Origen: {lead.origen}
-              </span>
-            )}
-
-            {lead.valor_estimado > 0 && (
-              <span>
-                Valor: $
-                {Number(
-                  lead.valor_estimado
-                ).toLocaleString('es-MX')}
-              </span>
-            )}
-          </div>
-
-          <div style={styles.stageRow}>
-            {ETAPAS.map(([id, label]) => (
-              <button
-                key={id}
-                onClick={() =>
-                  cambiarEtapa(lead, id)
-                }
-                style={
-                  lead.etapa === id
-                    ? styles.stageActive
-                    : styles.stage
-                }
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+            )
+          })}
         </div>
       ))}
     </div>
@@ -799,6 +832,13 @@ const styles = {
     gap: 12,
   },
 
+  colTitle: {
+    fontWeight: 600,
+    color: '#334155',
+    fontSize: 14,
+    margin: '8px 0',
+  },
+
   leadCard: {
     background: '#fff',
     border: '1px solid #e2e8f0',
@@ -825,34 +865,6 @@ const styles = {
     color: '#64748b',
     fontSize: 13,
     marginTop: 14,
-  },
-
-  stageRow: {
-    display: 'flex',
-    gap: 5,
-    flexWrap: 'wrap',
-    marginTop: 16,
-  },
-
-  stage: {
-    padding: '6px 9px',
-    border: '1px solid #cbd5e1',
-    background: '#fff',
-    borderRadius: 6,
-    color: '#64748b',
-    fontSize: 12,
-    cursor: 'pointer',
-  },
-
-  stageActive: {
-    padding: '6px 9px',
-    border: '1px solid #2563eb',
-    background: '#eff6ff',
-    borderRadius: 6,
-    color: '#2563eb',
-    fontSize: 12,
-    cursor: 'pointer',
-    fontWeight: 600,
   },
 
   empty: {

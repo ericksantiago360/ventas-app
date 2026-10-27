@@ -72,27 +72,23 @@ export const crmApi = {
       }),
   },
 
-  leads: {
-    listar: (params) =>
-      api.get('/api/crm/leads', { params }),
+  oportunidades: {
+    kanban: (negocioId, tipoLead) =>
+      api.get(`/api/crm/kanban/${negocioId}`, {
+        params: { tipo_lead: tipoLead || undefined },
+      }),
 
     crear: (body) =>
-      api.post('/api/crm/leads', body),
-
-    obtener: (id) =>
-      api.get(`/api/crm/leads/${id}`),
+      api.post('/api/crm/oportunidades', body),
 
     editar: (id, body) =>
-      api.put(`/api/crm/leads/${id}`, body),
+      api.put(`/api/crm/oportunidades/${id}`, body),
 
-    avanzarEtapa: (id, etapa) =>
-      api.patch(`/api/crm/leads/${id}/etapa`, { etapa }),
+    moverEtapa: (id, etapa) =>
+      api.put(`/api/crm/oportunidades/${id}/etapa`, { etapa }),
 
     eliminar: (id) =>
-      api.delete(`/api/crm/leads/${id}`),
-
-    convertir: (id) =>
-      api.post(`/api/crm/leads/${id}/convertir`),
+      api.delete(`/api/crm/oportunidades/${id}`),
   },
 }
 export const cotizacionesApi = {

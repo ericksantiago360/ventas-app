@@ -1,12 +1,16 @@
+import asyncio
+import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 
+from ..core.config import settings
 from ..core.database import get_db
 from ..core.security import get_current_user
-from ..core.negocios import validar_referencia, verificar_acceso
+from ..core.negocios import negocio_autorizado, validar_referencia, verificar_acceso
 from ..models.base import serialize_list
 
 
@@ -530,6 +534,69 @@ async def editar_producto(
     })
 
     return {"data": serialize_list([doc])[0]}
+
+
+TAMANO_MAX_IMAGEN_PRODUCTO = 5 * 1024 * 1024
+
+
+def formato_imagen(contenido: bytes) -> str | None:
+    """Extensión según los bytes del archivo; no confía en el Content-Type del cliente."""
+    if contenido[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if contenido[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if contenido[:4] == b"RIFF" and contenido[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+@router.post("/productos/{id}/imagen")
+async def subir_imagen_producto(
+    id: str,
+    archivo: UploadFile,
+    negocio_id: str = Depends(negocio_autorizado),
+    db=Depends(get_db),
+):
+    product_id = oid(id)
+
+    actual = await db.productos.find_one({
+        "_id": product_id,
+        "negocio_id": negocio_id,
+    })
+
+    if not actual:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    contenido = await archivo.read()
+
+    if len(contenido) > TAMANO_MAX_IMAGEN_PRODUCTO:
+        raise HTTPException(status_code=400, detail="La imagen pasa de 5 MB")
+
+    extension = formato_imagen(contenido)
+
+    if not extension:
+        raise HTTPException(status_code=400, detail="Formato no permitido. Usa JPG, PNG o WebP")
+
+    carpeta = Path(settings.STORAGE_PATH) / "productos" / negocio_id
+    carpeta.mkdir(parents=True, exist_ok=True)
+    nombre = f"{id}-{uuid.uuid4().hex[:12]}.{extension}"
+    await asyncio.to_thread((carpeta / nombre).write_bytes, contenido)
+
+    url = f"/storage/productos/{negocio_id}/{nombre}"
+
+    await db.productos.update_one(
+        {"_id": product_id, "negocio_id": negocio_id},
+        {"$set": {"imagen": url, "updated_at": now()}},
+    )
+
+    # Borra la imagen anterior solo si fue subida por este endpoint
+    anterior = actual.get("imagen") or ""
+    prefijo = f"/storage/productos/{negocio_id}/"
+    if anterior.startswith(prefijo) and ".." not in anterior:
+        ruta_anterior = Path(settings.STORAGE_PATH) / anterior.removeprefix("/storage/")
+        await asyncio.to_thread(ruta_anterior.unlink, missing_ok=True)
+
+    return {"data": {"imagen": url}}
 
 
 @router.delete("/productos/{id}")

@@ -151,15 +151,22 @@ async def listar_clientes(
         verificar_acceso(user, negocio_id)
     negocios = [negocio_id] if negocio_id else sorted(negocios_del_usuario(user))
 
-    filtro = {"activo": activo, "_id": {"$in": await clientes_con_actividad(db, negocios)}}
+    # El creador siempre ve su cliente, aunque aún no tenga oportunidades (ver cliente_accesible)
+    filtro = {
+        "activo": activo,
+        "$and": [{"$or": [
+            {"_id": {"$in": await clientes_con_actividad(db, negocios)}},
+            {"creado_por": user["_id"]},
+        ]}],
+    }
 
     if q:
-        filtro["$or"] = [
+        filtro["$and"].append({"$or": [
             {"empresa": {"$regex": q, "$options": "i"}},
             {"contacto": {"$regex": q, "$options": "i"}},
             {"telefono": {"$regex": q, "$options": "i"}},
             {"correo": {"$regex": q, "$options": "i"}},
-        ]
+        ]})
     if tags:
         filtro["tags"] = {"$in": tags}
 
