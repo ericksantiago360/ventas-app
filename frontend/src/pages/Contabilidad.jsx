@@ -51,6 +51,7 @@ export default function Contabilidad() {
   // Reportes
   const [balance, setBalance]       = useState(null)
   const [balanza, setBalanza]       = useState(null)
+  const [ventasPeriodo, setVentasPeriodo] = useState(null)
   const [resultados, setResultados] = useState(null)
 
   // Pólizas
@@ -96,12 +97,13 @@ export default function Contabilidad() {
     setCargando(true); setError('')
     try {
       const q = `negocio_id=${encodeURIComponent(negocioId)}&periodo=${encodeURIComponent(periodo)}`
-      const [b, ba, r] = await Promise.all([
+      const [b, ba, r, v] = await Promise.all([
         req(`/api/contabilidad/reportes/balance-general?${q}`),
         req(`/api/contabilidad/reportes/balanza-comprobacion?${q}`),
         req(`/api/contabilidad/reportes/estado-resultados?${q}`),
+        req(`/api/contabilidad/reportes/ventas-periodo?${q}`),
       ])
-      setBalance(b); setBalanza(ba); setResultados(r)
+      setBalance(b); setBalanza(ba); setResultados(r); setVentasPeriodo(v)
     } catch (err) { setError(err.message || 'Error al cargar contabilidad') }
     finally { setCargando(false) }
   }
@@ -344,7 +346,7 @@ export default function Contabilidad() {
         ))}
       </div>
 
-      {vista === 'balance'    && balance    && <BalanceGeneral data={balance} />}
+      {vista === 'balance'    && balance    && <BalanceGeneral data={balance} ventasPeriodo={ventasPeriodo} />}
       {vista === 'resultados' && resultados && <EstadoResultados data={resultados} />}
       {vista === 'balanza'    && balanza    && <Balanza data={balanza} />}
 
@@ -662,7 +664,7 @@ export default function Contabilidad() {
    REPORTES (sin cambios)
 ========================================================= */
 
-function BalanceGeneral({ data }) {
+function BalanceGeneral({ data, ventasPeriodo }) {
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 16, marginBottom: 24 }}>
@@ -696,7 +698,96 @@ function BalanceGeneral({ data }) {
           <div style={{ fontSize: 13, color: '#64748b' }}>Diferencia: <strong>{dinero(data.diferencia)}</strong></div>
         </div>
       </div>
+      <div style={{ marginTop: 20 }}>
+        <VentasPeriodo data={ventasPeriodo} />
+      </div>
     </div>
+  )
+}
+
+// Movimientos de venta del periodo: barras por día (mostrador y pedidos) y lista de movimientos
+function VentasPeriodo({ data }) {
+  const [visibles, setVisibles] = useState(50)
+  if (!data) return null
+  const { dias, totales, movimientos } = data
+  const maximo = Math.max(1, ...dias.map(d => d.total))
+  const fechaLarga = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('es-MX')
+  const canal = { mostrador: 'Mostrador', pedido: 'Pedido' }
+
+  return (
+    <Panel titulo="Movimientos de venta del periodo">
+      <div style={{ padding: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12, marginBottom: 20 }}>
+          <div style={{ padding: 14, border: '1px solid #e2e8f0', borderRadius: 10 }}>
+            <div style={{ color: '#64748b', fontSize: 12 }}>Total vendido</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#0f172a' }}>{dinero(totales.total)}</div>
+          </div>
+          <div style={{ padding: 14, border: '1px solid #e2e8f0', borderRadius: 10 }}>
+            <div style={{ color: '#64748b', fontSize: 12 }}>Ventas</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#0f172a' }}>{totales.cantidad}</div>
+          </div>
+          <div style={{ padding: 14, border: '1px solid #e2e8f0', borderRadius: 10 }}>
+            <div style={{ color: '#64748b', fontSize: 12 }}>Ticket promedio</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#0f172a' }}>{dinero(totales.ticket_promedio)}</div>
+          </div>
+          <div style={{ padding: 14, border: '1px solid #e2e8f0', borderRadius: 10 }}>
+            <div style={{ color: '#64748b', fontSize: 12 }}>Mostrador / Pedidos</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
+              {dinero(totales.por_canal.mostrador)} / {dinero(totales.por_canal.pedido)}
+            </div>
+          </div>
+        </div>
+
+        {dias.length === 0 ? (
+          <div style={{ color: '#64748b' }}>No hay ventas en este periodo.</div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 18, marginBottom: 10, fontSize: 13, color: '#475569' }}>
+              <span><span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: '#2563eb', marginRight: 6 }} />Mostrador</span>
+              <span><span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: '#16a34a', marginRight: 6 }} />Pedido</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 180, borderBottom: '1px solid #e2e8f0', marginBottom: 20 }}>
+              {dias.map(d => (
+                <div key={d.fecha} title={`${fechaLarga(d.fecha)}: ${dinero(d.total)} (${d.cantidad} ventas)`}
+                  style={{ flex: 1, maxWidth: 48, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center' }}>
+                  <div style={{ width: '100%', height: `${(d.total / maximo) * 100}%`, display: 'flex', flexDirection: 'column-reverse', borderRadius: '4px 4px 0 0', overflow: 'hidden' }}>
+                    <div style={{ height: `${(d.mostrador / d.total) * 100}%`, background: '#2563eb' }} />
+                    <div style={{ height: `${(d.pedido / d.total) * 100}%`, background: '#16a34a' }} />
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>{Number(d.fecha.slice(8))}</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {movimientos.length > 0 && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.3fr 1.2fr 1fr', gap: 8, padding: '8px 0', borderBottom: '2px solid #e2e8f0', fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>
+              <span>Fecha</span><span>Canal</span><span>Referencia</span><span>Detalle</span><span style={{ textAlign: 'right' }}>Total</span>
+            </div>
+            {movimientos.slice(0, visibles).map((m, i) => (
+              <div key={`${m.referencia}-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.3fr 1.2fr 1fr', gap: 8, padding: '9px 0', borderBottom: '1px solid #f1f5f9', fontSize: 13, color: '#334155' }}>
+                <span>{fechaLarga(m.fecha)}</span>
+                <span>{canal[m.canal] || m.canal}</span>
+                <span style={{ fontWeight: 600 }}>{m.referencia}</span>
+                <span>{m.detalle}</span>
+                <span style={{ textAlign: 'right', fontWeight: 600 }}>{dinero(m.total)}</span>
+              </div>
+            ))}
+            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12, color: '#64748b', fontSize: 12 }}>
+              <span>Mostrando {Math.min(visibles, movimientos.length)} de {movimientos.length} movimientos.</span>
+              {visibles < movimientos.length && (
+                <button onClick={() => setVisibles(v => v + 50)}
+                  style={{ background: '#fff', border: '1px solid #cbd5e1', color: '#334155', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>
+                  Mostrar 50 más
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </Panel>
   )
 }
 
