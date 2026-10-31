@@ -71,6 +71,7 @@ const NAV_GROUPS = [
       { to: '/finanzas',     label: 'Finanzas'     },
       { to: '/contabilidad', label: 'Contabilidad' },
       { to: '/inventario',   label: 'Inventario'   },
+      { to: '/fabricacion',  label: 'Fabricación'  },
       { to: '/compras',      label: 'Compras'      },
       { to: '/personal',     label: 'Personal'     },
       { to: '/negocios',     label: 'Negocios', soloAdmin: true },
