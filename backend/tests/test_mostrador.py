@@ -146,3 +146,89 @@ def test_usuario_sin_el_negocio_403(client, admin, solo_santal, cuenta_santal, p
         "items": [{"producto_id": producto_stock, "cantidad": 1}],
     })
     assert r.status_code == 403
+
+
+# ── Descuentos por volumen ────────────────────────────────────────────────────
+
+@pytest.fixture
+def tramos(client, admin):
+    """Crea tramos para la prueba y los desactiva al final, para no afectar a las demás."""
+    creados = []
+
+    def crear(cantidad_minima, porcentaje):
+        r = client.post(f"{URL}/descuentos-volumen", headers=admin, json={
+            "negocio_id": NEG, "nombre": unico("Tramo"), "cantidad_minima": cantidad_minima, "porcentaje": porcentaje,
+        })
+        assert r.status_code == 201, r.text
+        creados.append(id_de(r.json()))
+        return creados[-1]
+
+    yield crear
+    for tramo in creados:
+        client.put(f"{URL}/descuentos-volumen/{tramo}", headers=admin, json={"activo": False})
+
+
+def test_tramo_aplica_al_alcanzar_la_cantidad(client, admin, cuenta_santal, producto_stock, tramos):
+    tramos(3, 10)
+
+    sin_descuento = vender(client, admin, cuenta_santal, producto_stock, cantidad=2, metodo="tarjeta").json()
+    assert sin_descuento["total"] == 232.0
+    assert sin_descuento["items"][0]["descuento_pct"] == 0
+
+    con_descuento = vender(client, admin, cuenta_santal, producto_stock, cantidad=3, metodo="tarjeta").json()
+    item = con_descuento["items"][0]
+    assert item["descuento_pct"] == 10
+    assert item["precio_lista"] == 116.0
+    assert item["precio_unitario"] == 104.4
+    assert con_descuento["total"] == 313.2  # 3 × 104.40, IVA incluido
+
+
+def test_el_tramo_mas_alto_que_alcanza_es_el_que_aplica(client, admin, cuenta_santal, producto_stock, tramos):
+    tramos(2, 5)
+    tramos(5, 15)
+
+    seis = vender(client, admin, cuenta_santal, producto_stock, cantidad=6, metodo="tarjeta").json()
+    assert seis["items"][0]["descuento_pct"] == 15   # no se acumulan: solo 15, no 5 + 15
+
+    tres = vender(client, admin, cuenta_santal, producto_stock, cantidad=3, metodo="tarjeta").json()
+    assert tres["items"][0]["descuento_pct"] == 5
+
+
+def test_tramo_desactivado_deja_de_aplicar(client, admin, cuenta_santal, producto_stock, tramos):
+    tramo = tramos(2, 20)
+    assert client.put(f"{URL}/descuentos-volumen/{tramo}", headers=admin, json={"activo": False}).status_code == 200
+
+    venta = vender(client, admin, cuenta_santal, producto_stock, cantidad=2, metodo="tarjeta").json()
+    assert venta["items"][0]["descuento_pct"] == 0
+
+
+def test_no_hay_dos_tramos_activos_con_la_misma_cantidad(client, admin, tramos):
+    tramo = tramos(4, 8)
+    r = client.post(f"{URL}/descuentos-volumen", headers=admin, json={
+        "negocio_id": NEG, "nombre": "Otro", "cantidad_minima": 4, "porcentaje": 9,
+    })
+    assert r.status_code == 409
+
+    # Al desactivar el primero, la cantidad vuelve a quedar libre
+    client.put(f"{URL}/descuentos-volumen/{tramo}", headers=admin, json={"activo": False})
+    r = client.post(f"{URL}/descuentos-volumen", headers=admin, json={
+        "negocio_id": NEG, "nombre": "Otro", "cantidad_minima": 4, "porcentaje": 9,
+    })
+    assert r.status_code == 201, r.text
+    client.put(f"{URL}/descuentos-volumen/{id_de(r.json())}", headers=admin, json={"activo": False})
+
+
+def test_tramo_con_valores_invalidos_422(client, admin):
+    for cuerpo in ({"cantidad_minima": 1, "porcentaje": 5},
+                   {"cantidad_minima": 3, "porcentaje": 0},
+                   {"cantidad_minima": 3, "porcentaje": 100}):
+        r = client.post(f"{URL}/descuentos-volumen", headers=admin,
+                        json={"negocio_id": NEG, "nombre": "X", **cuerpo})
+        assert r.status_code == 422, cuerpo
+
+
+def test_tramo_de_otro_negocio_403(client, solo_santal):
+    r = client.post(f"{URL}/descuentos-volumen", headers=solo_santal, json={
+        "negocio_id": "diagnostico_plus", "nombre": "X", "cantidad_minima": 3, "porcentaje": 5,
+    })
+    assert r.status_code == 403

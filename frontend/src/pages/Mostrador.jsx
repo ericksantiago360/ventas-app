@@ -29,6 +29,14 @@ function hora(v) {
   try { return new Date(v).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) } catch { return v }
 }
 
+// Mismo criterio que el backend: un solo tramo por línea, el de cantidad mínima más alta que se alcance
+function precioConDescuento(precio, cantidad, tramos) {
+  const aplicables = tramos.filter(t => t.activo !== false && t.cantidad_minima <= cantidad)
+  const tramo = aplicables.reduce((mejor, t) => (!mejor || t.cantidad_minima > mejor.cantidad_minima ? t : mejor), null)
+  const pct = tramo ? Number(tramo.porcentaje) : 0
+  return { pct, unitario: Math.round((precio * (1 - pct / 100)) * 100 + 1e-9) / 100 }
+}
+
 function mensajeError(err, fallback) {
   const detalle = err.response?.data?.detail
   if (Array.isArray(detalle)) return detalle.map(d => d.msg).join('. ') || fallback
@@ -55,6 +63,9 @@ export default function Mostrador() {
   const [ventas, setVentas]         = useState([])
   const [resumen, setResumen]       = useState(null)
 
+  const [tramos, setTramos]         = useState([])
+  const [formTramo, setFormTramo]   = useState({ nombre: '', cantidad_minima: '', porcentaje: '' })
+
   // ── Carga ────────────────────────────────────────────────────────────────
 
   const cargarProductos = async (texto = busqueda) => {
@@ -80,6 +91,15 @@ export default function Mostrador() {
     }
   }
 
+  const cargarTramos = async () => {
+    try {
+      const { data } = await api.get('/api/mostrador/descuentos-volumen', { params: { negocio_id: negocioId } })
+      setTramos(data || [])
+    } catch (err) {
+      setError(mensajeError(err, 'No se pudieron cargar los descuentos.'))
+    }
+  }
+
   const cargarDia = async () => {
     setCargando(true)
     setError('')
@@ -101,6 +121,7 @@ export default function Mostrador() {
     setCarrito({})
     cargarProductos('')
     cargarCuentas()
+    cargarTramos()
     setBusqueda('')
   }, [negocioId])
 
@@ -142,9 +163,38 @@ export default function Mostrador() {
 
   const lineas = useMemo(() => Object.values(carrito), [carrito])
   const total = useMemo(
-    () => lineas.reduce((n, l) => n + l.producto.precio * l.cantidad, 0),
-    [lineas]
+    () => lineas.reduce((n, l) => n + precioConDescuento(l.producto.precio, l.cantidad, tramos).unitario * l.cantidad, 0),
+    [lineas, tramos]
   )
+
+  // ── Descuentos por volumen ────────────────────────────────────────────────
+
+  const guardarTramo = async (e) => {
+    e.preventDefault()
+    setError('')
+    try {
+      await api.post('/api/mostrador/descuentos-volumen', {
+        negocio_id: negocioId,
+        nombre: formTramo.nombre,
+        cantidad_minima: Number(formTramo.cantidad_minima),
+        porcentaje: Number(formTramo.porcentaje),
+      })
+      setFormTramo({ nombre: '', cantidad_minima: '', porcentaje: '' })
+      await cargarTramos()
+    } catch (err) {
+      setError(mensajeError(err, 'No se pudo guardar el tramo.'))
+    }
+  }
+
+  const alternarTramo = async (t) => {
+    setError('')
+    try {
+      await api.put(`/api/mostrador/descuentos-volumen/${t.id}`, { activo: !t.activo })
+      await cargarTramos()
+    } catch (err) {
+      setError(mensajeError(err, 'No se pudo actualizar el tramo.'))
+    }
+  }
   const cambio = metodo === 'efectivo' && recibido !== '' ? Number(recibido) - total : 0
 
   // ── Cobro ─────────────────────────────────────────────────────────────────
@@ -220,7 +270,7 @@ export default function Mostrador() {
       )}
 
       <div style={s.tabs}>
-        {[['vender', 'Vender'], ['dia', 'Ventas del día']].map(([v, l]) => (
+        {[['vender', 'Vender'], ['dia', 'Ventas del día'], ['descuentos', 'Descuentos por volumen']].map(([v, l]) => (
           <button key={v} onClick={() => setTab(v)} style={{ ...s.tab, ...(tab === v ? s.tabActive : {}) }}>
             {l}
           </button>
@@ -278,7 +328,16 @@ export default function Mostrador() {
                   <div key={l.producto.id} style={s.lineaRow}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={s.lineaNombre}>{l.producto.nombre}</div>
-                      <div style={s.muted}>{money(l.producto.precio)} c/u</div>
+                      {(() => {
+                        const { pct, unitario } = precioConDescuento(l.producto.precio, l.cantidad, tramos)
+                        return (
+                          <div style={s.muted}>
+                            {pct > 0
+                              ? <><span style={{ textDecoration: 'line-through' }}>{money(l.producto.precio)}</span> {money(unitario)} c/u · <strong style={{ color: '#16a34a' }}>−{pct}%</strong></>
+                              : <>{money(l.producto.precio)} c/u</>}
+                          </div>
+                        )
+                      })()}
                     </div>
                     <div style={s.qtyBox}>
                       <button onClick={() => cambiarCantidad(l.producto.id, l.cantidad - 1)} style={s.qtyBtn}>−</button>
@@ -286,7 +345,7 @@ export default function Mostrador() {
                       <button onClick={() => agregar(l.producto)} style={s.qtyBtn}>+</button>
                     </div>
                     <div style={{ width: 84, textAlign: 'right', fontWeight: 600 }}>
-                      {money(l.producto.precio * l.cantidad)}
+                      {money(precioConDescuento(l.producto.precio, l.cantidad, tramos).unitario * l.cantidad)}
                     </div>
                   </div>
                 ))}
@@ -408,6 +467,54 @@ export default function Mostrador() {
         </>
       )}
 
+      {/* DESCUENTOS POR VOLUMEN */}
+      {tab === 'descuentos' && (
+        <div style={s.venderGrid}>
+          <div>
+            <p style={{ ...s.muted, marginTop: 0 }}>
+              Cuando una línea alcanza la cantidad mínima, se aplica el porcentaje de ese tramo a su precio.
+              Si se alcanzan varios tramos, aplica solo el de cantidad mínima más alta; no se acumulan.
+            </p>
+            {tramos.length === 0 ? (
+              <div style={s.empty}>Aún no hay tramos de descuento.</div>
+            ) : (
+              <div style={s.card}>
+                <div style={s.tableHeadTramos}>
+                  <span>Nombre</span><span>Desde</span><span>Descuento</span><span>Estado</span><span></span>
+                </div>
+                {tramos.map(t => (
+                  <div key={t.id} style={{ ...s.tableRowTramos, opacity: t.activo ? 1 : 0.5 }}>
+                    <span>{t.nombre}</span>
+                    <span>{t.cantidad_minima} piezas</span>
+                    <strong>{t.porcentaje}%</strong>
+                    <span style={{ ...s.badge, color: t.activo ? '#16a34a' : '#64748b', background: t.activo ? '#f0fdf4' : '#f1f5f9' }}>
+                      {t.activo ? 'Activo' : 'Inactivo'}
+                    </span>
+                    <div>
+                      <button onClick={() => alternarTramo(t)} style={s.actionBtn}>{t.activo ? 'Desactivar' : 'Activar'}</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <form onSubmit={guardarTramo} style={s.ventaPanel}>
+            <h2 style={s.panelTitle}>Nuevo tramo</h2>
+            <label style={s.label}>Nombre</label>
+            <input style={{ ...s.input, marginBottom: 12 }} placeholder="Ej. Mayoreo" value={formTramo.nombre}
+              onChange={e => setFormTramo(f => ({ ...f, nombre: e.target.value }))} required />
+            <label style={s.label}>Desde (piezas de un mismo producto)</label>
+            <input style={{ ...s.input, marginBottom: 12 }} type="number" min={2} step={1} value={formTramo.cantidad_minima}
+              onChange={e => setFormTramo(f => ({ ...f, cantidad_minima: e.target.value }))} required />
+            <label style={s.label}>Porcentaje de descuento</label>
+            <input style={{ ...s.input, marginBottom: 16 }} type="number" min={0.01} max={99.99} step="0.01" value={formTramo.porcentaje}
+              onChange={e => setFormTramo(f => ({ ...f, porcentaje: e.target.value }))} required />
+            <button type="submit" style={s.cobrarBtn}>Agregar tramo</button>
+          </form>
+        </div>
+      )}
+
       {/* TICKET DE LA VENTA RECIÉN COBRADA */}
       {ticket && (
         <div style={s.overlay} onClick={() => setTicket(null)}>
@@ -485,6 +592,9 @@ const s = {
   statCard: { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 16 },
 
   card: { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' },
+  tableHeadTramos: { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr .8fr', gap: 8, padding: '10px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.04em' },
+  tableRowTramos: { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr .8fr', gap: 8, alignItems: 'center', padding: '12px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 13, color: '#334155' },
+  actionBtn: { background: '#fff', border: '1px solid #cbd5e1', color: '#334155', padding: '5px 8px', borderRadius: 5, cursor: 'pointer', fontSize: 12 },
   tableHead: { display: 'grid', gridTemplateColumns: '1fr .8fr .8fr 1.2fr 1fr 1.1fr .9fr', gap: 8, padding: '10px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.04em' },
   tableRow: { display: 'grid', gridTemplateColumns: '1fr .8fr .8fr 1.2fr 1fr 1.1fr .9fr', gap: 8, alignItems: 'center', padding: '12px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 13, color: '#334155' },
   badge: { display: 'inline-block', padding: '3px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600, width: 'fit-content' },

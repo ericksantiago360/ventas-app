@@ -61,12 +61,30 @@ async def generar_folio(db, negocio_id: str) -> str:
     return f"VTA-{contador['secuencia']:06d}"
 
 
+def descuento_para(cantidad: int, tramos: list[dict]) -> float:
+    """
+    Porcentaje del tramo más alto que alcanza la cantidad. Un solo tramo aplica por
+    línea: no se acumulan. Sin tramo aplicable, 0.
+    """
+    aplicables = [t for t in tramos if t["cantidad_minima"] <= cantidad]
+    if not aplicables:
+        return 0.0
+    return max(aplicables, key=lambda t: t["cantidad_minima"])["porcentaje"]
+
+
+async def _tramos_activos(db, negocio_id: str) -> list[dict]:
+    return await db.descuentos_volumen.find(
+        {"negocio_id": negocio_id, "activo": {"$ne": False}}
+    ).to_list(200)
+
+
 async def _cargar_lineas(db, negocio_id: str, entrada: list) -> list[dict]:
     """Precios y nombres salen del catálogo, nunca del cliente. Partidas repetidas se suman."""
     agrupadas: dict[str, int] = {}
     for item in entrada:
         agrupadas[item.producto_id] = agrupadas.get(item.producto_id, 0) + item.cantidad
 
+    tramos = await _tramos_activos(db, negocio_id)
     lineas = []
     for producto_id, cantidad in agrupadas.items():
         oid = validar_oid(producto_id)
@@ -79,12 +97,15 @@ async def _cargar_lineas(db, negocio_id: str, entrada: list) -> list[dict]:
         if precio <= 0:
             raise HTTPException(422, f"El producto '{producto['nombre']}' no tiene precio de venta")
 
+        pct = descuento_para(cantidad, tramos)
         lineas.append({
             "producto_id": producto_id,
             "nombre": producto["nombre"],
             "sku": producto.get("sku", ""),
             "cantidad": cantidad,
-            "precio_unitario": redondear(precio),
+            "precio_lista": redondear(precio),
+            "descuento_pct": pct,
+            "precio_unitario": redondear(precio * (1 - pct / 100)),
             "iva_tasa": tasa_iva(producto),
             "control_inventario": bool(producto.get("control_inventario", False)),
         })
@@ -112,6 +133,20 @@ class VentaCreate(BaseModel):
 
 class CancelarVentaIn(BaseModel):
     motivo: str = Field(min_length=1)
+
+
+class TramoCreate(BaseModel):
+    negocio_id: str
+    nombre: str = Field(min_length=1)
+    cantidad_minima: int = Field(ge=2)
+    porcentaje: float = Field(gt=0, lt=100)
+
+
+class TramoUpdate(BaseModel):
+    nombre: Optional[str] = Field(default=None, min_length=1)
+    cantidad_minima: Optional[int] = Field(default=None, ge=2)
+    porcentaje: Optional[float] = Field(default=None, gt=0, lt=100)
+    activo: Optional[bool] = None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -193,7 +228,8 @@ async def registrar_venta(
         "estado": "completada",
         "items": [{
             "producto_id": l["producto_id"], "nombre": l["nombre"], "sku": l["sku"],
-            "cantidad": l["cantidad"], "precio_unitario": l["precio_unitario"],
+            "cantidad": l["cantidad"], "precio_lista": l["precio_lista"],
+            "descuento_pct": l["descuento_pct"], "precio_unitario": l["precio_unitario"],
             "iva_tasa": l["iva_tasa"], "importe": l["subtotal"],
         } for l in lineas],
         "subtotal": totales["subtotal"],
@@ -338,3 +374,74 @@ async def resumen_del_dia(
         "ventas": sum(f["cantidad"] for f in por_metodo.values()),
         "canceladas": canceladas,
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Descuentos por volumen
+# ──────────────────────────────────────────────────────────────────────────────
+
+async def _verificar_cantidad_libre(db, negocio_id: str, cantidad_minima: int, excepto=None) -> None:
+    filtro: dict = {"negocio_id": negocio_id, "cantidad_minima": cantidad_minima, "activo": {"$ne": False}}
+    if excepto:
+        filtro["_id"] = {"$ne": excepto}
+    if await db.descuentos_volumen.find_one(filtro):
+        raise HTTPException(409, f"Ya hay un tramo activo desde {cantidad_minima} piezas")
+
+
+@router.get("/descuentos-volumen")
+async def listar_tramos(
+    negocio_id: str = Query(...),
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    verificar_acceso(user, negocio_id)
+    docs = await db.descuentos_volumen.find({"negocio_id": negocio_id}).sort("cantidad_minima", 1).to_list(200)
+    return [serializar(d) for d in docs]
+
+
+@router.post("/descuentos-volumen", status_code=201)
+async def crear_tramo(
+    body: TramoCreate,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    verificar_acceso(user, body.negocio_id)
+    await _verificar_cantidad_libre(db, body.negocio_id, body.cantidad_minima)
+    ahora = datetime.now(timezone.utc)
+    doc = {
+        "negocio_id": body.negocio_id,
+        "nombre": body.nombre.strip(),
+        "cantidad_minima": body.cantidad_minima,
+        "porcentaje": body.porcentaje,
+        "activo": True,
+        "created_at": ahora,
+        "updated_at": ahora,
+    }
+    resultado = await db.descuentos_volumen.insert_one(doc)
+    doc["_id"] = resultado.inserted_id
+    return serializar(doc)
+
+
+@router.put("/descuentos-volumen/{tramo_id}")
+async def actualizar_tramo(
+    tramo_id: str,
+    body: TramoUpdate,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    tramo = await obtener_del_negocio(db.descuentos_volumen, tramo_id, user, "Tramo de descuento")
+    campos = body.model_dump(exclude_none=True)
+    if not campos:
+        raise HTTPException(400, "Sin campos a actualizar")
+    if "nombre" in campos:
+        campos["nombre"] = campos["nombre"].strip()
+    # Revisa la cantidad solo si el tramo quedará activo con una cantidad distinta
+    activo_final = campos.get("activo", tramo.get("activo", True))
+    cantidad_final = campos.get("cantidad_minima", tramo["cantidad_minima"])
+    if activo_final:
+        await _verificar_cantidad_libre(db, tramo["negocio_id"], cantidad_final, excepto=tramo["_id"])
+    campos["updated_at"] = datetime.now(timezone.utc)
+    doc = await db.descuentos_volumen.find_one_and_update(
+        {"_id": tramo["_id"]}, {"$set": campos}, return_document=ReturnDocument.AFTER,
+    )
+    return serializar(doc)
