@@ -202,7 +202,7 @@ async def validar_stock(db, negocio_id: str, lineas: list[dict]) -> None:
             )
 
 
-async def descontar_stock(db, negocio_id: str, lineas: list[dict], usuario_id: str, referencia: str) -> list[dict]:
+async def descontar_stock(db, negocio_id: str, lineas: list[dict], usuario_id: str, referencia: str, concepto: str = "Tienda en línea") -> list[dict]:
     """
     Descuenta el stock de las líneas que controlan inventario. Si algo falla a la
     mitad, repone lo ya descontado y responde 409.
@@ -231,17 +231,17 @@ async def descontar_stock(db, negocio_id: str, lineas: list[dict], usuario_id: s
                 restante -= tomar
                 await _movimiento_inventario(
                     db, negocio_id, doc, "salida", tomar,
-                    float(doc["stock_actual"]), float(doc["stock_actual"]) - tomar, referencia, usuario_id,
+                    float(doc["stock_actual"]), float(doc["stock_actual"]) - tomar, referencia, usuario_id, concepto,
                 )
             if restante > 0:
                 raise HTTPException(409, f"Stock insuficiente de {linea['nombre']}")
     except HTTPException:
-        await reponer_stock(db, negocio_id, descuentos, usuario_id, referencia)
+        await reponer_stock(db, negocio_id, descuentos, usuario_id, referencia, concepto)
         raise
     return descuentos
 
 
-async def reponer_stock(db, negocio_id: str, descuentos: list[dict], usuario_id: str, referencia: str) -> None:
+async def reponer_stock(db, negocio_id: str, descuentos: list[dict], usuario_id: str, referencia: str, concepto: str = "Tienda en línea") -> None:
     for d in descuentos:
         oid = ObjectId(d["inventario_id"])
         antes = await db.inventario.find_one({"_id": oid})
@@ -252,11 +252,11 @@ async def reponer_stock(db, negocio_id: str, descuentos: list[dict], usuario_id:
         if antes:
             await _movimiento_inventario(
                 db, negocio_id, antes, "entrada", d["cantidad"],
-                float(antes["stock_actual"]), float(antes["stock_actual"]) + d["cantidad"], referencia, usuario_id,
+                float(antes["stock_actual"]), float(antes["stock_actual"]) + d["cantidad"], referencia, usuario_id, concepto,
             )
 
 
-async def _movimiento_inventario(db, negocio_id, doc, tipo, cantidad, anterior, nuevo, referencia, usuario_id) -> None:
+async def _movimiento_inventario(db, negocio_id, doc, tipo, cantidad, anterior, nuevo, referencia, usuario_id, concepto: str = "Tienda en línea") -> None:
     """Movimiento con el mismo formato que registra el módulo de inventario."""
     await db.inventario_movimientos.insert_one({
         "negocio_id": negocio_id,
@@ -266,7 +266,7 @@ async def _movimiento_inventario(db, negocio_id, doc, tipo, cantidad, anterior, 
         "cantidad": cantidad,
         "stock_anterior": anterior,
         "stock_nuevo": nuevo,
-        "concepto": "Tienda en línea",
+        "concepto": concepto,
         "referencia": referencia,
         "consignatario": "",
         "fecha": ahora(),

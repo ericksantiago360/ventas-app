@@ -83,6 +83,12 @@ async def _crear_indices(db: AsyncIOMotorDatabase) -> None:
     )
     await db.ordenes_compra.create_index([("negocio_id", 1), ("estado", 1)])
 
+    # ── Mostrador ─────────────────────────────────────────────────────────
+    await db.ventas_mostrador.create_index(
+        [("negocio_id", 1), ("folio", 1)], unique=True
+    )
+    await db.ventas_mostrador.create_index([("negocio_id", 1), ("fecha", -1)])
+
     # ── Facturación ───────────────────────────────────────────────────────
     await db.facturas.create_index([("negocio_id", 1), ("estado", 1), ("fecha", -1)])
     await db.facturas.create_index([("negocio_id", 1), ("origen_tipo", 1), ("origen_id", 1)])
