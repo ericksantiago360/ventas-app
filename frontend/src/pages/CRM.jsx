@@ -367,8 +367,23 @@ export default function CRM() {
           Oportunidades
           <b>{tab === 'oportunidades' ? totalOportunidades : ''}</b>
         </button>
+
+        <button
+          onClick={() => {
+            setTab('leads')
+            setBusqueda('')
+          }}
+          style={
+            tab === 'leads'
+              ? styles.tabActive
+              : styles.tab
+          }
+        >
+          Leads
+        </button>
       </div>
 
+      {tab !== 'leads' && (
       <div style={styles.toolbar}>
         {tab === 'clientes' ? (
           <input
@@ -409,6 +424,7 @@ export default function CRM() {
             : 'Nueva oportunidad'}
         </button>
       </div>
+      )}
 
       {loading ? (
         <div style={styles.empty}>
@@ -420,6 +436,8 @@ export default function CRM() {
           editar={editarCliente}
           eliminar={eliminarCliente}
         />
+      ) : tab === 'leads' ? (
+        <Leads negocio={negocio} />
       ) : (
         <Oportunidades
           columnas={columnas}
@@ -769,6 +787,332 @@ function Oportunidades({
   )
 }
 
+
+const TIPOS_LEAD_BR = [
+  ['propietario', 'Propietario'],
+  ['comprador', 'Comprador'],
+  ['arrendatario', 'Arrendatario'],
+]
+const FORM_LEAD_VACIO = {
+  empresa: '', contacto: '', telefono: '', correo: '', canal_origen: 'directo', notas: '',
+}
+
+function Leads({ negocio }) {
+  const [columnas, setColumnas]       = useState([])
+  const [cargando, setCargando]       = useState(false)
+  const [error, setError]             = useState('')
+  const [modal, setModal]             = useState(null) // 'nuevo' | 'convertir'
+  const [seleccion, setSeleccion]     = useState(null)
+  const [form, setForm]               = useState(FORM_LEAD_VACIO)
+  const [conversion, setConversion]   = useState({ tipo_lead: 'comprador', valor_estimado: '' })
+  const [guardando, setGuardando]     = useState(false)
+  const [arrastrando, setArrastrando] = useState(null) // id del lead que se arrastra
+  const [destino, setDestino]         = useState(null) // etapa bajo el cursor
+
+  const esBR = negocio === 'bienes_raices'
+  const total = columnas.reduce((n, c) => n + c.leads.length, 0)
+
+  async function cargarTablero(silencioso = false) {
+    if (!silencioso) setCargando(true)
+    try {
+      const res = await crmApi.leads.kanban(negocio)
+      setColumnas(res.data.data || [])
+    } catch (e) {
+      setError(mensajeError(e, 'No se pudo cargar los leads'))
+    } finally {
+      if (!silencioso) setCargando(false)
+    }
+  }
+
+  useEffect(() => {
+    setError('')
+    cargarTablero()
+  }, [negocio])
+
+  // Arrastre: el lead cambia de columna al instante; si el servidor lo rechaza, vuelve
+  async function moverLead(lead, etapa) {
+    const anterior = columnas
+    setError('')
+    setColumnas(prev => prev
+      .map(c => ({ ...c, leads: c.leads.filter(l => l._id !== lead._id) }))
+      .map(c => c.etapa === etapa ? { ...c, leads: [{ ...lead, etapa }, ...c.leads] } : c))
+    try {
+      await crmApi.leads.moverEtapa(lead._id, etapa)
+      await cargarTablero(true)
+    } catch (e) {
+      setColumnas(anterior)
+      setError(mensajeError(e, 'No se pudo mover el lead'))
+    }
+  }
+
+  function soltar(columna) {
+    const lead = columnas.flatMap(c => c.leads).find(l => l._id === arrastrando)
+    setArrastrando(null)
+    setDestino(null)
+    if (!lead || lead.etapa === columna.etapa) return
+    moverLead(lead, columna.etapa)
+  }
+
+  async function guardarLead(e) {
+    e.preventDefault()
+    if (!form.empresa.trim() || !form.telefono.trim()) {
+      setError('Empresa y teléfono son obligatorios.')
+      return
+    }
+    setGuardando(true)
+    setError('')
+    try {
+      await crmApi.leads.crear({
+        negocio_id: negocio,
+        empresa: form.empresa.trim(),
+        contacto: form.contacto.trim(),
+        telefono: form.telefono.trim(),
+        correo: form.correo.trim() || null,
+        canal_origen: form.canal_origen,
+        notas: form.notas.trim(),
+      })
+      setModal(null)
+      setForm(FORM_LEAD_VACIO)
+      await cargarTablero(true)
+    } catch (err) {
+      setError(mensajeError(err, 'No se pudo guardar el lead'))
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  function abrirConvertir(lead) {
+    setSeleccion(lead)
+    setConversion({ tipo_lead: 'comprador', valor_estimado: '' })
+    setModal('convertir')
+  }
+
+  async function guardarConversion(e) {
+    e.preventDefault()
+    setGuardando(true)
+    setError('')
+    try {
+      await crmApi.leads.convertir(seleccion._id, {
+        tipo_lead: esBR ? conversion.tipo_lead : null,
+        valor_estimado: conversion.valor_estimado === '' ? null : Number(conversion.valor_estimado),
+      })
+      setModal(null)
+      await cargarTablero(true)
+    } catch (err) {
+      setError(mensajeError(err, 'No se pudo convertir el lead'))
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  async function descartar(lead) {
+    const motivo = window.prompt(`Motivo para descartar a "${lead.empresa}":`)
+    if (!motivo || !motivo.trim()) return
+    setError('')
+    try {
+      await crmApi.leads.descartar(lead._id, motivo.trim())
+      await cargarTablero(true)
+    } catch (err) {
+      setError(mensajeError(err, 'No se pudo descartar el lead'))
+    }
+  }
+
+  const etiquetaCanal = (valor) => Object.fromEntries(CANALES)[valor] || valor
+
+  return (
+    <div>
+      <div style={styles.toolbar}>
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={() => {
+            setForm(FORM_LEAD_VACIO)
+            setModal('nuevo')
+          }}
+          style={styles.primary}
+        >
+          + Nuevo lead
+        </button>
+      </div>
+
+      {error && (
+        <div style={styles.error}>
+          {error}
+        </div>
+      )}
+
+      {cargando ? (
+        <div style={styles.empty}>Cargando...</div>
+      ) : total === 0 ? (
+        <div style={styles.empty}>
+          <div style={styles.emptyTitle}>No hay leads abiertos</div>
+          <div>Captura un prospecto con el botón de arriba. Al calificarlo, conviértelo en oportunidad.</div>
+        </div>
+      ) : (
+        <div style={styles.board}>
+          {columnas.map(columna => (
+            <div
+              key={columna.etapa}
+              style={{
+                ...styles.column,
+                ...(destino === columna.etapa ? styles.columnOver : {}),
+              }}
+              onDragOver={e => {
+                if (!arrastrando) return
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'move'
+                setDestino(columna.etapa)
+              }}
+              onDragLeave={e => {
+                if (!e.currentTarget.contains(e.relatedTarget)) setDestino(null)
+              }}
+              onDrop={e => {
+                e.preventDefault()
+                soltar(columna)
+              }}
+            >
+              <div style={styles.colTitle}>
+                {columna.etapa} · {columna.leads.length}
+              </div>
+
+              {columna.leads.map(lead => (
+                <div
+                  key={lead._id}
+                  draggable
+                  onDragStart={e => {
+                    setArrastrando(lead._id)
+                    e.dataTransfer.effectAllowed = 'move'
+                    // Firefox no inicia el arrastre sin datos
+                    e.dataTransfer.setData('text/plain', lead._id)
+                  }}
+                  onDragEnd={() => {
+                    setArrastrando(null)
+                    setDestino(null)
+                  }}
+                  style={{
+                    ...styles.leadCard,
+                    marginBottom: 12,
+                    cursor: 'grab',
+                    opacity: arrastrando === lead._id ? 0.4 : 1,
+                  }}
+                >
+                  <div style={styles.leadTop}>
+                    <div>
+                      <strong>{lead.empresa}</strong>
+                      <div style={styles.muted}>{lead.contacto || 'Sin contacto'}</div>
+                    </div>
+                  </div>
+
+                  <div style={styles.leadInfo}>
+                    <span>📞 {lead.telefono}</span>
+                    {lead.correo && <span>✉ {lead.correo}</span>}
+                    <span>Canal: {etiquetaCanal(lead.canal_origen)}</span>
+                  </div>
+
+                  {lead.notas && <div style={{ ...styles.muted, marginTop: 8 }}>{lead.notas}</div>}
+
+                  <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+                    <button onClick={() => abrirConvertir(lead)} style={styles.primary}>
+                      Convertir a oportunidad
+                    </button>
+                    <button
+                      onClick={() => descartar(lead)}
+                      style={{ ...styles.action, color: '#dc2626', borderColor: '#fecaca', background: '#fff' }}
+                    >
+                      Descartar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {modal === 'nuevo' && (
+        <div style={styles.overlay}>
+          <form onSubmit={guardarLead} style={styles.modal}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>Nuevo lead</h2>
+              <button type="button" onClick={() => setModal(null)} style={styles.close}>×</button>
+            </div>
+            <div style={styles.grid}>
+              <label style={styles.field}>
+                <span>Empresa *</span>
+                <input value={form.empresa} onChange={e => setForm(f => ({ ...f, empresa: e.target.value }))} />
+              </label>
+              <label style={styles.field}>
+                <span>Contacto</span>
+                <input value={form.contacto} onChange={e => setForm(f => ({ ...f, contacto: e.target.value }))} />
+              </label>
+              <label style={styles.field}>
+                <span>Teléfono *</span>
+                <input value={form.telefono} onChange={e => setForm(f => ({ ...f, telefono: e.target.value }))} />
+              </label>
+              <label style={styles.field}>
+                <span>Correo</span>
+                <input type="email" value={form.correo} onChange={e => setForm(f => ({ ...f, correo: e.target.value }))} />
+              </label>
+              <label style={styles.field}>
+                <span>Canal de origen</span>
+                <select value={form.canal_origen} onChange={e => setForm(f => ({ ...f, canal_origen: e.target.value }))}>
+                  {CANALES.map(([id, texto]) => <option key={id} value={id}>{texto}</option>)}
+                </select>
+              </label>
+              <label style={styles.field}>
+                <span>Notas</span>
+                <input value={form.notas} onChange={e => setForm(f => ({ ...f, notas: e.target.value }))} />
+              </label>
+            </div>
+            <div style={styles.actions}>
+              <button type="button" onClick={() => setModal(null)} style={styles.cancel}>Cancelar</button>
+              <button type="submit" disabled={guardando} style={styles.primary}>
+                {guardando ? 'Guardando...' : 'Guardar lead'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {modal === 'convertir' && seleccion && (
+        <div style={styles.overlay}>
+          <form onSubmit={guardarConversion} style={styles.modal}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>Convertir a oportunidad</h2>
+              <button type="button" onClick={() => setModal(null)} style={styles.close}>×</button>
+            </div>
+            <p style={styles.muted}>
+              Se crea el cliente "{seleccion.empresa}" (o se reutiliza si ya existe) y una oportunidad
+              en la primera etapa del pipeline. El lead se cierra.
+            </p>
+            <div style={styles.grid}>
+              {esBR && (
+                <label style={styles.field}>
+                  <span>Tipo de lead *</span>
+                  <select value={conversion.tipo_lead} onChange={e => setConversion(c => ({ ...c, tipo_lead: e.target.value }))}>
+                    {TIPOS_LEAD_BR.map(([id, texto]) => <option key={id} value={id}>{texto}</option>)}
+                  </select>
+                </label>
+              )}
+              <label style={styles.field}>
+                <span>Valor estimado</span>
+                <input
+                  type="number" min={0} step="0.01" value={conversion.valor_estimado}
+                  onChange={e => setConversion(c => ({ ...c, valor_estimado: e.target.value }))}
+                />
+              </label>
+            </div>
+            <div style={styles.actions}>
+              <button type="button" onClick={() => setModal(null)} style={styles.cancel}>Cancelar</button>
+              <button type="submit" disabled={guardando} style={styles.primary}>
+                {guardando ? 'Convirtiendo...' : 'Convertir'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  )
+}
 
 const styles = {
   header: {

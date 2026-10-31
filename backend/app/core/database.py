@@ -83,6 +83,9 @@ async def _crear_indices(db: AsyncIOMotorDatabase) -> None:
     )
     await db.ordenes_compra.create_index([("negocio_id", 1), ("estado", 1)])
 
+    # ── Leads CRM ─────────────────────────────────────────────────────────
+    await db.leads.create_index([("negocio_id", 1), ("etapa", 1), ("activo", 1)])
+
     # ── Mostrador ─────────────────────────────────────────────────────────
     await db.ventas_mostrador.create_index(
         [("negocio_id", 1), ("folio", 1)], unique=True

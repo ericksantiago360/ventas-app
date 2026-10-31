@@ -8,7 +8,7 @@ from pymongo.errors import DuplicateKeyError
 
 from .core.config import settings
 from .core.database import connect_db, close_db
-from .routers import (auth, crm, catalogo, cotizaciones, pedidos, finanzas, contabilidad, inventario, compras, mostrador, reportes, personal, pacientes, lab, facturacion, portal, negocios, usuarios, )
+from .routers import (auth, crm, leads, catalogo, cotizaciones, pedidos, finanzas, contabilidad, inventario, compras, mostrador, reportes, personal, pacientes, lab, facturacion, portal, negocios, usuarios, )
 from .modules.clinica.routes import (
     citas as clinica_citas, consentimientos as clinica_consentimientos, expedientes as clinica_expedientes,
     farmacia as clinica_farmacia, recetas as clinica_recetas,
@@ -69,6 +69,7 @@ app.mount("/storage", StaticFiles(directory=settings.STORAGE_PATH), name="storag
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(crm.router, prefix="/api/crm", tags=["crm"])
+app.include_router(leads.router, prefix="/api", tags=["crm-leads"])
 app.include_router(catalogo.router, prefix="/api/catalogo", tags=["catalogo"])
 app.include_router(cotizaciones.router, prefix="/api/cotizaciones", tags=["cotizaciones"])
 app.include_router(pedidos.router, prefix="/api/pedidos", tags=["pedidos"])

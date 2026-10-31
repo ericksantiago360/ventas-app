@@ -90,6 +90,23 @@ export const crmApi = {
     eliminar: (id) =>
       api.delete(`/api/crm/oportunidades/${id}`),
   },
+
+  leads: {
+    kanban: (negocioId) =>
+      api.get(`/api/crm/leads/kanban/${negocioId}`),
+
+    crear: (body) =>
+      api.post('/api/crm/leads', body),
+
+    moverEtapa: (id, etapa) =>
+      api.put(`/api/crm/leads/${id}/etapa`, { etapa }),
+
+    convertir: (id, body) =>
+      api.post(`/api/crm/leads/${id}/convertir`, body),
+
+    descartar: (id, motivo) =>
+      api.post(`/api/crm/leads/${id}/descartar`, { motivo }),
+  },
 }
 export const cotizacionesApi = {
   listar: (params) =>
