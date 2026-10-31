@@ -1265,3 +1265,119 @@ async def eliminar_atributo(
         )
 
     return {"ok": True}
+
+
+# ============================================================
+# LISTAS DE PRECIOS GENERADAS
+# ============================================================
+
+@router.post("/listas-precios/generar", status_code=201)
+async def generar_lista_precios(
+    body: dict,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Crea una lista a partir del precio base de los productos: precio = base × (1 + ajuste%).
+    Un ajuste negativo sirve para mayoreo o promociones; con redondear_pesos el precio es entero.
+    """
+    body = clean_body(body)
+    negocio_id = ensure_business(body, user)
+
+    nombre = str(body.get("nombre", "")).strip()
+    if not nombre:
+        raise HTTPException(status_code=422, detail="El nombre es obligatorio")
+    try:
+        ajuste = float(body.get("ajuste_pct", 0) or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="El ajuste debe ser un número")
+    if not -99 <= ajuste <= 500:
+        raise HTTPException(status_code=422, detail="El ajuste debe estar entre -99% y 500%")
+
+    redondear = bool(body.get("redondear_pesos", False))
+    categoria_id = body.get("categoria_id") or None
+
+    if await db.listas_precios.find_one({"negocio_id": negocio_id, "nombre": nombre}):
+        raise HTTPException(status_code=409, detail="Ya existe una lista de precios con ese nombre")
+
+    filtro = {"negocio_id": negocio_id, "activo": {"$ne": False}, "precio_base": {"$gt": 0}}
+    if categoria_id:
+        filtro["categoria_id"] = categoria_id
+    productos = await db.productos.find(filtro).to_list(length=5000)
+    if not productos:
+        raise HTTPException(status_code=422, detail="No hay productos con precio base para generar la lista")
+
+    factor = 1 + ajuste / 100
+
+    def precio_de(base: float) -> float:
+        valor = base * factor
+        return float(round(valor)) if redondear else round(valor, 2)
+
+    marca = now()
+    lista = {
+        "negocio_id": negocio_id,
+        "nombre": nombre,
+        "descripcion": str(body.get("descripcion", "") or ""),
+        "moneda": "MXN",
+        "activo": True,
+        "generada": True,
+        "ajuste_pct": ajuste,
+        "categoria_id": categoria_id,
+        "redondear_pesos": redondear,
+        "total_productos": len(productos),
+        "created_at": marca,
+        "updated_at": marca,
+    }
+    resultado = await db.listas_precios.insert_one(lista)
+    lista["_id"] = resultado.inserted_id
+
+    await db.precios_producto.insert_many([{
+        "negocio_id": negocio_id,
+        "producto_id": p["_id"],
+        "lista_precio_id": lista["_id"],
+        "precio": precio_de(float(p["precio_base"])),
+        "vigencia_desde": None,
+        "vigencia_hasta": None,
+        "created_at": marca,
+        "updated_at": marca,
+    } for p in productos])
+
+    return {"data": serialize_list([lista])[0]}
+
+
+@router.get("/listas-precios/{id}/precios")
+async def precios_de_lista(
+    id: str,
+    negocio_id: str,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    verificar_acceso(user, negocio_id)
+    lista_id = oid(id)
+    lista = await db.listas_precios.find_one({"_id": lista_id, "negocio_id": negocio_id})
+    if not lista:
+        raise HTTPException(status_code=404, detail="Lista de precios no encontrada")
+
+    precios = await db.precios_producto.find({"negocio_id": negocio_id, "lista_precio_id": lista_id}).to_list(length=5000)
+    ids = [x["producto_id"] for x in precios]
+    productos = {
+        p["_id"]: p
+        async for p in db.productos.find({"_id": {"$in": ids}}, {"nombre": 1, "codigo": 1, "precio_base": 1})
+    }
+
+    filas = []
+    for x in precios:
+        p = productos.get(x["producto_id"], {})
+        base = float(p.get("precio_base") or 0)
+        precio = float(x["precio"])
+        filas.append({
+            "producto_id": str(x["producto_id"]),
+            "codigo": p.get("codigo", ""),
+            "nombre": p.get("nombre", "(producto eliminado)"),
+            "precio_base": base,
+            "precio": precio,
+            "diferencia_pct": round((precio - base) / base * 100, 2) if base else 0.0,
+        })
+    filas.sort(key=lambda f: f["nombre"])
+
+    return {"lista": serialize_list([lista])[0], "data": filas, "total": len(filas)}

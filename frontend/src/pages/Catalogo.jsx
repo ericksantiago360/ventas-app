@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import VariantesProducto from '../components/VariantesProducto'
+import ListasPrecios from '../components/ListasPrecios'
 import Categorias from '../components/Categorias'
 import { useNegocio } from '../context/NegocioContext'
 
@@ -51,6 +52,7 @@ export default function Catalogo() {
   const [productoEditando, setProductoEditando] = useState(null)
   const [productoVariantes, setProductoVariantes] = useState(null)
   const [subiendoImagen, setSubiendoImagen] = useState(false)
+  const [mostrarListas, setMostrarListas] = useState(false)
 
 
   const [form, setForm] = useState({
@@ -347,8 +349,23 @@ export default function Catalogo() {
           >
             + Nuevo producto
           </button>
+
+          <button
+            onClick={() => setMostrarListas(true)}
+            style={{ ...styles.primaryButton, background: '#fff', color: '#0f172a', border: '1px solid #cbd5e1' }}
+          >
+            Listas de precios
+          </button>
         </div>
       </div>
+
+      {mostrarListas && (
+        <ListasPrecios
+          negocioId={negocioId}
+          categorias={categorias}
+          onCerrar={() => setMostrarListas(false)}
+        />
+      )}
 
       {error && (
         <div style={styles.error}>
