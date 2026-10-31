@@ -4,6 +4,7 @@ import { useNegocio } from '../context/NegocioContext'
 import { req, qs } from '../modules/clinica/comun'
 import { PermisosProvider, usePermisosClinica } from '../modules/clinica/permisos'
 import useEsMovil from '../hooks/useEsMovil'
+import BuscadorGlobal from './BuscadorGlobal'
 
 // Subtítulo del menú según el giro del negocio (config_negocios.tipo)
 const GIROS = {
@@ -392,7 +393,10 @@ export default function Layout() {
           ) : !negocioActual ? (
             <div style={{ color: '#64748b' }}>Tu usuario no tiene negocios asignados.</div>
           ) : (
-            <Outlet />
+            <>
+              <BuscadorGlobal negocioId={negocio} />
+              <Outlet />
+            </>
           )}
         </div>
       </main>
