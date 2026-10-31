@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { crmApi } from '../api/client'
 import { useNegocio } from '../context/NegocioContext'
+import VentaRapida from '../components/VentaRapida'
 
 const CANALES = [
   ['whatsapp', 'WhatsApp'],
@@ -54,6 +55,7 @@ export default function CRM() {
   const [editId, setEditId] = useState(null)
 
   const [loading, setLoading] = useState(false)
+  const [clienteVenta, setClienteVenta] = useState(null)
   const [error, setError] = useState('')
 
   const esBR = negocio === 'bienes_raices'
@@ -432,9 +434,11 @@ export default function CRM() {
         </div>
       ) : tab === 'clientes' ? (
         <Clientes
+          key={negocio}
           clientes={clientes}
           editar={editarCliente}
           eliminar={eliminarCliente}
+          vender={setClienteVenta}
         />
       ) : tab === 'leads' ? (
         <Leads negocio={negocio} />
@@ -446,6 +450,15 @@ export default function CRM() {
           cambiarEtapa={cambiarEtapa}
           moverArrastrando={moverArrastrando}
           eliminar={eliminarOportunidad}
+        />
+      )}
+
+      {clienteVenta && (
+        <VentaRapida
+          key={clienteVenta._id}
+          negocioId={negocio}
+          cliente={clienteVenta}
+          onCerrar={() => setClienteVenta(null)}
         />
       )}
 
@@ -554,7 +567,29 @@ function fechaCorta(valor) {
 }
 
 
-function Clientes({ clientes, editar, eliminar }) {
+function Clientes({ clientes, editar, eliminar, vender }) {
+  const [seleccion, setSeleccion] = useState(() => new Set())
+
+  const ids = clientes.map(c => c._id)
+  const seleccionados = ids.filter(id => seleccion.has(id)).length
+  const todosMarcados = ids.length > 0 && seleccionados === ids.length
+
+  function alternar(id) {
+    setSeleccion(prev => {
+      const siguiente = new Set(prev)
+      if (siguiente.has(id)) siguiente.delete(id)
+      else siguiente.add(id)
+      return siguiente
+    })
+  }
+
+  // Marca o desmarca solo los clientes visibles; los demás conservan su selección
+  function alternarTodos() {
+    setSeleccion(prev => todosMarcados
+      ? new Set([...prev].filter(id => !ids.includes(id)))
+      : new Set([...prev, ...ids]))
+  }
+
   if (!clientes.length) {
     return (
       <div style={styles.empty}>
@@ -568,54 +603,102 @@ function Clientes({ clientes, editar, eliminar }) {
     )
   }
 
+  const columnas = '36px 2fr 1.5fr 1.5fr 100px'
+
   return (
-    <div style={styles.table}>
-      <div style={styles.thead}>
-        <div>Empresa</div>
-        <div>Contacto</div>
-        <div>Teléfono</div>
-        <div>Acciones</div>
-      </div>
-
-      {clientes.map(c => (
-        <div key={c._id} style={styles.tr}>
-          <div>
-            <strong>{c.empresa}</strong>
-            {c.correo && (
-              <small>{c.correo}</small>
-            )}
-          </div>
-
-          <div>
-            {c.contacto || '—'}
-          </div>
-
-          <div>
-            {c.telefono || '—'}
-          </div>
-
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button
-              onClick={() => editar(c)}
-              style={styles.action}
-            >
-              Editar
-            </button>
-
-            <button
-              onClick={() => eliminar(c)}
-              style={{
-                ...styles.action,
-                color: '#dc2626',
-                borderColor: '#fecaca',
-                background: '#fff',
-              }}
-            >
-              Eliminar
-            </button>
-          </div>
+    <div>
+      {seleccionados > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10,
+          padding: '8px 14px', background: '#eff6ff', border: '1px solid #bfdbfe',
+          borderRadius: 8, fontSize: 13, color: '#1e3a8a',
+        }}>
+          <strong>{seleccionados} seleccionado{seleccionados === 1 ? '' : 's'}</strong>
+          <button onClick={() => setSeleccion(new Set())} style={{ ...styles.action, marginLeft: 'auto' }}>
+            Limpiar selección
+          </button>
         </div>
-      ))}
+      )}
+
+      <div style={styles.table}>
+        <div style={{ ...styles.thead, gridTemplateColumns: columnas }}>
+          <div>
+            <input
+              type="checkbox"
+              checked={todosMarcados}
+              onChange={alternarTodos}
+              aria-label="Seleccionar todos los clientes visibles"
+            />
+          </div>
+          <div>Empresa</div>
+          <div>Contacto</div>
+          <div>Teléfono</div>
+          <div>Acciones</div>
+        </div>
+
+        {clientes.map(c => (
+          <div
+            key={c._id}
+            style={{
+              ...styles.tr,
+              gridTemplateColumns: columnas,
+              background: seleccion.has(c._id) ? '#f0f7ff' : '#fff',
+            }}
+          >
+            <div>
+              <input
+                type="checkbox"
+                checked={seleccion.has(c._id)}
+                onChange={() => alternar(c._id)}
+                aria-label={`Seleccionar ${c.empresa}`}
+              />
+            </div>
+
+            <div>
+              <strong>{c.empresa}</strong>
+              {c.correo && (
+                <small>{c.correo}</small>
+              )}
+            </div>
+
+            <div>
+              {c.contacto || '—'}
+            </div>
+
+            <div>
+              {c.telefono || '—'}
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                onClick={() => vender(c)}
+                style={{ ...styles.action, background: '#0f172a', color: '#fff', borderColor: '#0f172a' }}
+              >
+                Vender
+              </button>
+
+              <button
+                onClick={() => editar(c)}
+                style={styles.action}
+              >
+                Editar
+              </button>
+
+              <button
+                onClick={() => eliminar(c)}
+                style={{
+                  ...styles.action,
+                  color: '#dc2626',
+                  borderColor: '#fecaca',
+                  background: '#fff',
+                }}
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
