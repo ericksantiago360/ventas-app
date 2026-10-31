@@ -42,6 +42,7 @@ export default function CRM() {
 
   const [busqueda, setBusqueda] = useState('')
   const [etapa, setEtapa] = useState('')
+  const [vistaLeads, setVistaLeads] = useState('tablero')
 
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(emptyCliente)
@@ -228,14 +229,34 @@ export default function CRM() {
   }
 
   async function cambiarEtapa(lead, nuevaEtapa) {
+    if (lead.etapa === nuevaEtapa) return
+
+    const etapaAnterior = lead.etapa
+
+    // Actualización optimista para que la tarjeta se mueva al instante
+    setLeads(prev =>
+      prev.map(l =>
+        l._id === lead._id
+          ? { ...l, etapa: nuevaEtapa }
+          : l
+      )
+    )
+
     try {
+      setError('')
+
       await crmApi.leads.avanzarEtapa(
         lead._id,
         nuevaEtapa
       )
-
-      await cargar()
     } catch (e) {
+      setLeads(prev =>
+        prev.map(l =>
+          l._id === lead._id
+            ? { ...l, etapa: etapaAnterior }
+            : l
+        )
+      )
       setError(
         e.response?.data?.detail ||
         'No se pudo cambiar la etapa'
@@ -339,6 +360,35 @@ export default function CRM() {
         />
 
         {tab === 'leads' && (
+          <div style={styles.viewToggle}>
+            <button
+              onClick={() => {
+                setVistaLeads('tablero')
+                setEtapa('')
+              }}
+              style={
+                vistaLeads === 'tablero'
+                  ? styles.viewActive
+                  : styles.view
+              }
+            >
+              Tablero
+            </button>
+
+            <button
+              onClick={() => setVistaLeads('lista')}
+              style={
+                vistaLeads === 'lista'
+                  ? styles.viewActive
+                  : styles.view
+              }
+            >
+              Lista
+            </button>
+          </div>
+        )}
+
+        {tab === 'leads' && vistaLeads === 'lista' && (
           <select
             value={etapa}
             onChange={e => setEtapa(e.target.value)}
@@ -376,6 +426,12 @@ export default function CRM() {
           clientes={clientes}
           editar={editarCliente}
           eliminar={eliminarCliente}
+        />
+      ) : vistaLeads === 'tablero' ? (
+        <TableroLeads
+          leads={leads}
+          editar={editarLead}
+          cambiarEtapa={cambiarEtapa}
         />
       ) : (
         <Leads
@@ -662,6 +718,119 @@ function Leads({
 }
 
 
+function TableroLeads({
+  leads,
+  editar,
+  cambiarEtapa,
+}) {
+  const [arrastrando, setArrastrando] = useState(null)
+  const [columnaDestino, setColumnaDestino] = useState(null)
+
+  function soltar(e, etapaId) {
+    e.preventDefault()
+
+    const id = e.dataTransfer.getData('text/plain')
+    const lead = leads.find(l => l._id === id)
+
+    setArrastrando(null)
+    setColumnaDestino(null)
+
+    if (lead) cambiarEtapa(lead, etapaId)
+  }
+
+  return (
+    <div style={styles.board}>
+      {ETAPAS.map(([id, label]) => {
+        const columna = leads.filter(
+          l => (l.etapa || 'nuevo') === id
+        )
+        const total = columna.reduce(
+          (suma, l) => suma + (Number(l.valor_estimado) || 0),
+          0
+        )
+
+        return (
+          <div
+            key={id}
+            onDragOver={e => {
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'move'
+              if (columnaDestino !== id) setColumnaDestino(id)
+            }}
+            onDragLeave={e => {
+              if (!e.currentTarget.contains(e.relatedTarget)) {
+                setColumnaDestino(null)
+              }
+            }}
+            onDrop={e => soltar(e, id)}
+            style={
+              columnaDestino === id
+                ? styles.columnOver
+                : styles.column
+            }
+          >
+            <div style={styles.columnHeader}>
+              <span>{label}</span>
+              <b style={styles.columnCount}>
+                {columna.length}
+              </b>
+            </div>
+
+            <div style={styles.columnTotal}>
+              ${total.toLocaleString('es-MX')}
+            </div>
+
+            <div style={styles.columnBody}>
+              {columna.map(lead => (
+                <div
+                  key={lead._id}
+                  draggable
+                  onDragStart={e => {
+                    e.dataTransfer.setData('text/plain', lead._id)
+                    e.dataTransfer.effectAllowed = 'move'
+                    setArrastrando(lead._id)
+                  }}
+                  onDragEnd={() => {
+                    setArrastrando(null)
+                    setColumnaDestino(null)
+                  }}
+                  onDoubleClick={() => editar(lead)}
+                  title="Arrastra para cambiar de etapa. Doble clic para editar."
+                  style={{
+                    ...styles.boardCard,
+                    opacity: arrastrando === lead._id ? 0.4 : 1,
+                  }}
+                >
+                  <strong>{lead.nombre}</strong>
+                  <div style={styles.muted}>
+                    {lead.empresa || 'Sin empresa'}
+                  </div>
+
+                  {lead.valor_estimado > 0 && (
+                    <div style={styles.boardValue}>
+                      $
+                      {Number(
+                        lead.valor_estimado
+                      ).toLocaleString('es-MX')}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {!columna.length && (
+                <div style={styles.columnEmpty}>
+                  Suelta aquí
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+
 const styles = {
   header: {
     display: 'flex',
@@ -852,6 +1021,121 @@ const styles = {
     color: '#2563eb',
     fontSize: 12,
     cursor: 'pointer',
+    fontWeight: 600,
+  },
+
+  viewToggle: {
+    display: 'flex',
+    border: '1px solid #cbd5e1',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+
+  view: {
+    padding: '10px 14px',
+    border: 0,
+    background: '#fff',
+    color: '#64748b',
+    cursor: 'pointer',
+    fontSize: 14,
+  },
+
+  viewActive: {
+    padding: '10px 14px',
+    border: 0,
+    background: '#eff6ff',
+    color: '#2563eb',
+    cursor: 'pointer',
+    fontSize: 14,
+    fontWeight: 600,
+  },
+
+  board: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(6, minmax(200px, 1fr))',
+    gap: 12,
+    overflowX: 'auto',
+    paddingBottom: 8,
+  },
+
+  column: {
+    background: '#f8fafc',
+    border: '1px solid #e2e8f0',
+    borderRadius: 10,
+    padding: 10,
+    minHeight: 300,
+    display: 'flex',
+    flexDirection: 'column',
+  },
+
+  columnOver: {
+    background: '#eff6ff',
+    border: '1px dashed #2563eb',
+    borderRadius: 10,
+    padding: 10,
+    minHeight: 300,
+    display: 'flex',
+    flexDirection: 'column',
+  },
+
+  columnHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    color: '#1e293b',
+    fontSize: 13,
+    fontWeight: 600,
+    padding: '4px 4px 8px',
+  },
+
+  columnCount: {
+    background: '#e2e8f0',
+    color: '#475569',
+    borderRadius: 10,
+    padding: '1px 8px',
+    fontSize: 12,
+  },
+
+  columnTotal: {
+    color: '#64748b',
+    fontSize: 12,
+    padding: '0 4px 8px',
+  },
+
+  columnBody: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    flex: 1,
+  },
+
+  columnEmpty: {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#94a3b8',
+    fontSize: 12,
+    border: '1px dashed #cbd5e1',
+    borderRadius: 8,
+    minHeight: 80,
+  },
+
+  boardCard: {
+    background: '#fff',
+    border: '1px solid #e2e8f0',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    color: '#334155',
+    cursor: 'grab',
+    boxShadow: '0 1px 2px rgba(15,23,42,.06)',
+  },
+
+  boardValue: {
+    marginTop: 8,
+    color: '#16a34a',
+    fontSize: 13,
     fontWeight: 600,
   },
 
