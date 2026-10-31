@@ -122,7 +122,7 @@ async def main() -> None:
     # $set y no $setOnInsert: los negocios ya existen y deben recibir el pipeline
     etapas_terminales = [
         "Ganado", "Perdido", "Rechazado", "En consignación",
-        "Cerrado", "Expirado", "Entregado", "Cancelado",
+        "Cerrado", "Expirado", "Entregado", "Cancelado", "Vencido",
     ]
     pipelines_crm = {
         "santal": {
@@ -137,6 +137,12 @@ async def main() -> None:
             ],
             "pipeline_crm_comprador": [
                 "Prospecto", "Visita", "Oferta", "Negociación", "Cerrado", "Perdido",
+            ],
+        },
+        "diagnostico_plus": {
+            "pipeline_crm": [
+                "Prospecto", "Cotización convenio", "Convenio firmado",
+                "Activo", "Vencido", "Rechazado",
             ],
         },
         "consultoria": {
