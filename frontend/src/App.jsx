@@ -10,6 +10,7 @@ import Facturacion from './pages/Facturacion'
 import Finanzas from './pages/Finanzas'
 import Contabilidad from './pages/Contabilidad'
 import Inventario from './pages/Inventario'
+import Compras from './pages/Compras'
 import Reportes  from './pages/Reportes'
 import Personal   from './pages/Personal'
 import Negocios   from './pages/Negocios'
@@ -102,6 +103,11 @@ export default function App() {
             <Route
               path="inventario/*"
               element={<Inventario />}
+            />
+
+            <Route
+              path="compras/*"
+              element={<Compras />}
             />
 
             <Route
