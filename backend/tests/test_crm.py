@@ -32,6 +32,19 @@ def test_cliente_id_invalido_400(client, admin):
     assert client.get("/api/crm/clientes/no-es-id", headers=admin).status_code == 400
 
 
+def test_oportunidad_en_diagnostico_plus(client, admin):
+    # El pipeline de diagnostico_plus existe; antes el modelo rechazaba el negocio (422)
+    cliente = id_de(client.post("/api/crm/clientes", headers=admin, json={
+        "empresa": unico("Clinica"), "telefono": "5550188", "canal_origen": "directo",
+    }).json())
+    r = client.post("/api/crm/oportunidades", headers=admin,
+                    json={"cliente_id": cliente, "negocio_id": "diagnostico_plus", "etapa": "Prospecto"})
+    assert r.status_code == 201, r.text
+
+    kanban = client.get("/api/crm/kanban/diagnostico_plus", headers=admin).json()["data"]
+    assert any(op["cliente_id"] == cliente for c in kanban for op in c["oportunidades"])
+
+
 def test_oportunidad_flujo(client, admin):
     cliente = id_de(client.post("/api/crm/clientes", headers=admin, json={
         "empresa": unico("Empresa"), "telefono": "5550199", "canal_origen": "directo",

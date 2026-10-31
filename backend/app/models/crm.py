@@ -7,7 +7,7 @@ from .base import MongoBaseModel, validate_object_id
 
 ObjectIdStr = Annotated[str, AfterValidator(validate_object_id)]
 
-NegocioId = Literal["santal", "dulce_tentacion", "bienes_raices", "consultoria"]
+NegocioId = Literal["santal", "dulce_tentacion", "bienes_raices", "diagnostico_plus", "consultoria"]
 TipoLead = Literal["propietario", "comprador", "arrendatario"]
 CanalOrigen = Literal["whatsapp", "referido", "instagram", "directo", "visita", "otro"]
 TipoInteraccion = Literal["llamada", "whatsapp", "correo", "visita", "muestra", "cambio_etapa", "nota"]

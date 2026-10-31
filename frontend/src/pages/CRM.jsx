@@ -242,6 +242,31 @@ export default function CRM() {
     }
   }
 
+  // Arrastre: la tarjeta cambia de columna al instante y el servidor confirma.
+  // Si el servidor rechaza el cambio, se vuelve al tablero anterior.
+  async function moverArrastrando(op, nuevaEtapa) {
+    const anterior = columnas
+    setError('')
+    setColumnas(prev => {
+      const quitada = prev.map(c => ({
+        ...c,
+        oportunidades: c.oportunidades.filter(o => o._id !== op._id),
+      }))
+      return quitada.map(c => c.etapa === nuevaEtapa
+        ? { ...c, oportunidades: [{ ...op, etapa: nuevaEtapa }, ...c.oportunidades] }
+        : c)
+    })
+
+    try {
+      await crmApi.oportunidades.moverEtapa(op._id, nuevaEtapa)
+      const res = await crmApi.oportunidades.kanban(negocio, esBR ? tipoLead : null)
+      setColumnas(res.data.data || [])
+    } catch (e) {
+      setColumnas(anterior)
+      setError(mensajeError(e, 'No se pudo cambiar la etapa'))
+    }
+  }
+
   function campo(label, name, type = 'text') {
     return (
       <label style={styles.field}>
@@ -401,6 +426,7 @@ export default function CRM() {
           clientesPorId={clientesPorId}
           editar={editarOportunidad}
           cambiarEtapa={cambiarEtapa}
+          moverArrastrando={moverArrastrando}
           eliminar={eliminarOportunidad}
         />
       )}
@@ -582,8 +608,11 @@ function Oportunidades({
   clientesPorId,
   editar,
   cambiarEtapa,
+  moverArrastrando,
   eliminar,
 }) {
+  const [arrastrando, setArrastrando] = useState(null) // id de la oportunidad que se arrastra
+  const [destino, setDestino] = useState(null)         // etapa bajo el cursor
   const total = columnas.reduce((n, c) => n + c.oportunidades.length, 0)
 
   if (!total) {
@@ -599,10 +628,40 @@ function Oportunidades({
     )
   }
 
+  function soltar(columna) {
+    const op = columnas
+      .flatMap(c => c.oportunidades)
+      .find(o => o._id === arrastrando)
+    setArrastrando(null)
+    setDestino(null)
+    // Soltar en la misma columna no hace nada
+    if (!op || op.etapa === columna.etapa) return
+    moverArrastrando(op, columna.etapa)
+  }
+
   return (
-    <div style={styles.leads}>
+    <div style={styles.board}>
       {columnas.map(columna => (
-        <div key={columna.etapa}>
+        <div
+          key={columna.etapa}
+          style={{
+            ...styles.column,
+            ...(destino === columna.etapa ? styles.columnOver : {}),
+          }}
+          onDragOver={e => {
+            if (!arrastrando) return
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            setDestino(columna.etapa)
+          }}
+          onDragLeave={e => {
+            if (!e.currentTarget.contains(e.relatedTarget)) setDestino(null)
+          }}
+          onDrop={e => {
+            e.preventDefault()
+            soltar(columna)
+          }}
+        >
           <div style={styles.colTitle}>
             {columna.etapa} · {columna.oportunidades.length}
           </div>
@@ -613,7 +672,23 @@ function Oportunidades({
             return (
               <div
                 key={op._id}
-                style={{ ...styles.leadCard, marginBottom: 12 }}
+                draggable
+                onDragStart={e => {
+                  setArrastrando(op._id)
+                  e.dataTransfer.effectAllowed = 'move'
+                  // Firefox no inicia el arrastre sin datos
+                  e.dataTransfer.setData('text/plain', op._id)
+                }}
+                onDragEnd={() => {
+                  setArrastrando(null)
+                  setDestino(null)
+                }}
+                style={{
+                  ...styles.leadCard,
+                  marginBottom: 12,
+                  cursor: 'grab',
+                  opacity: arrastrando === op._id ? 0.4 : 1,
+                }}
               >
                 <div style={styles.leadTop}>
                   <div>
@@ -830,6 +905,29 @@ const styles = {
   leads: {
     display: 'grid',
     gap: 12,
+  },
+
+  board: {
+    display: 'flex',
+    gap: 14,
+    alignItems: 'flex-start',
+    overflowX: 'auto',
+    paddingBottom: 8,
+  },
+
+  column: {
+    flex: '0 0 280px',
+    minHeight: 160,
+    background: '#f8fafc',
+    border: '1px dashed #cbd5e1',
+    borderRadius: 10,
+    padding: 12,
+    transition: 'background .15s, border-color .15s',
+  },
+
+  columnOver: {
+    background: '#eff6ff',
+    borderColor: '#2563eb',
   },
 
   colTitle: {
