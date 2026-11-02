@@ -39,6 +39,17 @@ export async function subirImagen(negocioId, tipo, archivo) {
   return data
 }
 
+// Quita logo o banner de la tienda (y su archivo en disco)
+export async function quitarImagen(negocioId, tipo) {
+  const res = await fetch(`/api/admin/tienda/${tipo}?${qs({ negocio_id: negocioId })}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data?.detail || 'No se pudo quitar la imagen')
+  return data
+}
+
 // El backend manda fechas en UTC; sin zona se tratan como UTC
 const aDate = (iso) => new Date(/Z$|[+-]\d\d:\d\d$/.test(iso) ? iso : `${iso}Z`)
 

@@ -107,6 +107,32 @@ async def subir_banner(
     return await _guardar_imagen(db, negocio_id, archivo, "banner_url", "banner")
 
 
+@router.delete("/admin/tienda/logo")
+async def quitar_logo(
+    negocio_id: str = Depends(negocio_autorizado),
+    db=Depends(get_db),
+    user=Depends(require_admin),
+):
+    return await _quitar_imagen(db, negocio_id, "logo_url")
+
+
+@router.delete("/admin/tienda/banner")
+async def quitar_banner(
+    negocio_id: str = Depends(negocio_autorizado),
+    db=Depends(get_db),
+    user=Depends(require_admin),
+):
+    return await _quitar_imagen(db, negocio_id, "banner_url")
+
+
+def _ruta_tienda(negocio_id: str, url: str) -> Path | None:
+    """Ruta en disco de una imagen de tienda; None si la URL no es de este negocio."""
+    prefijo = f"/storage/tienda/{negocio_id}/"
+    if not url or not url.startswith(prefijo) or ".." in url:
+        return None
+    return Path(settings.STORAGE_PATH) / url.removeprefix("/storage/")
+
+
 async def _guardar_imagen(db, negocio_id: str, archivo: UploadFile, campo: str, prefijo: str) -> dict:
     extension = IMAGENES_PERMITIDAS.get(archivo.content_type or "")
     if not extension:
@@ -121,6 +147,7 @@ async def _guardar_imagen(db, negocio_id: str, archivo: UploadFile, campo: str, 
     await asyncio.to_thread((carpeta / nombre).write_bytes, contenido)
 
     url = f"/storage/tienda/{negocio_id}/{nombre}"
+    anterior = await db.tienda_config.find_one({"negocio_id": negocio_id}, {campo: 1})
     await db.tienda_config.update_one(
         {"negocio_id": negocio_id},
         {
@@ -129,4 +156,22 @@ async def _guardar_imagen(db, negocio_id: str, archivo: UploadFile, campo: str, 
         },
         upsert=True,
     )
+
+    # Reemplazar la imagen no debe dejar el archivo anterior huérfano en disco
+    ruta_anterior = _ruta_tienda(negocio_id, (anterior or {}).get(campo) or "")
+    if ruta_anterior and ruta_anterior.name != nombre:
+        await asyncio.to_thread(ruta_anterior.unlink, missing_ok=True)
+
     return {"ok": True, campo: url}
+
+
+async def _quitar_imagen(db, negocio_id: str, campo: str) -> dict:
+    anterior = await db.tienda_config.find_one({"negocio_id": negocio_id}, {campo: 1})
+    await db.tienda_config.update_one(
+        {"negocio_id": negocio_id},
+        {"$set": {campo: "", "updated_at": datetime.now(timezone.utc)}},
+    )
+    ruta = _ruta_tienda(negocio_id, (anterior or {}).get(campo) or "")
+    if ruta:
+        await asyncio.to_thread(ruta.unlink, missing_ok=True)
+    return {"ok": True, campo: ""}

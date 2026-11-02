@@ -443,7 +443,19 @@ export default function Catalogo() {
                     </td>
 
                     <td style={styles.td}>
-                      <strong>{producto.nombre}</strong>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {producto.imagen ? (
+                          <img
+                            src={producto.imagen}
+                            alt=""
+                            loading="lazy"
+                            style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0', flexShrink: 0 }}
+                          />
+                        ) : (
+                          <div style={{ width: 36, height: 36, borderRadius: 6, border: '1px dashed #cbd5e1', flexShrink: 0 }} />
+                        )}
+                        <strong>{producto.nombre}</strong>
+                      </div>
                     </td>
 
                     <td style={styles.td}>

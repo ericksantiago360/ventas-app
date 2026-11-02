@@ -23,6 +23,9 @@ export default function CartPage() {
       <div className="panel">
         {items.map(i => (
           <div key={i.id} className="fila">
+            {i.imagen
+              ? <img src={i.imagen} alt="" loading="lazy" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, flexShrink: 0 }} />
+              : <div className="muted" style={{ width: 56, height: 56, borderRadius: 8, border: '1px dashed var(--line)', flexShrink: 0 }} />}
             <div className="info">
               <div style={{ fontWeight: 600 }}>{i.nombre}</div>
               {!cotizacion && i.precio != null && <div className="muted">{dinero(i.precio)} c/u</div>}

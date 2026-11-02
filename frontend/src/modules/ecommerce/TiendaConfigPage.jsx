@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNegocio } from '../../context/NegocioContext'
-import { req, qs, s, Campo, subirImagen } from './comun'
+import { req, qs, s, Campo, subirImagen, quitarImagen } from './comun'
 
 const METODOS_BASE = [
   { tipo: 'transferencia', banco: '', titular: '', clabe: '', cuenta: '', instrucciones: '' },
@@ -81,9 +81,19 @@ export default function TiendaConfigPage() {
 
   const subir = async (tipo, campo, archivo) => {
     if (!archivo) return
-    setError('')
+    setError(''); setMensaje('')
     try {
       const r = await subirImagen(negocioId, tipo, archivo)
+      set(campo, r[campo])
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  const quitar = async (tipo, campo) => {
+    setError(''); setMensaje('')
+    try {
+      const r = await quitarImagen(negocioId, tipo)
       set(campo, r[campo])
     } catch (e) {
       setError(e.message)
@@ -132,11 +142,13 @@ export default function TiendaConfigPage() {
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           <Campo label="Logo">
             {f.logo_url && <img src={f.logo_url} alt="Logo" style={{ maxHeight: 64, marginBottom: 6 }} />}
-            <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => subir('logo', 'logo_url', e.target.files[0])} />
+            <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => { subir('logo', 'logo_url', e.target.files[0]); e.target.value = '' }} />
+            {f.logo_url && <button type="button" style={{ ...s.btn('ghost'), marginTop: 6 }} onClick={() => quitar('logo', 'logo_url')}>Quitar logo</button>}
           </Campo>
           <Campo label="Imagen de encabezado">
             {f.banner_url && <img src={f.banner_url} alt="Banner" style={{ maxHeight: 64, marginBottom: 6 }} />}
-            <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => subir('banner', 'banner_url', e.target.files[0])} />
+            <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => { subir('banner', 'banner_url', e.target.files[0]); e.target.value = '' }} />
+            {f.banner_url && <button type="button" style={{ ...s.btn('ghost'), marginTop: 6 }} onClick={() => quitar('banner', 'banner_url')}>Quitar imagen</button>}
           </Campo>
         </div>
 
