@@ -3,6 +3,7 @@ import { cotizacionesApi } from '../api/client'
 import axios from 'axios'
 import { useNegocio } from '../context/NegocioContext'
 import useEsMovil from '../hooks/useEsMovil'
+import { getClientesRecientes, guardarClienteReciente } from '../hooks/useSmartDefaults'
 const ESTADOS = [
 ['borrador', 'Borrador'],
 ['enviada', 'Enviada'],
@@ -131,6 +132,7 @@ setForm(emptyForm)
 setItems([])
 }
 function seleccionarCliente(cliente) {
+guardarClienteReciente(cliente)
 const clienteId = cliente.id || cliente._id
 const clienteNombre =
 cliente.nombre ||
@@ -979,6 +981,27 @@ border:
 borderRadius: 8,
 }}
 >
+{!busquedaCliente.trim() && getClientesRecientes().length > 0 && (
+<>
+<div style={{ padding: '6px 12px', fontSize: 12, color: '#64748b', fontWeight: 600 }}>
+RECIENTES
+</div>
+{getClientesRecientes().map(cliente => (
+<button
+type="button"
+key={`reciente-${cliente.id || cliente._id}`}
+onClick={() => seleccionarCliente(cliente)}
+style={styles.optionButton}
+>
+<strong>{cliente.nombre || cliente.empresa || 'Sin nombre'}</strong>
+{cliente.empresa && (
+<span style={{ color: '#64748b', fontSize: 12 }}>{cliente.empresa}</span>
+)}
+</button>
+))}
+<hr style={{ margin: '4px 0', borderColor: '#e2e8f0', borderStyle: 'solid none none' }} />
+</>
+)}
 {clientesFiltrados.length ===
 0 ? (
 <div

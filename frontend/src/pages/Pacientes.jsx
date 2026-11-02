@@ -613,6 +613,8 @@ export default function Pacientes() {
       {modal && (
         <ModalFormulario
           titulo={editando ? 'Editar paciente' : 'Nuevo paciente'}
+          editando={Boolean(editando)}
+          entidad={editando ? `el paciente ${editando.nombre}` : undefined}
           error={error}
           cerrar={() => setModal(false)}
           onSubmit={guardar}

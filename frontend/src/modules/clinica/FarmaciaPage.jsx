@@ -43,6 +43,7 @@ function ArticuloModal({ negocioId, articulo, cerrar, onGuardado }) {
 
   return (
     <ModalFormulario titulo={articulo ? 'Editar artículo' : 'Nuevo artículo'} subtitulo={articulo ? undefined : 'La existencia se registra después, por lotes'}
+      editando={Boolean(articulo)} entidad={articulo ? `el artículo ${articulo.nombre}` : undefined}
       ancho={620} error={error} cerrar={cerrar} onSubmit={guardar} guardando={guardando} textoGuardar="Guardar">
       <div style={s.grid(180)}>
         <Campo label="Nombre *" style={{ gridColumn: '1 / -1' }}>

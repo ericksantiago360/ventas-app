@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { crmApi } from '../api/client'
 import { useNegocio } from '../context/NegocioContext'
 import VentaRapida from '../components/VentaRapida'
+import { AvisoEdicion, BadgeEdicion, estiloCabeceraEdicion, estiloPanelEdicion } from '../components/ModoEdicion'
+import { useSmartDefaults, elegirClaves, completarVacios, setLastUsed } from '../hooks/useSmartDefaults'
 
 const CANALES = [
   ['whatsapp', 'WhatsApp'],
@@ -42,6 +44,7 @@ function mensajeError(e, respaldo) {
 
 export default function CRM() {
   const { negocioId: negocio, setNegocioId: setNegocio, negociosDisponibles } = useNegocio()
+  const { defaultsCliente } = useSmartDefaults()
   const [tab, setTab] = useState('clientes')
 
   const [clientes, setClientes] = useState([])
@@ -98,7 +101,7 @@ export default function CRM() {
 
   function nuevoCliente() {
     setEditId(null)
-    setForm(emptyCliente)
+    setForm(elegirClaves(defaultsCliente(), Object.keys(emptyCliente)))
     setModal('cliente')
   }
 
@@ -120,14 +123,17 @@ export default function CRM() {
 
   function editarCliente(cliente) {
     setEditId(cliente._id)
-    setForm({
-      empresa: cliente.empresa || '',
-      contacto: cliente.contacto || '',
-      telefono: cliente.telefono || '',
-      correo: cliente.correo || '',
-      canal_origen: cliente.canal_origen || 'directo',
-      notas: cliente.notas || '',
-    })
+    setForm(completarVacios(
+      elegirClaves(defaultsCliente(), Object.keys(emptyCliente)),
+      {
+        empresa: cliente.empresa || '',
+        contacto: cliente.contacto || '',
+        telefono: cliente.telefono || '',
+        correo: cliente.correo || '',
+        canal_origen: cliente.canal_origen || '',
+        notas: cliente.notas || '',
+      },
+    ))
     setModal('cliente')
   }
 
@@ -201,6 +207,7 @@ export default function CRM() {
             return
           }
         }
+        setLastUsed('cliente_canal_origen', form.canal_origen)
       }
 
       if (modal === 'oportunidad') {
@@ -466,10 +473,11 @@ export default function CRM() {
         <div style={styles.overlay}>
           <form
             onSubmit={guardar}
-            style={styles.modal}
+            style={estiloPanelEdicion(Boolean(editId), styles.modal)}
           >
-            <div style={styles.modalHeader}>
+            <div style={estiloCabeceraEdicion(Boolean(editId), styles.modalHeader)}>
               <div>
+                {editId && <BadgeEdicion />}
                 <h2 style={styles.modalTitle}>
                   {editId
                     ? 'Editar'
@@ -488,6 +496,10 @@ export default function CRM() {
                 ×
               </button>
             </div>
+
+            {editId && (
+              <AvisoEdicion entidad={modal === 'cliente' ? `el cliente ${form.empresa || ''}`.trim() : 'la oportunidad'} />
+            )}
 
             {modal === 'cliente' && (
               <div style={styles.grid}>

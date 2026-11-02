@@ -232,3 +232,229 @@ def test_tramo_de_otro_negocio_403(client, solo_santal):
         "negocio_id": "diagnostico_plus", "nombre": "X", "cantidad_minima": 3, "porcentaje": 5,
     })
     assert r.status_code == 403
+
+
+def test_lector_de_codigo_encuentra_por_codigo_o_sku(client, admin, producto_stock):
+    prod = client.get(f"{URL}/productos", headers=admin, params={"negocio_id": NEG}).json()
+    fila = next(p for p in prod if p["id"] == producto_stock)
+    r = client.get(f"{URL}/productos/por-codigo", headers=admin,
+                   params={"negocio_id": NEG, "codigo": fila["sku"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["id"] == producto_stock and r.json()["stock"] == 10
+    # Sin distinguir mayúsculas
+    r = client.get(f"{URL}/productos/por-codigo", headers=admin,
+                   params={"negocio_id": NEG, "codigo": fila["sku"].lower()})
+    assert r.status_code == 200 and r.json()["id"] == producto_stock
+
+
+def test_lector_de_codigo_es_exacto_no_busqueda_parcial(client, admin, producto_stock):
+    r = client.get(f"{URL}/productos/por-codigo", headers=admin,
+                   params={"negocio_id": NEG, "codigo": "MOS"})
+    assert r.status_code == 404
+    r = client.get(f"{URL}/productos/por-codigo", headers=admin,
+                   params={"negocio_id": NEG, "codigo": "NO-EXISTE-123"})
+    assert r.status_code == 404
+
+
+def test_lector_de_codigo_no_expone_productos_de_otro_negocio_ni_dados_de_baja(
+    client, admin, solo_santal, producto_stock
+):
+    prod = client.get(f"{URL}/productos", headers=admin, params={"negocio_id": NEG}).json()
+    sku = next(p for p in prod if p["id"] == producto_stock)["sku"]
+    # Otro negocio: el usuario sin acceso a dulce_tentacion recibe 403
+    r = client.get(f"{URL}/productos/por-codigo", headers=solo_santal,
+                   params={"negocio_id": "dulce_tentacion", "codigo": sku})
+    assert r.status_code == 403
+    # Dado de baja: deja de aparecer
+    client.put(f"/api/catalogo/productos/{producto_stock}", headers=admin,
+               json={"negocio_id": NEG, "activo": False})
+    r = client.get(f"{URL}/productos/por-codigo", headers=admin,
+                   params={"negocio_id": NEG, "codigo": sku})
+    assert r.status_code == 404
+
+
+def test_descuento_manual_sobre_la_venta(client, admin, cuenta_santal, producto_stock):
+    # 2 × $116 con 10% manual: $104.40 c/u, total $208.80
+    r = client.post(f"{URL}/ventas", headers=admin, json={
+        "negocio_id": NEG, "cuenta_id": cuenta_santal, "metodo_pago": "tarjeta",
+        "items": [{"producto_id": producto_stock, "cantidad": 2}],
+        "descuento_manual_pct": 10,
+    })
+    assert r.status_code == 201, r.text
+    venta = r.json()
+    assert venta["total"] == 208.8
+    assert venta["items"][0]["precio_unitario"] == 104.4
+    assert venta["descuento_manual_pct"] == 10
+    assert venta["subtotal"] + venta["iva"] == 208.8
+
+
+def test_descuento_manual_fuera_de_rango_422(client, admin, cuenta_santal, producto_stock):
+    for pct in (-1, 100):
+        r = client.post(f"{URL}/ventas", headers=admin, json={
+            "negocio_id": NEG, "cuenta_id": cuenta_santal, "metodo_pago": "tarjeta",
+            "items": [{"producto_id": producto_stock, "cantidad": 1}],
+            "descuento_manual_pct": pct,
+        })
+        assert r.status_code == 422, (pct, r.text)
+
+
+def test_linea_manual_artículo_sin_inventario(client, admin, cuenta_santal, producto_stock):
+    r = client.post(f"{URL}/ventas", headers=admin, json={
+        "negocio_id": NEG, "cuenta_id": cuenta_santal, "metodo_pago": "tarjeta",
+        "items": [
+            {"manual": {"nombre": "Envoltura especial", "precio": 58}, "cantidad": 2},
+            {"producto_id": producto_stock, "cantidad": 1},
+        ],
+    })
+    assert r.status_code == 201, r.text
+    venta = r.json()
+    manual = next(i for i in venta["items"] if i["manual"])
+    assert manual["producto_id"] is None and manual["nombre"] == "Envoltura especial"
+    assert manual["precio_unitario"] == 58.0
+    assert venta["total"] == 116.0 + 116.0      # 2 × $58 + 1 × $116
+    # El stock del producto controlado baja solo por la partida del catálogo
+    assert stock_de(client, admin, producto_stock) == 9
+
+
+def test_partida_con_producto_y_manual_o_ninguno_422(client, admin, cuenta_santal, producto_stock):
+    base = {"negocio_id": NEG, "cuenta_id": cuenta_santal, "metodo_pago": "tarjeta"}
+    ambos = {"producto_id": producto_stock, "manual": {"nombre": "X", "precio": 10}, "cantidad": 1}
+    ninguno = {"cantidad": 1}
+    for item in (ambos, ninguno):
+        r = client.post(f"{URL}/ventas", headers=admin, json={**base, "items": [item]})
+        assert r.status_code == 422, r.text
+    assert stock_de(client, admin, producto_stock) == 10
+
+
+# ── CRUD de productos del mostrador ──────────────────────────────────────────
+
+def _crear_prod(client, admin, **extra):
+    cuerpo = {"negocio_id": NEG, "codigo": unico("CRUD"), "nombre": unico("Artículo"), "precio": 50}
+    cuerpo.update(extra)
+    return client.post(f"{URL}/productos", headers=admin, json=cuerpo)
+
+
+def test_crud_producto_crear_leer_editar(client, admin, cuenta_santal):
+    r = _crear_prod(client, admin, precio=116)
+    assert r.status_code == 201, r.text
+    pid = r.json()["id"]
+    assert r.json()["precio"] == 116.0 and r.json()["activo"] is True and r.json()["stock"] is None
+
+    r = client.get(f"{URL}/productos/{pid}", headers=admin)
+    assert r.status_code == 200 and r.json()["id"] == pid
+
+    r = client.put(f"{URL}/productos/{pid}", headers=admin, json={"precio": 232, "nombre": "  Renombrado  "})
+    assert r.status_code == 200, r.text
+    assert r.json()["precio"] == 232.0 and r.json()["nombre"] == "Renombrado"
+
+    # El precio nuevo es el que usa la siguiente venta
+    venta = vender(client, admin, cuenta_santal, pid, cantidad=1, recibido=300).json()
+    assert venta["total"] == 232.0
+
+
+def test_crud_producto_codigo_repetido_409(client, admin):
+    a = _crear_prod(client, admin).json()
+    codigo_a = a["codigo"]
+    assert _crear_prod(client, admin, codigo=codigo_a.lower()).status_code == 409
+    b = _crear_prod(client, admin).json()
+    r = client.put(f"{URL}/productos/{b['id']}", headers=admin, json={"codigo": codigo_a})
+    assert r.status_code == 409
+
+
+def test_crud_producto_inventariado_crea_stock(client, admin):
+    r = _crear_prod(client, admin, control_inventario=True, stock_inicial=7)
+    assert r.status_code == 201, r.text
+    assert r.json()["control_inventario"] is True and r.json()["stock"] == 7
+
+
+def test_crud_producto_baja_logica_y_listado(client, admin):
+    pid = _crear_prod(client, admin).json()["id"]
+    assert client.delete(f"{URL}/productos/{pid}", headers=admin).status_code == 200
+    activos = client.get(f"{URL}/productos/admin", headers=admin, params={"negocio_id": NEG}).json()
+    assert pid not in [p["id"] for p in activos]
+    todos = client.get(f"{URL}/productos/admin", headers=admin,
+                       params={"negocio_id": NEG, "incluir_inactivos": True}).json()
+    dado_de_baja = next(p for p in todos if p["id"] == pid)
+    assert dado_de_baja["activo"] is False
+    # Ya no aparece en la venta
+    assert pid not in [p["id"] for p in client.get(f"{URL}/productos", headers=admin, params={"negocio_id": NEG}).json()]
+
+
+def test_crud_producto_otro_negocio_403(client, solo_santal):
+    r = client.post(f"{URL}/productos", headers=solo_santal,
+                    json={"negocio_id": "dulce_tentacion", "codigo": unico("X"), "nombre": "X", "precio": 10})
+    assert r.status_code == 403
+
+
+def test_crud_tramo_eliminar_deja_de_aplicar(client, admin, cuenta_santal, producto_stock, tramos):
+    tramo_id = tramos(2, 10)  # 10% desde 2 piezas
+    venta = vender(client, admin, cuenta_santal, producto_stock, cantidad=2, recibido=500).json()
+    assert venta["items"][0]["descuento_pct"] == 10
+
+    assert client.delete(f"{URL}/descuentos-volumen/{tramo_id}", headers=admin).status_code == 200
+    assert client.delete(f"{URL}/descuentos-volumen/{tramo_id}", headers=admin).status_code == 404
+    venta = vender(client, admin, cuenta_santal, producto_stock, cantidad=2, recibido=500).json()
+    assert venta["items"][0]["descuento_pct"] == 0
+
+
+# ── Sucursales ───────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def sucursal(client, admin):
+    """Sucursal activa de Santal. Se da de baja al final para no afectar a las pruebas de venta sin sucursal."""
+    r = client.post(f"{URL}/sucursales", headers=admin, json={"negocio_id": NEG, "nombre": unico("Suc"), "direccion": "Centro"})
+    assert r.status_code == 201, r.text
+    suc = r.json()
+    yield suc
+    client.delete(f"{URL}/sucursales/{suc['id']}", headers=admin)
+
+
+def test_sucursal_crud(client, admin):
+    r = client.post(f"{URL}/sucursales", headers=admin, json={"negocio_id": NEG, "nombre": unico("CRUD")})
+    assert r.status_code == 201, r.text
+    sid = r.json()["id"]
+    assert r.json()["activo"] is True
+
+    r = client.put(f"{URL}/sucursales/{sid}", headers=admin, json={"nombre": "  Renombrada  ", "direccion": "Norte"})
+    assert r.status_code == 200 and r.json()["nombre"] == "Renombrada" and r.json()["direccion"] == "Norte"
+
+    assert client.delete(f"{URL}/sucursales/{sid}", headers=admin).status_code == 200
+    activas = client.get(f"{URL}/sucursales", headers=admin, params={"negocio_id": NEG}).json()
+    assert sid not in [s["id"] for s in activas]
+    todas = client.get(f"{URL}/sucursales", headers=admin,
+                       params={"negocio_id": NEG, "incluir_inactivas": True}).json()
+    assert next(s for s in todas if s["id"] == sid)["activo"] is False
+
+
+def test_sucursal_nombre_repetido_409(client, admin, sucursal):
+    r = client.post(f"{URL}/sucursales", headers=admin, json={"negocio_id": NEG, "nombre": sucursal["nombre"].upper()})
+    assert r.status_code == 409
+
+
+def test_venta_exige_sucursal_y_la_guarda(client, admin, cuenta_santal, producto_stock, sucursal):
+    # Con una sucursal activa, la venta sin sucursal se rechaza
+    assert vender(client, admin, cuenta_santal, producto_stock, cantidad=1, recibido=200).status_code == 422
+
+    r = client.post(f"{URL}/ventas", headers=admin, json={
+        "negocio_id": NEG, "cuenta_id": cuenta_santal, "metodo_pago": "tarjeta",
+        "items": [{"producto_id": producto_stock, "cantidad": 1}], "sucursal_id": sucursal["id"],
+    })
+    assert r.status_code == 201, r.text
+    assert r.json()["sucursal_id"] == sucursal["id"] and r.json()["sucursal_nombre"] == sucursal["nombre"]
+
+    # Filtros por sucursal en ventas y resumen
+    filas = client.get(f"{URL}/ventas", headers=admin,
+                       params={"negocio_id": NEG, "sucursal_id": sucursal["id"]}).json()
+    assert [v["id"] for v in filas] == [r.json()["id"]]
+    resumen = client.get(f"{URL}/resumen", headers=admin,
+                         params={"negocio_id": NEG, "sucursal_id": sucursal["id"]}).json()
+    assert resumen["ventas"] == 1
+
+
+def test_venta_con_sucursal_de_baja_o_ajena_404(client, admin, cuenta_santal, producto_stock, sucursal):
+    client.delete(f"{URL}/sucursales/{sucursal['id']}", headers=admin)
+    r = client.post(f"{URL}/ventas", headers=admin, json={
+        "negocio_id": NEG, "cuenta_id": cuenta_santal, "metodo_pago": "tarjeta",
+        "items": [{"producto_id": producto_stock, "cantidad": 1}], "sucursal_id": sucursal["id"],
+    })
+    assert r.status_code == 404, r.text

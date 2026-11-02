@@ -26,6 +26,7 @@ export default function OperadorModal({ negocioId, operador, cerrar, onGuardado 
 
   return (
     <ModalFormulario titulo={operador ? `Editar ${operador.nombre}` : 'Nuevo operador'} subtitulo="En la carta porte van nombre, RFC y número de licencia"
+      editando={Boolean(operador)} entidad={operador ? `el operador ${operador.nombre}` : undefined}
       ancho={640} error={error} cerrar={cerrar} onSubmit={guardar} guardando={guardando} textoGuardar="Guardar">
       <div style={s.grid(200)}>
         <Campo label="Nombre completo *" style={{ gridColumn: '1 / -1' }}>

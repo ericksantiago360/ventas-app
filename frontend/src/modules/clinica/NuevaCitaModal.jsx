@@ -93,6 +93,7 @@ export default function NuevaCitaModal({ negocioId, cita, expediente, inicio, di
   return (
     <ModalFormulario
       titulo={editando ? `Reprogramar ${cita.folio}` : 'Nueva cita'}
+      editando={editando} entidad={editando ? `la cita ${cita.folio}` : undefined}
       ancho={680}
       error={error}
       cerrar={cerrar}

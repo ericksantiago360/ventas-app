@@ -62,6 +62,7 @@ export default function VehiculoModal({ negocioId, vehiculo, cerrar, onGuardado 
 
   return (
     <ModalFormulario titulo={vehiculo ? `Editar ${vehiculo.nombre}` : 'Nuevo vehículo'}
+      editando={Boolean(vehiculo)} entidad={vehiculo ? `el vehículo ${vehiculo.nombre}` : undefined}
       subtitulo="Las cartas porte ya hechas conservan los datos con que se crearon"
       ancho={760} error={error} cerrar={cerrar} onSubmit={guardar} guardando={guardando || !cat} textoGuardar="Guardar">
       {!cat ? <div style={{ color: '#94a3b8' }}>Cargando catálogos…</div> : <>

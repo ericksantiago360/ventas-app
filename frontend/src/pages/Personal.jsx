@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNegocio } from '../context/NegocioContext'
 import useEsMovil from '../hooks/useEsMovil'
+import { AvisoEdicion, BadgeEdicion, estiloCabeceraEdicion, estiloPanelEdicion } from '../components/ModoEdicion'
 
 const fmt = (n) => Number(n || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
 const fmtNum = (n) => Number(n || 0).toLocaleString('es-MX')
@@ -168,6 +169,7 @@ export default function Personal() {
   // Empleados
   const [empleados, setEmpleados] = useState([])
   const [busqueda, setBusqueda] = useState('')
+  const [busquedaQ, setBusquedaQ] = useState('') // versión con debounce: es la que consulta la API
   const [soloActivos, setSoloActivos] = useState(true)
   const [modalEmp, setModalEmp] = useState(false)
   const [editEmp, setEditEmp] = useState(null)
@@ -211,12 +213,12 @@ export default function Personal() {
     setCargando(true); setError('')
     try {
       const data = await req(
-        `/api/personal/empleados?negocio_id=${encodeURIComponent(negocioId)}&solo_activos=${soloActivos}&busqueda=${encodeURIComponent(busqueda)}`
+        `/api/personal/empleados?negocio_id=${encodeURIComponent(negocioId)}&solo_activos=${soloActivos}&busqueda=${encodeURIComponent(busquedaQ)}`
       )
       setEmpleados(Array.isArray(data) ? data : [])
     } catch (e) { setError(e.message) }
     finally { setCargando(false) }
-  }, [negocioId, soloActivos, busqueda])
+  }, [negocioId, soloActivos, busquedaQ])
 
   const cargarPeriodos = useCallback(async () => {
     if (!negocioId) return
@@ -258,9 +260,15 @@ export default function Personal() {
     if (vista === 'prestaciones') cargarConfig()
   }, [vista, negocioId])
 
+  // Debounce: la búsqueda consulta la API 400 ms después de la última tecla
+  useEffect(() => {
+    const t = setTimeout(() => setBusquedaQ(busqueda), 400)
+    return () => clearTimeout(t)
+  }, [busqueda])
+
   useEffect(() => {
     if (vista === 'empleados') cargarEmpleados()
-  }, [busqueda, soloActivos])
+  }, [busquedaQ, soloActivos])
 
   // ── Empleados ──────────────────────────────────────────────────────────────
 
@@ -306,6 +314,14 @@ export default function Personal() {
     } catch (e) { setError(e.message) }
   }
 
+  async function reactivarEmpleado(id) {
+    if (!window.confirm('¿Reactivar a este empleado?')) return
+    try {
+      await req(`/api/personal/empleados/${id}/reactivar`, { method: 'PATCH' })
+      await cargarEmpleados()
+    } catch (e) { setError(e.message) }
+  }
+
   // ── Nómina ─────────────────────────────────────────────────────────────────
 
   async function guardarPeriodo(ev) {
@@ -329,6 +345,14 @@ export default function Personal() {
       const r = await req(`/api/personal/nomina/periodos/${id}/calcular`, { method: 'PATCH' })
       await cargarPeriodos()
       return r
+    } catch (e) { setError(e.message) }
+  }
+
+  // Crea la póliza de diario en borrador en Contabilidad, con los totales del período
+  async function generarPoliza(id) {
+    try {
+      const r = await req(`/api/personal/nomina/periodos/${id}/poliza`, { method: 'POST' })
+      alert(`Póliza ${r.numero} creada en borrador (periodo contable ${r.periodo}). Revísala y contabilízala en Contabilidad.`)
     } catch (e) { setError(e.message) }
   }
 
@@ -366,6 +390,9 @@ export default function Personal() {
           <button style={btn('ghost')} onClick={() => {
             if (window.confirm('¿Reabrir el período?')) cambiarEstadoPeriodo(p.id, 'reabrir')
           }}>Reabrir</button>
+        )}
+        {p.estado !== 'borrador' && (
+          <button style={btn('ghost')} onClick={() => generarPoliza(p.id)}>Póliza</button>
         )}
       </>
     )
@@ -610,7 +637,8 @@ export default function Personal() {
                     <EmpleadoTarjeta key={e.id} e={e}>
                       {e.telefono && <a href={`tel:${e.telefono.replace(/[^\d+]/g, '')}`} style={boton('success')}>Llamar</a>}
                       <button style={boton('ghost')} onClick={() => abrirEditarEmp(e)}>Editar</button>
-                      {e.activo && <button style={boton('danger')} onClick={() => desactivarEmpleado(e.id)}>Baja</button>}
+                      {esAdmin && e.activo && <button style={boton('danger')} onClick={() => desactivarEmpleado(e.id)}>Baja</button>}
+                      {esAdmin && !e.activo && <button style={boton('success')} onClick={() => reactivarEmpleado(e.id)}>Reactivar</button>}
                     </EmpleadoTarjeta>
                   )
                 })}
@@ -647,8 +675,11 @@ export default function Personal() {
                         </td>
                         <td style={{ ...s.td, display: 'flex', gap: 6 }}>
                           <button style={s.btn('ghost')} onClick={() => abrirEditarEmp(e)}>Editar</button>
-                          {e.activo && (
+                          {esAdmin && e.activo && (
                             <button style={s.btn('danger')} onClick={() => desactivarEmpleado(e.id)}>Baja</button>
+                          )}
+                          {esAdmin && !e.activo && (
+                            <button style={s.btn('success')} onClick={() => reactivarEmpleado(e.id)}>Reactivar</button>
                           )}
                         </td>
                       </tr>
@@ -769,11 +800,15 @@ export default function Personal() {
       {/* ── MODAL EMPLEADO ────────────────────────────────────────────── */}
       {modalEmp && (
         <div style={s.overlay} onClick={e => e.target === e.currentTarget && setModalEmp(false)}>
-          <div style={s.modal(720)}>
-            <div style={s.mh}>
-              <h2 style={s.mTitle}>{editEmp ? 'Editar empleado' : 'Nuevo empleado'}</h2>
+          <div style={estiloPanelEdicion(Boolean(editEmp), s.modal(720))}>
+            <div style={estiloCabeceraEdicion(Boolean(editEmp), s.mh)}>
+              <div>
+                {editEmp && <BadgeEdicion />}
+                <h2 style={s.mTitle}>{editEmp ? 'Editar empleado' : 'Nuevo empleado'}</h2>
+              </div>
               <button style={{ ...s.btn('ghost'), fontSize: 18, padding: '2px 10px' }} onClick={() => setModalEmp(false)}>×</button>
             </div>
+            {editEmp && <AvisoEdicion entidad={`el empleado ${editEmp.nombre || ''}`.trim()} />}
             {error && <div style={s.err}>{error}</div>}
             <form onSubmit={guardarEmpleado}>
               <div style={s.sect}>Datos personales</div>

@@ -96,6 +96,7 @@ async def _crear_indices(db: AsyncIOMotorDatabase) -> None:
         [("negocio_id", 1), ("folio", 1)], unique=True
     )
     await db.ventas_mostrador.create_index([("negocio_id", 1), ("fecha", -1)])
+    await db.sucursales.create_index([("negocio_id", 1), ("nombre", 1)])
 
     # ── Facturación ───────────────────────────────────────────────────────
     await db.facturas.create_index([("negocio_id", 1), ("estado", 1), ("fecha", -1)])

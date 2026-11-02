@@ -31,6 +31,7 @@ function PlantillaModal({ negocioId, plantilla, cerrar, onGuardado }) {
 
   return (
     <ModalFormulario titulo={plantilla ? 'Editar plantilla' : 'Nueva plantilla'}
+      editando={Boolean(plantilla)} entidad={plantilla ? `la plantilla ${plantilla.nombre || plantilla.tipo || ''}`.trim() : undefined}
       subtitulo={plantilla && !plantilla.propia ? 'Se guardará como plantilla propia y reemplazará a la incluida' : 'Los consentimientos ya firmados no cambian'}
       ancho={820} error={error} cerrar={cerrar} onSubmit={guardar} guardando={guardando} textoGuardar="Guardar">
       <div style={s.grid(220)}>
