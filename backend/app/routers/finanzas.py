@@ -56,7 +56,7 @@ class CuentaCreate(BaseModel):
     negocio_id: str
     nombre: str
     tipo: Literal["efectivo", "banco", "wallet", "otro"] = "otro"
-    moneda: str = "MXN"
+    moneda: Literal["MXN", "USD", "EUR"] = "MXN"
     saldo_inicial: float = 0.0
     activo: bool = True
 
@@ -64,7 +64,7 @@ class CuentaCreate(BaseModel):
 class CuentaUpdate(BaseModel):
     nombre: Optional[str] = None
     tipo: Optional[Literal["efectivo", "banco", "wallet", "otro"]] = None
-    moneda: Optional[str] = None
+    moneda: Optional[Literal["MXN", "USD", "EUR"]] = None
     saldo_inicial: Optional[float] = None
     activo: Optional[bool] = None
 

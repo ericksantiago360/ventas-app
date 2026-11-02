@@ -121,7 +121,7 @@ class Mercancia(BaseModel):
     clave_unidad: str = "H87"                # c_ClaveUnidad de la cantidad
     peso_kg: float = Field(ge=0.001)         # PesoEnKg del total de esa línea
     valor_mercancia: Optional[float] = Field(default=None, ge=0)
-    moneda: Literal["MXN", "USD"] = "MXN"
+    moneda: Literal["MXN", "USD", "EUR"] = "MXN"
     material_peligroso: Optional[bool] = None
     cve_material_peligroso: str = ""         # c_MaterialPeligroso
     embalaje: str = ""                       # c_TipoEmbalaje

@@ -87,7 +87,7 @@ class FacturaBase(BaseModel):
     descuento_general: float = Field(0, ge=0)
     forma_pago:        str = "01"     # 01 efectivo, 03 transferencia, 04 tarjeta...
     metodo_pago:       METODOS = "PUE"
-    moneda:            str = "MXN"
+    moneda:            Literal["MXN", "USD", "EUR"] = "MXN"
     fecha:             str = ""       # YYYY-MM-DD
     dias_credito:      int = Field(0, ge=0, le=365)
     notas:             str = ""

@@ -4,6 +4,9 @@ import VariantesProducto from '../components/VariantesProducto'
 import ListasPrecios from '../components/ListasPrecios'
 import Categorias from '../components/Categorias'
 import { useNegocio } from '../context/NegocioContext'
+import { AvisoEdicion, BadgeEdicion, estiloCabeceraEdicion, estiloPanelEdicion } from '../components/ModoEdicion'
+import { useSmartDefaults, elegirClaves, setLastUsed } from '../hooks/useSmartDefaults'
+import { MONEDAS } from '../constants/catalogos'
 
 const api = axios.create({
   baseURL: '',
@@ -55,25 +58,8 @@ export default function Catalogo() {
   const [mostrarListas, setMostrarListas] = useState(false)
 
 
-  const [form, setForm] = useState({
-    codigo: '',
-    sku: '',
-    nombre: '',
-    descripcion: '',
-    tipo: 'producto',
-    categoria_id: '',
-    unidad: 'pieza',
-    activo: true,
-    costo: '',
-    precio_base: '',
-    iva_aplicable: true,
-    iva_pct: 16,
-    moneda: 'MXN',
-    control_inventario: true,
-    permite_variantes: false,
-    especificaciones: {},
-    metadata: {},
-  })
+  const { defaultsProducto } = useSmartDefaults()
+  const [form, setForm] = useState(formularioNuevoProducto)
 
   useEffect(() => {
     cargarCatalogo()
@@ -118,6 +104,35 @@ export default function Catalogo() {
         .some((v) => String(v).toLowerCase().includes(q))
     )
   }, [productos, busqueda])
+
+  // Formulario de alta: valores base + sugerencias (último tipo y categoría usados).
+  // La categoría sugerida solo se usa si todavía existe en el catálogo.
+  function formularioNuevoProducto() {
+    const base = {
+      codigo: '',
+      sku: '',
+      nombre: '',
+      descripcion: '',
+      tipo: 'producto',
+      categoria_id: '',
+      unidad: 'pieza',
+      activo: true,
+      costo: '',
+      precio_base: '',
+      iva_aplicable: true,
+      iva_pct: 16,
+      moneda: 'MXN',
+      control_inventario: true,
+      permite_variantes: false,
+      especificaciones: {},
+      metadata: {},
+    }
+    const sugeridos = elegirClaves(defaultsProducto(), Object.keys(base))
+    if (sugeridos.categoria_id && !categorias.some(c => (c._id || c.id) === sugeridos.categoria_id)) {
+      sugeridos.categoria_id = ''
+    }
+    return { ...base, ...sugeridos }
+  }
 
   function actualizarCampo(campo, valor) {
     setForm((actual) => ({
@@ -191,28 +206,13 @@ export default function Catalogo() {
         )
       }
 
+      setLastUsed('producto_tipo', form.tipo)
+      setLastUsed('producto_categoria', form.categoria_id || null)
+
       setMostrarFormulario(false)
       setProductoEditando(null)
 
-      setForm({
-        codigo: '',
-        sku: '',
-        nombre: '',
-        descripcion: '',
-        tipo: 'producto',
-        categoria_id: '',
-        unidad: 'pieza',
-        activo: true,
-        costo: '',
-        precio_base: '',
-        iva_aplicable: true,
-        iva_pct: 16,
-        moneda: 'MXN',
-        control_inventario: true,
-        permite_variantes: false,
-        especificaciones: {},
-        metadata: {},
-      })
+      setForm(formularioNuevoProducto())
 
       await cargarCatalogo()
     } catch (err) {
@@ -322,27 +322,7 @@ export default function Catalogo() {
           <button
             onClick={() => {
               setProductoEditando(null)
-
-              setForm({
-                codigo: '',
-                sku: '',
-                nombre: '',
-                descripcion: '',
-                tipo: 'producto',
-                categoria_id: '',
-                unidad: 'pieza',
-                activo: true,
-                costo: '',
-                precio_base: '',
-                iva_aplicable: true,
-                iva_pct: 16,
-                moneda: 'MXN',
-                control_inventario: true,
-                permite_variantes: false,
-                especificaciones: {},
-                metadata: {},
-              })
-
+              setForm(formularioNuevoProducto())
               setMostrarFormulario(true)
             }}
             style={styles.primaryButton}
@@ -425,7 +405,11 @@ export default function Catalogo() {
             </div>
 
             <button
-              onClick={() => setMostrarFormulario(true)}
+              onClick={() => {
+                setProductoEditando(null)
+                setForm(formularioNuevoProducto())
+                setMostrarFormulario(true)
+              }}
               style={styles.primaryButton}
             >
               Crear primer producto
@@ -563,9 +547,10 @@ export default function Catalogo() {
 
       {mostrarFormulario && (
         <div style={styles.overlay}>
-          <div style={styles.modal}>
-            <div style={styles.modalHeader}>
+          <div style={estiloPanelEdicion(Boolean(productoEditando), styles.modal)}>
+            <div style={estiloCabeceraEdicion(Boolean(productoEditando), styles.modalHeader)}>
               <div>
+                {productoEditando && <BadgeEdicion />}
                 <h2 style={styles.modalTitle}>
                   {productoEditando
                     ? 'Actualizar producto'
@@ -584,6 +569,10 @@ export default function Catalogo() {
                 ×
               </button>
             </div>
+
+            {productoEditando && (
+              <AvisoEdicion entidad={`el producto ${productoEditando.nombre || ''}`.trim()} />
+            )}
 
             <form onSubmit={guardarProducto}>
               <div style={styles.formGrid}>
@@ -747,16 +736,25 @@ export default function Catalogo() {
                     Moneda
                   </label>
 
-                  <input
+                  <select
+                    name="moneda"
                     value={form.moneda}
                     onChange={(e) =>
-                      actualizarCampo(
-                        'moneda',
-                        e.target.value.toUpperCase()
-                      )
+                      actualizarCampo('moneda', e.target.value)
                     }
                     style={styles.input}
-                  />
+                  >
+                    {MONEDAS.map(m => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+                  {form.moneda !== 'MXN' && (
+                    <p style={{fontSize:'.8rem', color:'var(--color-warning, #92400E)', marginTop:4}}>
+                      💱 Tipo de cambio no incluido — el monto se registra en {form.moneda} tal como
+                      se capture. Verifica la paridad al emitir la factura (SAT requiere tipo de cambio
+                      en CFDI con moneda extranjera).
+                    </p>
+                  )}
                 </div>
 
                 <div>

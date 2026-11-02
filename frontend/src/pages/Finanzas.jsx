@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import axios from 'axios'
 import { useNegocio } from '../context/NegocioContext'
+import { MONEDAS } from '../constants/catalogos'
 
 const api = axios.create({
   baseURL: '',
@@ -1323,14 +1324,17 @@ export default function Finanzas() {
                   marginTop: '5px',
                 }}
               >
-                <option value="MXN">
-                  MXN — Peso mexicano
-                </option>
-
-                <option value="USD">
-                  USD — Dólar estadounidense
-                </option>
+                {MONEDAS.map(m => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
               </select>
+              {formCuenta.moneda !== 'MXN' && (
+                <p style={{fontSize:'.8rem', color:'var(--color-warning, #92400E)', marginTop:4}}>
+                  💱 Tipo de cambio no incluido — el monto se registra en {formCuenta.moneda} tal como
+                  se capture. Verifica la paridad al emitir la factura (SAT requiere tipo de cambio
+                  en CFDI con moneda extranjera).
+                </p>
+              )}
             </div>
 
             <div
