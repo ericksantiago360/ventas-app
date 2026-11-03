@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import VariantesProducto from '../components/VariantesProducto'
+import GaleriaProducto from '../components/GaleriaProducto'
 import ListasPrecios from '../components/ListasPrecios'
 import Categorias from '../components/Categorias'
 import { useNegocio } from '../context/NegocioContext'
@@ -141,28 +142,47 @@ export default function Catalogo() {
     }))
   }
 
-  async function subirImagenProducto(e) {
-    const archivo = e.target.files?.[0]
-    e.target.value = ''
-    if (!archivo || !productoEditando) return
+  // Galería: `medios` es la lista ordenada (imágenes y videos); el primero es el principal
+  const mediosDe = (p) => {
+    if (p?.medios) return p.medios
+    if (p?.imagenes) return p.imagenes.map((u, i) => ({ id: `img-${i}`, tipo: 'imagen', url: u }))
+    return p?.imagen ? [{ id: 'img-0', tipo: 'imagen', url: p.imagen }] : []
+  }
+
+  async function agregarYoutubeProducto(url) {
+    const productoId = productoEditando._id || productoEditando.id
+    const res = await api.post(
+      `/api/catalogo/productos/${productoId}/medios/youtube?negocio_id=${encodeURIComponent(negocioId)}`,
+      { url }
+    )
+    setProductoEditando(prev => ({ ...prev, imagen: res.data.data.imagen, medios: res.data.data.medios }))
+    await cargarCatalogo()
+  }
+
+  async function subirImagenesProducto(archivos) {
+    if (!archivos?.length || !productoEditando) return
 
     const productoId = productoEditando._id || productoEditando.id
-    const datos = new FormData()
-    datos.append('archivo', archivo)
 
     try {
       setError('')
       setSubiendoImagen(true)
 
-      const res = await api.post(
-        `/api/catalogo/productos/${productoId}/imagen?negocio_id=${encodeURIComponent(negocioId)}`,
-        datos
-      )
+      for (const archivo of archivos) {
+        const datos = new FormData()
+        datos.append('archivo', archivo)
 
-      setProductoEditando({
-        ...productoEditando,
-        imagen: res.data.data.imagen,
-      })
+        const res = await api.post(
+          `/api/catalogo/productos/${productoId}/imagenes?negocio_id=${encodeURIComponent(negocioId)}`,
+          datos
+        )
+
+        setProductoEditando(prev => ({
+          ...prev,
+          imagen: res.data.data.imagen,
+          medios: res.data.data.medios,
+        }))
+      }
 
       await cargarCatalogo()
     } catch (err) {
@@ -173,6 +193,33 @@ export default function Catalogo() {
       )
     } finally {
       setSubiendoImagen(false)
+    }
+  }
+
+  // Sirve para reordenar y para quitar: el servidor borra las imágenes que ya no están en la lista
+  async function guardarGaleria(nuevos) {
+    if (!productoEditando) return
+
+    const productoId = productoEditando._id || productoEditando.id
+    const anteriores = mediosDe(productoEditando)
+
+    setError('')
+    setProductoEditando(prev => ({ ...prev, medios: nuevos, imagen: nuevos.find(m => m.tipo === 'imagen')?.url || '' }))
+
+    try {
+      const res = await api.put(
+        `/api/catalogo/productos/${productoId}/medios?negocio_id=${encodeURIComponent(negocioId)}`,
+        { ids: nuevos.map(m => m.id) }
+      )
+      setProductoEditando(prev => ({ ...prev, medios: res.data.data.medios, imagen: res.data.data.imagen }))
+      await cargarCatalogo()
+    } catch (err) {
+      console.error(err)
+      setProductoEditando(prev => ({ ...prev, medios: anteriores, imagen: anteriores.find(m => m.tipo === 'imagen')?.url || '' }))
+      setError(
+        err?.response?.data?.detail ||
+        'No fue posible guardar la galería de imágenes.'
+      )
     }
   }
 
@@ -643,34 +690,22 @@ export default function Catalogo() {
                 </div>
 
                 <div style={styles.full}>
-                  <label style={styles.label}>Imagen</label>
+                  <label style={styles.label}>Imágenes</label>
 
                   {productoEditando ? (
-                    <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-                      {productoEditando.imagen ? (
-                        <img
-                          src={productoEditando.imagen}
-                          alt={productoEditando.nombre}
-                          style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8, border: '1px solid #e2e8f0' }}
-                        />
-                      ) : (
-                        <div style={{ width: 96, height: 96, borderRadius: 8, border: '1px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 12 }}>
-                          Sin imagen
-                        </div>
-                      )}
-
-                      <div>
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp"
-                          onChange={subirImagenProducto}
-                          disabled={subiendoImagen}
-                        />
-                        <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 12 }}>
-                          {subiendoImagen ? 'Subiendo...' : 'JPG, PNG o WebP. Máximo 5 MB.'}
-                        </p>
-                      </div>
-                    </div>
+                    <>
+                      <GaleriaProducto
+                        medios={mediosDe(productoEditando)}
+                        subiendo={subiendoImagen}
+                        onReordenar={guardarGaleria}
+                        onQuitar={(id) => guardarGaleria(mediosDe(productoEditando).filter(m => m.id !== id))}
+                        onSubir={subirImagenesProducto}
+                        onAgregarYoutube={agregarYoutubeProducto}
+                      />
+                      <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 12 }}>
+                        {subiendoImagen ? 'Subiendo...' : 'JPG, PNG o WebP. Máximo 5 MB por imagen.'}
+                      </p>
+                    </>
                   ) : (
                     <p style={{ margin: 0, color: '#64748b', fontSize: 13 }}>
                       Guarda el producto primero; después podrás subir su imagen.

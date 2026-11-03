@@ -56,5 +56,6 @@ class CheckoutBody(BaseModel):
     cliente: ClienteCheckout
     partidas: list[PartidaCheckout] = Field(min_length=1, max_length=50)
     metodo_pago: Optional[Literal["transferencia", "oxxo_cie"]] = None
+    entrega: Literal["recoger", "envio"] = "recoger"
     notas: str = Field(default="", max_length=1000)
     cita_solicitada: Optional[datetime] = None   # preferencia del cliente; el negocio agenda

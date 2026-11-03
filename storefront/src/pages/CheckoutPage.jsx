@@ -19,6 +19,15 @@ export default function CheckoutPage() {
   const cotizacion = !config.mostrar_precio && !propiedades
   const conPago = !propiedades && !cotizacion
   const hayServicio = items.some(i => i.tipo === 'servicio')
+  const opcionesEntrega = [
+    config.entrega_recoger && 'recoger',
+    config.entrega_envio && 'envio',
+  ].filter(Boolean)
+  const [entrega, setEntrega] = useState(opcionesEntrega[0] || 'recoger')
+  const conEnvio = conPago && entrega === 'envio'
+  // Vista previa: el servidor calcula el costo real al confirmar
+  const envioGratis = config.monto_envio_gratis > 0 && total >= config.monto_envio_gratis
+  const costoEnvioPreview = envioGratis ? 0 : Number(config.costo_envio) || 0
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
 
   if (items.length === 0) {
@@ -30,6 +39,9 @@ export default function CheckoutPage() {
     e.preventDefault()
     setError('')
     if (conPago && !metodo) { setError('Elige un método de pago'); return }
+    if (conEnvio && (!form.calle.trim() || !form.ciudad.trim() || !form.cp.trim())) {
+      setError('Para envío a domicilio escribe calle, ciudad y C.P.'); return
+    }
     setEnviando(true)
     const direccion = ['calle', 'numero', 'colonia', 'ciudad', 'estado', 'cp'].reduce((acc, k) => ({ ...acc, [k]: form[k].trim() }), {})
     const cuerpo = {
@@ -40,7 +52,7 @@ export default function CheckoutPage() {
       // Solo referencias: el precio lo calcula el servidor
       partidas: items.map(i => ({ producto_id: i.producto_id, variante_id: i.variante_id, cantidad: i.cantidad })),
       notas: form.notas,
-      ...(conPago ? { metodo_pago: metodo } : {}),
+      ...(conPago ? { metodo_pago: metodo, entrega } : {}),
       ...(hayServicio && form.cita ? { cita_solicitada: new Date(form.cita).toISOString() } : {}),
     }
     try {
@@ -87,6 +99,35 @@ export default function CheckoutPage() {
               <div className="campo"><label>Estado</label><input value={form.estado} onChange={set('estado')} /></div>
               <div className="campo"><label>C.P.</label><input value={form.cp} onChange={set('cp')} /></div>
             </div>
+          </>
+        )}
+
+        {conPago && opcionesEntrega.length > 0 && (
+          <>
+            <div className="seccion">¿Cómo quieres recibir tu pedido?</div>
+            {opcionesEntrega.map(op => (
+              <label key={op} className="opcion-entrega">
+                <input type="radio" name="entrega" value={op} checked={entrega === op} onChange={() => setEntrega(op)} />
+                <div>
+                  {op === 'recoger' ? (
+                    <>
+                      <strong>Recoger en tienda</strong>
+                      <span>Sin costo adicional</span>
+                    </>
+                  ) : (
+                    <>
+                      <strong>Envío a domicilio</strong>
+                      <span>
+                        {envioGratis ? 'Gratis en tu pedido'
+                          : costoEnvioPreview > 0 ? `${dinero(costoEnvioPreview)} ${config.moneda || 'MXN'}`
+                          : 'Costo por confirmar'}
+                      </span>
+                      {config.tiempo_entrega && <span>{config.tiempo_entrega}</span>}
+                    </>
+                  )}
+                </div>
+              </label>
+            ))}
           </>
         )}
 

@@ -141,6 +141,19 @@ def calcular_totales(lineas: list[dict], iva_incluido: bool) -> dict:
     }
 
 
+def costo_envio_checkout(config: dict, entrega: str, total: float) -> float:
+    """
+    Costo de envío a domicilio. Recoger en tienda siempre es gratis.
+    Si el total (con IVA) alcanza monto_envio_gratis, el envío también es gratis.
+    """
+    if entrega != "envio":
+        return 0.0
+    gratis = float(config.get("monto_envio_gratis") or 0)
+    if gratis > 0 and total >= gratis:
+        return 0.0
+    return redondear(float(config.get("costo_envio") or 0))
+
+
 def tipo_de_orden(config: dict, lineas: list[dict]) -> str:
     if config.get("modo") == "propiedades":
         return "contacto"

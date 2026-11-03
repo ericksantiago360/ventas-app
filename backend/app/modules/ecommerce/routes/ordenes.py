@@ -19,6 +19,7 @@ from ..services import (
     calcular_totales,
     cargar_lineas,
     config_por_slug,
+    costo_envio_checkout,
     generar_referencia,
     instrucciones_pago,
     crear_oportunidad_desde_orden,
@@ -53,8 +54,18 @@ async def checkout(slug: str, body: CheckoutBody, db=Depends(get_db)):
         await validar_stock(db, negocio_id, lineas)
         totales = calcular_totales(lineas, config.get("iva_incluido", False))
 
-    folio = await siguiente_folio(db)
     con_pago = not cotizar
+    envio = 0.0
+    if con_pago:
+        # La entrega la elige el cliente, pero solo entre las opciones que el negocio habilitó
+        disponible = config.get("entrega_envio", False) if body.entrega == "envio" \
+            else config.get("entrega_recoger", True)
+        if not disponible:
+            raise HTTPException(422, "Esa opción de entrega no está disponible en esta tienda")
+        envio = costo_envio_checkout(config, body.entrega, totales["total"])
+        totales["total"] = round(totales["total"] + envio, 2)
+
+    folio = await siguiente_folio(db)
     referencia = generar_referencia(folio, totales["total"]) if con_pago else None
 
     cliente = body.cliente.model_dump()
@@ -68,6 +79,8 @@ async def checkout(slug: str, body: CheckoutBody, db=Depends(get_db)):
         "subtotal": totales["subtotal"],
         "iva": totales["iva"],
         "total": totales["total"],
+        "entrega": body.entrega if con_pago else None,
+        "costo_envio": envio,
         "metodo_pago_seleccionado": body.metodo_pago if con_pago else None,
         "referencia_pago": referencia,
         "notas_cliente": body.notas.strip(),

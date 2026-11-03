@@ -5,7 +5,9 @@ Colección tienda_config (una por negocio):
 - negocio_id, slug, activa, nombre_tienda, descripcion, logo_url, banner_url,
   color_primario, whatsapp, correo_contacto, politica_envios, politica_devoluciones,
   metodos_pago, categorias_visibles, mostrar_precio, modo, iva_incluido, moneda,
-  updated_at
+  monto_minimo, monto_envio_gratis, entrega_*, costo_envio, tiempo_entrega,
+  zonas_cobertura, notif_email_cliente, notif_whatsapp_admin, mensaje_confirmacion,
+  facebook_url, instagram_url, tiktok_url, politica_privacidad, updated_at
 
 El slug es la parte de la URL pública (/tienda/{slug}/...) y es único en toda la
 plataforma. Los datos bancarios completos solo los ve el administrador.
@@ -17,6 +19,7 @@ from pydantic import BaseModel, Field, field_validator
 
 TIPOS_PAGO = Literal["transferencia", "oxxo_cie"]
 MODOS_TIENDA = Literal["catalogo", "propiedades"]
+MONEDAS = Literal["MXN", "USD", "EUR"]
 
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -62,6 +65,32 @@ class TiendaConfigUpdate(BaseModel):
     modo: Optional[MODOS_TIENDA] = None
     iva_incluido: Optional[bool] = None
 
+    # Moneda y precios
+    moneda: Optional[MONEDAS] = None
+    monto_minimo: Optional[float] = Field(default=None, ge=0)
+    monto_envio_gratis: Optional[float] = Field(default=None, ge=0)
+
+    # Envíos y entrega
+    entrega_envio: Optional[bool] = None
+    entrega_recoger: Optional[bool] = None
+    entrega_entregas_plus: Optional[bool] = None
+    costo_envio: Optional[float] = Field(default=None, ge=0)
+    tiempo_entrega: Optional[str] = Field(default=None, max_length=120)
+    zonas_cobertura: Optional[str] = Field(default=None, max_length=500)
+
+    # Comunicación con el cliente
+    notif_email_cliente: Optional[bool] = None
+    notif_whatsapp_admin: Optional[bool] = None
+    mensaje_confirmacion: Optional[str] = Field(default=None, max_length=500)
+
+    # Redes sociales
+    facebook_url: Optional[str] = Field(default=None, max_length=300)
+    instagram_url: Optional[str] = Field(default=None, max_length=300)
+    tiktok_url: Optional[str] = Field(default=None, max_length=300)
+
+    # Políticas
+    politica_privacidad: Optional[str] = Field(default=None, max_length=2000)
+
     @field_validator("slug")
     @classmethod
     def slug_valido(cls, v: Optional[str]) -> Optional[str]:
@@ -90,6 +119,21 @@ DEFAULTS_TIENDA = {
     "modo": "catalogo",
     "iva_incluido": False,
     "moneda": "MXN",
+    "monto_minimo": 0,
+    "monto_envio_gratis": 0,
+    "entrega_envio": False,
+    "entrega_recoger": True,
+    "entrega_entregas_plus": False,
+    "costo_envio": 0,
+    "tiempo_entrega": "",
+    "zonas_cobertura": "",
+    "notif_email_cliente": True,
+    "notif_whatsapp_admin": False,
+    "mensaje_confirmacion": "",
+    "facebook_url": "",
+    "instagram_url": "",
+    "tiktok_url": "",
+    "politica_privacidad": "",
 }
 
 
@@ -116,4 +160,11 @@ def config_publica(config: dict) -> dict:
         "modo": config.get("modo", "catalogo"),
         "iva_incluido": config.get("iva_incluido", False),
         "moneda": config.get("moneda", "MXN"),
+        "monto_minimo": config.get("monto_minimo", 0),
+        "monto_envio_gratis": config.get("monto_envio_gratis", 0),
+        "entrega_envio": config.get("entrega_envio", False),
+        "entrega_recoger": config.get("entrega_recoger", True),
+        "costo_envio": config.get("costo_envio", 0),
+        "tiempo_entrega": config.get("tiempo_entrega", ""),
+        "zonas_cobertura": config.get("zonas_cobertura", ""),
     }

@@ -64,6 +64,22 @@ export default function TiendaConfigPage() {
         mostrar_precio: f.mostrar_precio,
         modo: f.modo,
         iva_incluido: f.iva_incluido,
+        moneda: f.moneda,
+        monto_minimo: Number(f.monto_minimo) || 0,
+        monto_envio_gratis: Number(f.monto_envio_gratis) || 0,
+        entrega_envio: f.entrega_envio,
+        entrega_recoger: f.entrega_recoger,
+        entrega_entregas_plus: f.entrega_entregas_plus,
+        costo_envio: Number(f.costo_envio) || 0,
+        tiempo_entrega: f.tiempo_entrega,
+        zonas_cobertura: f.zonas_cobertura,
+        notif_email_cliente: f.notif_email_cliente,
+        notif_whatsapp_admin: f.notif_whatsapp_admin,
+        mensaje_confirmacion: f.mensaje_confirmacion,
+        facebook_url: f.facebook_url,
+        instagram_url: f.instagram_url,
+        tiktok_url: f.tiktok_url,
+        politica_privacidad: f.politica_privacidad,
         // Los métodos sin datos se guardan vacíos y no se ofrecen en el checkout
         metodos_pago: f.metodos_pago.filter(m => m.tipo === 'transferencia' ? m.clabe : m.cuenta),
       }
@@ -187,6 +203,74 @@ export default function TiendaConfigPage() {
         </Campo>
         <Campo label="Política de devoluciones">
           <textarea style={{ ...s.input, minHeight: 60 }} value={f.politica_devoluciones || ''} onChange={e => set('politica_devoluciones', e.target.value)} />
+        </Campo>
+
+        <div style={s.sect}>Moneda y precios</div>
+        <Campo label="Moneda de la tienda">
+          <select style={s.input} value={f.moneda || 'MXN'} onChange={e => set('moneda', e.target.value)}>
+            <option value="MXN">MXN — Peso mexicano</option>
+            <option value="USD">USD — Dólar estadounidense</option>
+            <option value="EUR">EUR — Euro</option>
+          </select>
+        </Campo>
+        <div style={{ ...s.grid(220) }}>
+          <Campo label="Precio mínimo de compra">
+            <input style={s.input} type="number" min={0} value={f.monto_minimo ?? 0} onChange={e => set('monto_minimo', e.target.value)} />
+            <div style={{ fontSize: 12, color: '#64748b' }}>0 = sin mínimo</div>
+          </Campo>
+          <Campo label="Monto para envío gratis">
+            <input style={s.input} type="number" min={0} value={f.monto_envio_gratis ?? 0} onChange={e => set('monto_envio_gratis', e.target.value)} />
+            <div style={{ fontSize: 12, color: '#64748b' }}>0 = no aplica</div>
+          </Campo>
+        </div>
+
+        <div style={s.sect}>Envíos y entrega</div>
+        <Interruptor activo={!!f.entrega_envio} onChange={v => set('entrega_envio', v)} texto="Envío a domicilio" />
+        <Interruptor activo={!!f.entrega_recoger} onChange={v => set('entrega_recoger', v)} texto="Recoger en tienda" />
+        <Interruptor activo={!!f.entrega_entregas_plus} onChange={v => set('entrega_entregas_plus', v)} texto="Entregas Plus (integración interna)" />
+        {f.entrega_envio && (
+          <>
+            <div style={{ ...s.grid(220) }}>
+              <Campo label="Costo de envío fijo (0 si varía)">
+                <input style={s.input} type="number" min={0} value={f.costo_envio ?? 0} onChange={e => set('costo_envio', e.target.value)} />
+              </Campo>
+              <Campo label="Tiempo estimado de entrega">
+                <input style={s.input} value={f.tiempo_entrega || ''} placeholder="Ej: 3 a 5 días hábiles" onChange={e => set('tiempo_entrega', e.target.value)} />
+              </Campo>
+            </div>
+            <Campo label="Zonas de cobertura">
+              <textarea style={{ ...s.input, minHeight: 50 }} value={f.zonas_cobertura || ''} placeholder="Ej: Ciudad de México, Estado de México, Hidalgo" onChange={e => set('zonas_cobertura', e.target.value)} />
+            </Campo>
+          </>
+        )}
+
+        <div style={s.sect}>Comunicación con el cliente</div>
+        <Interruptor activo={!!f.notif_email_cliente} onChange={v => set('notif_email_cliente', v)}
+          texto="Enviar correo de confirmación al cliente al recibir orden" />
+        <Interruptor activo={!!f.notif_whatsapp_admin} onChange={v => set('notif_whatsapp_admin', v)}
+          texto="Notificar por WhatsApp al administrador (requiere WhatsApp configurado arriba)" />
+        <Campo label="Mensaje de confirmación para el cliente">
+          <textarea style={{ ...s.input, minHeight: 60 }} value={f.mensaje_confirmacion || ''}
+            placeholder="Ej: Gracias por tu pedido. Te contactaremos en menos de 24 horas para confirmar disponibilidad y coordinar el pago."
+            onChange={e => set('mensaje_confirmacion', e.target.value)} />
+        </Campo>
+
+        <div style={s.sect}>Redes sociales</div>
+        <div style={{ ...s.grid(220) }}>
+          {[
+            ['facebook_url', 'Facebook', 'https://facebook.com/...'],
+            ['instagram_url', 'Instagram', 'https://instagram.com/...'],
+            ['tiktok_url', 'TikTok', 'https://tiktok.com/@...'],
+          ].map(([k, label, ph]) => (
+            <Campo key={k} label={label}>
+              <input style={s.input} type="url" value={f[k] || ''} placeholder={ph} onChange={e => set(k, e.target.value)} />
+            </Campo>
+          ))}
+        </div>
+
+        <div style={s.sect}>Políticas adicionales</div>
+        <Campo label="Política de privacidad (URL o texto corto)">
+          <input style={s.input} value={f.politica_privacidad || ''} placeholder="https://... o texto corto" onChange={e => set('politica_privacidad', e.target.value)} />
         </Campo>
       </div>
     </div>

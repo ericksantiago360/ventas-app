@@ -1,4 +1,5 @@
 import asyncio
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -6,6 +7,7 @@ from typing import Any
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
+from pydantic import BaseModel
 
 from ..core.config import settings
 from ..core.database import get_db
@@ -597,6 +599,159 @@ async def subir_imagen_producto(
         await asyncio.to_thread(ruta_anterior.unlink, missing_ok=True)
 
     return {"data": {"imagen": url}}
+
+
+# ============================================================
+# GALERÍA DEL PRODUCTO (imágenes y videos de YouTube mezclados)
+# `medios` es la lista ordenada; el primero es el principal.
+# `imagen` sigue siendo la primera imagen (lo usan listados y POS).
+# ============================================================
+
+YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+YOUTUBE_PATRONES = [
+    re.compile(r"youtu\.be/([^?&\s/]+)"),
+    re.compile(r"[?&]v=([^?&\s]+)"),
+    re.compile(r"/(?:embed|shorts)/([^?&\s/]+)"),
+]
+
+
+def extraer_youtube_id(url: str) -> str | None:
+    for patron in YOUTUBE_PATRONES:
+        m = patron.search(url or "")
+        if m and YOUTUBE_ID_RE.match(m.group(1)):
+            return m.group(1)
+    return None
+
+
+def _medio_youtube(youtube_id: str) -> dict:
+    return {
+        "id": f"yt-{uuid.uuid4().hex[:10]}",
+        "tipo": "youtube",
+        "youtube_id": youtube_id,
+        "thumbnail": f"https://img.youtube.com/vi/{youtube_id}/hqdefault.jpg",
+    }
+
+
+def _medios_de(doc: dict) -> list[dict]:
+    """Lista de medios; convierte el formato antiguo (imagenes / imagen) al vuelo."""
+    if doc.get("medios") is not None:
+        return list(doc["medios"])
+    if doc.get("imagenes") is not None:
+        return [{"id": f"img-{i}", "tipo": "imagen", "url": u} for i, u in enumerate(doc["imagenes"])]
+    if doc.get("imagen"):
+        return [{"id": "img-0", "tipo": "imagen", "url": doc["imagen"]}]
+    return []
+
+
+def _principal_de(medios: list[dict]) -> str:
+    for m in medios:
+        if m.get("tipo") == "imagen" and m.get("url"):
+            return m["url"]
+    return ""
+
+
+class OrdenMedios(BaseModel):
+    ids: list[str] = []
+
+
+def _ruta_imagen_producto(negocio_id: str, url: str) -> Path | None:
+    prefijo = f"/storage/productos/{negocio_id}/"
+    if not url or not url.startswith(prefijo) or ".." in url:
+        return None
+    return Path(settings.STORAGE_PATH) / url.removeprefix("/storage/")
+
+
+async def _producto_del_negocio(db, id: str, negocio_id: str):
+    product_id = oid(id)
+    actual = await db.productos.find_one({"_id": product_id, "negocio_id": negocio_id})
+    if not actual:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    return product_id, actual
+
+
+@router.post("/productos/{id}/imagenes")
+async def agregar_imagen_galeria(
+    id: str,
+    archivo: UploadFile,
+    negocio_id: str = Depends(negocio_autorizado),
+    db=Depends(get_db),
+):
+    product_id, actual = await _producto_del_negocio(db, id, negocio_id)
+
+    contenido = await archivo.read()
+    if len(contenido) > TAMANO_MAX_IMAGEN_PRODUCTO:
+        raise HTTPException(status_code=400, detail="La imagen pasa de 5 MB")
+    extension = formato_imagen(contenido)
+    if not extension:
+        raise HTTPException(status_code=400, detail="Formato no permitido. Usa JPG, PNG o WebP")
+
+    carpeta = Path(settings.STORAGE_PATH) / "productos" / negocio_id
+    carpeta.mkdir(parents=True, exist_ok=True)
+    nombre = f"{id}-{uuid.uuid4().hex[:12]}.{extension}"
+    await asyncio.to_thread((carpeta / nombre).write_bytes, contenido)
+    url = f"/storage/productos/{negocio_id}/{nombre}"
+
+    medios = _medios_de(actual) + [{"id": f"img-{uuid.uuid4().hex[:10]}", "tipo": "imagen", "url": url}]
+    await _guardar_medios(db, product_id, negocio_id, medios)
+    return {"data": {"imagen": _principal_de(medios), "medios": medios}}
+
+
+class VideoYoutube(BaseModel):
+    url: str
+
+
+@router.post("/productos/{id}/medios/youtube")
+async def agregar_video_youtube(
+    id: str,
+    body: VideoYoutube,
+    negocio_id: str = Depends(negocio_autorizado),
+    db=Depends(get_db),
+):
+    product_id, actual = await _producto_del_negocio(db, id, negocio_id)
+    youtube_id = extraer_youtube_id(body.url.strip())
+    if not youtube_id:
+        raise HTTPException(status_code=400, detail="URL de YouTube no reconocida")
+
+    medios = _medios_de(actual) + [_medio_youtube(youtube_id)]
+    await _guardar_medios(db, product_id, negocio_id, medios)
+    return {"data": {"imagen": _principal_de(medios), "medios": medios}}
+
+
+async def _guardar_medios(db, product_id, negocio_id: str, medios: list[dict]) -> None:
+    await db.productos.update_one(
+        {"_id": product_id, "negocio_id": negocio_id},
+        {"$set": {"medios": medios, "imagen": _principal_de(medios), "updated_at": now()}},
+    )
+
+
+@router.put("/productos/{id}/medios")
+async def ordenar_medios_producto(
+    id: str,
+    body: OrdenMedios,
+    negocio_id: str = Depends(negocio_autorizado),
+    db=Depends(get_db),
+):
+    """
+    Reordena o quita medios. `ids` debe ser un subconjunto de los medios actuales
+    (así no se puede inyectar rutas ajenas). Las imágenes quitadas se borran del disco.
+    """
+    product_id, actual = await _producto_del_negocio(db, id, negocio_id)
+    actuales = _medios_de(actual)
+    por_id = {m["id"]: m for m in actuales}
+
+    if len(set(body.ids)) != len(body.ids) or not set(body.ids) <= set(por_id):
+        raise HTTPException(status_code=400, detail="La galería no coincide con los medios del producto")
+
+    nuevos = [por_id[i] for i in body.ids]
+    await _guardar_medios(db, product_id, negocio_id, nuevos)
+
+    quitadas = [m for m in actuales if m["id"] not in body.ids and m.get("tipo") == "imagen"]
+    for medio in quitadas:
+        ruta = _ruta_imagen_producto(negocio_id, medio.get("url") or "")
+        if ruta:
+            await asyncio.to_thread(ruta.unlink, missing_ok=True)
+
+    return {"data": {"imagen": _principal_de(nuevos), "medios": nuevos}}
 
 
 @router.delete("/productos/{id}")

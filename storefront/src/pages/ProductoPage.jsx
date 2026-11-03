@@ -3,6 +3,76 @@ import { useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import { tiendaApi, dinero } from '../api'
 import { useCarrito } from '../context/CartContext'
 
+// Visor de un video: el iframe no se carga hasta que el cliente hace clic en el thumbnail
+function VideoYoutube({ youtubeId, thumbnail, nombre }) {
+  const [reproducir, setReproducir] = useState(false)
+
+  if (reproducir) {
+    return (
+      <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0 }}>
+        <iframe
+          src={`https://www.youtube-nocookie.com/embed/${youtubeId}?rel=0&modestbranding=1&autoplay=1`}
+          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          title={`Video de ${nombre}`}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <button type="button" onClick={() => setReproducir(true)} aria-label="Reproducir video"
+      style={{ position: 'relative', display: 'block', width: '100%', padding: 0, border: 'none', background: '#000', cursor: 'pointer', aspectRatio: '16 / 9' }}>
+      <img src={thumbnail} alt={nombre} style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.9 }} />
+      <span style={{
+        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+        width: 64, height: 46, borderRadius: 12, background: 'rgba(255,0,0,.9)', color: '#fff',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22,
+      }}>▶</span>
+    </button>
+  )
+}
+
+// Carrusel de imágenes y videos mezclados
+function GaleriaTienda({ medios, nombre }) {
+  const [activo, setActivo] = useState(0)
+  const medio = medios[activo]
+
+  return (
+    <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
+      {!medio && (
+        <div className="muted" style={{ aspectRatio: '1 / 1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Sin imagen</div>
+      )}
+
+      {medio?.tipo === 'youtube' && (
+        <VideoYoutube key={medio.id} youtubeId={medio.youtube_id} thumbnail={medio.thumbnail} nombre={nombre} />
+      )}
+      {medio?.tipo === 'imagen' && (
+        <img src={medio.url} alt={nombre} style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover' }} />
+      )}
+
+      {medios.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, padding: 8, overflowX: 'auto' }}>
+          {medios.map((m, i) => (
+            <button key={m.id} type="button" onClick={() => setActivo(i)} aria-label={m.tipo === 'youtube' ? 'Video' : 'Imagen'}
+              style={{
+                position: 'relative', width: 56, height: 56, padding: 0, flexShrink: 0, borderRadius: 6, overflow: 'hidden', cursor: 'pointer',
+                border: i === activo ? '2px solid var(--brand)' : '2px solid var(--line)', background: 'none',
+              }}>
+              <img src={m.tipo === 'youtube' ? m.thumbnail : m.url} alt=""
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              {m.tipo === 'youtube' && (
+                <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.3)', color: '#fff', fontSize: 16 }}>▶</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ProductoPage() {
   const { id } = useParams()
   const { slug, config } = useOutletContext()
@@ -40,11 +110,7 @@ export default function ProductoPage() {
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 24, marginTop: 16 }}>
-      <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
-        {producto.imagen
-          ? <img src={producto.imagen} alt={producto.nombre} style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover' }} />
-          : <div className="muted" style={{ aspectRatio: '1 / 1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Sin imagen</div>}
-      </div>
+      <GaleriaTienda medios={producto.medios ?? (producto.imagen ? [{ id: 'img-0', tipo: 'imagen', url: producto.imagen }] : [])} nombre={producto.nombre} />
 
       <div>
         <h1 style={{ marginTop: 0, fontSize: 24 }}>{producto.nombre}</h1>

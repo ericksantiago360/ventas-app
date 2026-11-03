@@ -6,13 +6,16 @@ Configuración de la tienda.
 - PUT  /api/admin/tienda/config             actualizar (solo administradores)
 - POST /api/admin/tienda/logo|banner        subir imagen (solo administradores)
 - GET  /api/admin/tienda/categorias         categorías del negocio para elegir visibles
+- PUT  /api/admin/tienda/productos/orden    orden del catálogo en la tienda (drag & drop)
 """
 import asyncio
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from app.core.config import settings
 from app.core.database import get_db
@@ -24,6 +27,10 @@ from ..models.config import DEFAULTS_TIENDA, TiendaConfigUpdate, config_publica
 from ..services import config_completa, config_por_slug
 
 router = APIRouter()
+
+
+class OrdenProductos(BaseModel):
+    ids: list[str] = []
 
 IMAGENES_PERMITIDAS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
 TAMANO_MAX_IMAGEN = 5 * 1024 * 1024
@@ -85,6 +92,25 @@ async def categorias_para_tienda(
     docs = await db.categorias.find({"negocio_id": negocio_id, "activo": {"$ne": False}}) \
         .sort("nombre", 1).to_list(length=1000)
     return {"data": [{"id": str(d["_id"]), "nombre": d.get("nombre", "")} for d in docs]}
+
+
+@router.put("/admin/tienda/productos/orden")
+async def guardar_orden_productos(
+    body: OrdenProductos,
+    negocio_id: str = Depends(negocio_autorizado),
+    db=Depends(get_db),
+    user=Depends(require_admin),
+):
+    """Orden del catálogo en la tienda: posicion_tienda = índice en la lista recibida."""
+    ids = [i for i in body.ids if ObjectId.is_valid(i)]
+    await asyncio.gather(*[
+        db.productos.update_one(
+            {"_id": ObjectId(pid), "negocio_id": negocio_id},
+            {"$set": {"posicion_tienda": pos}},
+        )
+        for pos, pid in enumerate(ids)
+    ])
+    return {"ok": True, "actualizados": len(ids)}
 
 
 @router.post("/admin/tienda/logo")

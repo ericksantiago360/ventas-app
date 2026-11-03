@@ -19,6 +19,24 @@ from ..services import config_por_slug, producto_visible
 router = APIRouter()
 
 
+def _medios_publicos(doc: dict) -> list[dict]:
+    """Galería ordenada (imágenes y videos de YouTube). Convierte el formato antiguo al vuelo."""
+    if doc.get("medios") is not None:
+        medios = doc["medios"]
+    elif doc.get("imagenes") is not None:
+        medios = [{"id": f"img-{i}", "tipo": "imagen", "url": u} for i, u in enumerate(doc["imagenes"])]
+    elif doc.get("imagen"):
+        medios = [{"id": "img-0", "tipo": "imagen", "url": doc["imagen"]}]
+    else:
+        medios = []
+    return [
+        {"id": m.get("id"), "tipo": m.get("tipo"), "url": m.get("url"),
+         "youtube_id": m.get("youtube_id"), "thumbnail": m.get("thumbnail")}
+        for m in medios
+        if (m.get("tipo") == "imagen" and m.get("url")) or (m.get("tipo") == "youtube" and m.get("youtube_id"))
+    ]
+
+
 def _precio_publico(valor, config: dict):
     if not config.get("mostrar_precio", True):
         return None
@@ -31,6 +49,7 @@ def _producto_publico(doc: dict, config: dict, variantes: list[dict], disponible
         "nombre": doc.get("nombre", ""),
         "descripcion": doc.get("descripcion", ""),
         "imagen": doc.get("imagen"),
+        "medios": _medios_publicos(doc),
         "tipo": doc.get("tipo", "producto"),
         "unidad": doc.get("unidad", "pieza"),
         "categoria_id": doc.get("categoria_id"),
@@ -138,7 +157,9 @@ async def productos_publicos(
             {"control_inventario": {"$ne": True}},
             {"stock_total": {"$gt": 0}},
         ]}},
-        {"$sort": {"nombre": 1}},
+        # Orden elegido en el admin (drag & drop); los no ordenados van al final, por nombre
+        {"$addFields": {"_orden": {"$ifNull": ["$posicion_tienda", 1000000000]}}},
+        {"$sort": {"_orden": 1, "nombre": 1}},
         {"$facet": {
             "data": [{"$skip": (pagina - 1) * limite}, {"$limit": limite}],
             "total": [{"$count": "n"}],
