@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useOutletContext, useParams } from 'react-router-dom'
+import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import { tiendaApi, dinero } from '../api'
 import { useCarrito } from '../context/CartContext'
 
@@ -42,7 +42,14 @@ function GaleriaTienda({ medios, nombre }) {
   return (
     <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
       {!medio && (
-        <div className="muted" style={{ aspectRatio: '1 / 1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Sin imagen</div>
+        <div className="muted" style={{ aspectRatio: '1 / 1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <path d="M21 15l-5-5L5 21" />
+          </svg>
+          <span>Sin imagen</span>
+        </div>
       )}
 
       {medio?.tipo === 'youtube' && (
@@ -109,7 +116,15 @@ export default function ProductoPage() {
   const etiqueta = propiedades ? 'Me interesa' : cotizable ? 'Solicitar cotización' : 'Agregar al carrito'
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 24, marginTop: 16 }}>
+    <div style={{ marginTop: 16 }}>
+      <nav className="muted" aria-label="Migas de pan" style={{ marginBottom: 12 }}>
+        <Link to={`/${slug}`} style={{ color: 'var(--brand)' }}>Tienda</Link>
+        {' / '}
+        <Link to={`/${slug}/catalogo`} style={{ color: 'var(--brand)' }}>Catálogo</Link>
+        {' / '}
+        <span>{producto.nombre}</span>
+      </nav>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 24 }}>
       <GaleriaTienda medios={producto.medios ?? (producto.imagen ? [{ id: 'img-0', tipo: 'imagen', url: producto.imagen }] : [])} nombre={producto.nombre} />
 
       <div>
@@ -152,6 +167,7 @@ export default function ProductoPage() {
         )}
         {aviso && <div className="exito" style={{ marginTop: 12 }}>{aviso}</div>}
       </div>
+    </div>
     </div>
   )
 }
