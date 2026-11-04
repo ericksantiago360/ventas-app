@@ -63,7 +63,7 @@ const NAV_GROUPS = [
     items: [
       { to: '/tienda',           label: 'Configuración', end: true },
       { to: '/tienda/productos', label: 'Productos' },
-      { to: '/tienda/ordenes',   label: 'Órdenes' },
+      { to: '/ecommerce/ordenes', label: 'Órdenes' },
     ],
   },
   {

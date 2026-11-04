@@ -21,7 +21,7 @@ from .models.config import DEFAULTS_TIENDA
 
 IVA_DEFAULT_PCT = 16.0
 ESTADOS_CONFIRMABLES = ("pendiente_pago", "pago_en_revision", "solicitud")
-ESTADOS_CANCELABLES = ("pendiente_pago", "pago_en_revision", "solicitud", "confirmada")
+ESTADOS_CANCELABLES = ("pendiente_pago", "pago_en_revision", "solicitud", "confirmada", "enviada")
 TIPOS_CON_PAGO = ("producto", "servicio")
 ETIQUETA_PAGO = {"transferencia": "Transferencia SPEI", "oxxo_cie": "Pago en OXXO (CIE)"}
 

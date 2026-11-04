@@ -11,6 +11,17 @@ const ACCIONES = {
   pago_en_revision: [{ etiqueta: 'Confirmar pedido', accion: 'confirmar' }],
 }
 
+// Lo siguiente depende del tipo de entrega: envío pasa por "enviada"; recoger va directo a "entregada"
+function accionesDe(o) {
+  if (o.estado === 'confirmada') {
+    return o.entrega === 'envio'
+      ? [{ etiqueta: 'Marcar enviada', accion: 'enviar' }]
+      : [{ etiqueta: 'Marcar entregada', accion: 'entregar' }]
+  }
+  if (o.estado === 'enviada') return [{ etiqueta: 'Marcar entregada', accion: 'entregar' }]
+  return ACCIONES[o.estado] || []
+}
+
 const ETIQUETA_METODO = { transferencia: 'Transferencia SPEI', oxxo_cie: 'Pago en OXXO (CIE)' }
 
 export default function TiendaOrdenDetalle() {
@@ -44,11 +55,11 @@ export default function TiendaOrdenDetalle() {
   if (!orden) return <div style={s.page}>{error ? <div style={s.err}>{error}</div> : 'Cargando…'}</div>
 
   const conPrecio = orden.tipo === 'producto' || orden.tipo === 'servicio'
-  const cancelable = orden.estado !== 'cancelada'
+  const cancelable = !['cancelada', 'entregada'].includes(orden.estado)
 
   return (
     <div style={s.page}>
-      <button style={{ ...s.btn('ghost'), marginBottom: 12 }} onClick={() => navigate('/tienda/ordenes')}>← Órdenes</button>
+      <button style={{ ...s.btn('ghost'), marginBottom: 12 }} onClick={() => navigate('/ecommerce/ordenes')}>← Órdenes</button>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div>
@@ -134,7 +145,7 @@ export default function TiendaOrdenDetalle() {
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-        {(ACCIONES[orden.estado] || []).map(a => (
+        {accionesDe(orden).map(a => (
           <button key={a.accion} style={s.btn(a.variante)} disabled={ocupada} onClick={() => ejecutar(a.accion)}>
             {a.etiqueta}
           </button>

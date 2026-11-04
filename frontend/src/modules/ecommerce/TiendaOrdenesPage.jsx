@@ -7,6 +7,8 @@ const COLUMNAS = [
   { id: 'pendiente', titulo: '💳 Pendientes', estados: ['pendiente_pago', 'solicitud'] },
   { id: 'revision', titulo: '👁️ Pago en revisión', estados: ['pago_en_revision'] },
   { id: 'confirmada', titulo: '✅ Confirmadas', estados: ['confirmada'] },
+  { id: 'enviada', titulo: '🚚 Enviadas', estados: ['enviada'] },
+  { id: 'entregada', titulo: '📦 Entregadas', estados: ['entregada'] },
   { id: 'cancelada', titulo: '❌ Canceladas', estados: ['cancelada'] },
 ]
 
@@ -17,6 +19,17 @@ const ACCIONES = {
   ],
   solicitud: [{ etiqueta: 'Confirmar', accion: 'confirmar' }],
   pago_en_revision: [{ etiqueta: 'Confirmar pedido', accion: 'confirmar' }],
+}
+
+// Lo siguiente depende del tipo de entrega: envío pasa por "enviada"; recoger va directo a "entregada"
+function accionesDe(o) {
+  if (o.estado === 'confirmada') {
+    return o.entrega === 'envio'
+      ? [{ etiqueta: 'Marcar enviada', accion: 'enviar' }]
+      : [{ etiqueta: 'Marcar entregada', accion: 'entregar' }]
+  }
+  if (o.estado === 'enviada') return [{ etiqueta: 'Marcar entregada', accion: 'entregar' }]
+  return ACCIONES[o.estado] || []
 }
 
 export default function TiendaOrdenesPage() {
@@ -84,7 +97,7 @@ export default function TiendaOrdenesPage() {
               {cargando && lista.length === 0 && <div style={{ fontSize: 12, color: '#94a3b8' }}>Cargando…</div>}
               {lista.map(o => (
                 <div key={o._id} style={{ ...s.card, padding: 12, marginBottom: 10, opacity: ocupada === o._id ? 0.5 : 1 }}>
-                  <div onClick={() => navigate(`/tienda/ordenes/${o._id}`)} style={{ cursor: 'pointer' }}>
+                  <div onClick={() => navigate(`/ecommerce/ordenes/${o._id}`)} style={{ cursor: 'pointer' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
                       <strong style={{ fontSize: 13 }}>{o.folio}</strong>
                       <span style={{ fontSize: 11, color: '#94a3b8' }}>{minutosDesde(o.created_at)}</span>
@@ -103,13 +116,13 @@ export default function TiendaOrdenesPage() {
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-                    {(ACCIONES[o.estado] || []).map(a => (
+                    {accionesDe(o).map(a => (
                       <button key={a.accion} style={{ ...s.btn(a.variante), padding: '5px 10px', fontSize: 12 }}
                         disabled={ocupada === o._id} onClick={() => ejecutar(o, a.accion)}>
                         {a.etiqueta}
                       </button>
                     ))}
-                    {o.estado !== 'cancelada' && (
+                    {!['cancelada', 'entregada'].includes(o.estado) && (
                       <button style={{ ...s.btn('danger'), padding: '5px 10px', fontSize: 12 }}
                         disabled={ocupada === o._id} onClick={() => ejecutar(o, 'cancelar')}>
                         Cancelar

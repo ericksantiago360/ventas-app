@@ -34,7 +34,7 @@ from ..services import (
 
 router = APIRouter()
 
-ESTADOS_VALIDOS = ("pendiente_pago", "pago_en_revision", "solicitud", "confirmada", "cancelada")
+ESTADOS_VALIDOS = ("pendiente_pago", "pago_en_revision", "solicitud", "confirmada", "enviada", "entregada", "cancelada")
 
 
 async def _config_del_negocio(db, negocio_id: str) -> dict:
@@ -145,6 +145,31 @@ async def cancelar_orden(id: str, db=Depends(get_db), user=Depends(get_current_u
         {"$set": {"estado": "cancelada", "inventario_descontado": [], "updated_at": ahora()}},
     )
     return {"ok": True, "estado": "cancelada"}
+
+
+@router.put("/admin/tienda/ordenes/{id}/enviar")
+async def marcar_enviada(id: str, db=Depends(get_db), user=Depends(get_current_user)):
+    """Solo órdenes con envío a domicilio: confirmada → enviada."""
+    orden = await obtener_del_negocio(db.ordenes_ecommerce, id, user, "Orden")
+    if orden["estado"] != "confirmada":
+        raise HTTPException(400, "Solo una orden confirmada puede marcarse como enviada")
+    if orden.get("entrega") != "envio":
+        raise HTTPException(400, "Esta orden es para recoger en tienda; márcala como entregada")
+    await _actualizar_estado(db, orden, "enviada")
+    return {"ok": True, "estado": "enviada"}
+
+
+@router.put("/admin/tienda/ordenes/{id}/entregar")
+async def marcar_entregada(id: str, db=Depends(get_db), user=Depends(get_current_user)):
+    """Envío: enviada → entregada. Recoger en tienda: confirmada → entregada."""
+    orden = await obtener_del_negocio(db.ordenes_ecommerce, id, user, "Orden")
+    estado = orden["estado"]
+    if estado not in ("confirmada", "enviada"):
+        raise HTTPException(400, f"No se puede entregar una orden en estado {estado}")
+    if estado == "confirmada" and orden.get("entrega") == "envio":
+        raise HTTPException(400, "Primero marca la orden como enviada")
+    await _actualizar_estado(db, orden, "entregada")
+    return {"ok": True, "estado": "entregada"}
 
 
 async def _actualizar_estado(db, orden: dict, estado: str) -> None:

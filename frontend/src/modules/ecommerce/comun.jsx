@@ -10,6 +10,8 @@ export const ESTADOS_ORDEN = {
   solicitud:        { label: 'Solicitud',         bg: '#e0e7ff', color: '#4338ca' },
   pago_en_revision: { label: 'Pago en revisión',  bg: '#dbeafe', color: '#1d4ed8' },
   confirmada:       { label: 'Confirmada',        bg: '#dcfce7', color: '#15803d' },
+  enviada:          { label: 'Enviada',           bg: '#e0f2fe', color: '#0369a1' },
+  entregada:        { label: 'Entregada',         bg: '#ccfbf1', color: '#0f766e' },
   cancelada:        { label: 'Cancelada',         bg: '#fee2e2', color: '#b91c1c' },
 }
 

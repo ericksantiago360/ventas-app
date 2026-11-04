@@ -7,6 +7,8 @@ const ESTADOS = {
   pago_en_revision: 'Estamos revisando tu pago',
   solicitud: 'Recibimos tu solicitud',
   confirmada: 'Confirmada',
+  enviada: 'Enviada',
+  entregada: 'Entregada',
   cancelada: 'Cancelada',
 }
 

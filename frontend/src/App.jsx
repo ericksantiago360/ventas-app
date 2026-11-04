@@ -153,8 +153,8 @@ export default function App() {
             <Route path="clinica/farmacia" element={<RequierePermiso permiso="farmacia:read"><FarmaciaPage /></RequierePermiso>} />
             <Route path="tienda" element={<TiendaConfigPage />} />
             <Route path="tienda/productos" element={<TiendaProductosPage />} />
-            <Route path="tienda/ordenes" element={<TiendaOrdenesPage />} />
-            <Route path="tienda/ordenes/:id" element={<TiendaOrdenDetalle />} />
+            <Route path="ecommerce/ordenes" element={<TiendaOrdenesPage />} />
+            <Route path="ecommerce/ordenes/:id" element={<TiendaOrdenDetalle />} />
             <Route path="carta-porte" element={<CartaPortePage />} />
             <Route path="carta-porte/nueva" element={<NuevaCartaPortePage />} />
             <Route path="carta-porte/flota" element={<FlotaPage />} />
