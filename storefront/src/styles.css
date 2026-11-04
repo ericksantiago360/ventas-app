@@ -165,3 +165,22 @@ img { max-width: 100%; display: block; }
 }
 .opcion-entrega strong { font-size: 1rem; }
 .opcion-entrega span { color: var(--muted); font-size: .8rem; }
+
+/* Checkout en 3 pasos */
+.stepper {
+  list-style: none; margin: 16px 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 16px;
+  font-size: 13px; color: var(--muted);
+}
+.stepper li { display: flex; align-items: center; gap: 8px; }
+.stepper li span {
+  width: 24px; height: 24px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--card);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+}
+.stepper li.activo { color: var(--ink); font-weight: 700; }
+.stepper li.activo span { background: var(--brand); border-color: var(--brand); color: #fff; }
+.stepper li.hecho span { background: var(--ok); border-color: var(--ok); color: #fff; }
+
+.acciones { display: flex; justify-content: space-between; gap: 8px; margin-top: 16px; }

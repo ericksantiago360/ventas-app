@@ -14,6 +14,7 @@ from ..core.database import get_db
 from ..core.security import get_current_user
 from ..core.negocios import negocio_autorizado, validar_referencia, verificar_acceso
 from ..models.base import serialize_list
+from .inventario import crear_item_inventario_producto, verificar_nombre_inventario_libre
 
 
 router = APIRouter()
@@ -25,6 +26,21 @@ router = APIRouter()
 
 def now():
     return datetime.now(timezone.utc)
+
+
+def stock_inicial_de(body: dict) -> float:
+    """
+    stock_inicial no es campo del producto: se saca del body (para que no se guarde)
+    y se valida. Solo se usa al crear o al activar el control de existencias.
+    """
+    valor = body.pop("stock_inicial", 0) or 0
+    try:
+        cantidad = float(valor)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="El stock inicial debe ser un número")
+    if cantidad < 0:
+        raise HTTPException(status_code=422, detail="El stock inicial no puede ser negativo")
+    return cantidad
 
 
 def oid(value: str):
@@ -336,6 +352,7 @@ async def crear_producto(
 ):
     body = clean_body(body)
     negocio_id = ensure_business(body, user)
+    stock_inicial = stock_inicial_de(body)
     await validar_referencia(db.categorias, body.get("categoria_id"), negocio_id, "Categoría")
 
     codigo = str(body.get("codigo", "")).strip()
@@ -377,6 +394,11 @@ async def crear_producto(
             detail="Ya existe un producto con ese SKU en este negocio",
         )
 
+    control_inventario = bool(body.get("control_inventario", False))
+    if control_inventario:
+        # Se valida antes de insertar el producto para no dejar un producto a medias
+        await verificar_nombre_inventario_libre(db, negocio_id, nombre)
+
     doc = {
         "negocio_id": negocio_id,
 
@@ -404,9 +426,7 @@ async def crear_producto(
 
         "moneda": body.get("moneda", "MXN"),
 
-        "control_inventario": bool(
-            body.get("control_inventario", False)
-        ),
+        "control_inventario": control_inventario,
 
         "permite_variantes": bool(
             body.get("permite_variantes", False)
@@ -425,6 +445,19 @@ async def crear_producto(
     }
 
     result = await db.productos.insert_one(doc)
+
+    if control_inventario:
+        await crear_item_inventario_producto(
+            db,
+            negocio_id=negocio_id,
+            producto_id=str(result.inserted_id),
+            nombre=nombre,
+            sku=sku,
+            unidad=doc["unidad"],
+            costo=doc["costo"],
+            stock_inicial=stock_inicial,
+            usuario_id=str(user["_id"]),
+        )
 
     return {
         "id": str(result.inserted_id),
@@ -464,6 +497,8 @@ async def editar_producto(
 ):
     body = clean_body(body)
     negocio_id = ensure_business(body, user)
+    # Solo aplica al crear o al activar el control; si ya hay ítem de inventario, se ignora
+    stock_inicial = stock_inicial_de(body)
 
     product_id = oid(id)
 
@@ -479,6 +514,23 @@ async def editar_producto(
         )
 
     await validar_referencia(db.categorias, body.get("categoria_id"), negocio_id, "Categoría")
+
+    control_nuevo = (
+        bool(body["control_inventario"]) if "control_inventario" in body
+        else bool(actual.get("control_inventario", False))
+    )
+    crear_item = False
+    if control_nuevo:
+        ya_tiene_item = await db.inventario.find_one({
+            "negocio_id": negocio_id,
+            "producto_id": id,
+            "activo": {"$ne": False},
+        })
+        crear_item = ya_tiene_item is None
+        if crear_item:
+            await verificar_nombre_inventario_libre(
+                db, negocio_id, str(body.get("nombre", actual.get("nombre", "")))
+            )
 
     if "codigo" in body:
         codigo = str(body["codigo"]).strip()
@@ -529,6 +581,19 @@ async def editar_producto(
             "$set": body,
         },
     )
+
+    if crear_item:
+        await crear_item_inventario_producto(
+            db,
+            negocio_id=negocio_id,
+            producto_id=id,
+            nombre=str(body.get("nombre", actual.get("nombre", ""))),
+            sku=str(body.get("sku", actual.get("sku", ""))),
+            unidad=str(body.get("unidad", actual.get("unidad", "pieza"))),
+            costo=float(body.get("costo", actual.get("costo", 0)) or 0),
+            stock_inicial=stock_inicial,
+            usuario_id=str(user["_id"]),
+        )
 
     doc = await db.productos.find_one({
         "_id": product_id,

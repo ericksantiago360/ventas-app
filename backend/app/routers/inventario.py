@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
@@ -156,6 +157,92 @@ async def crear_producto(
 
     doc["_id"] = result.inserted_id
     return serializar(doc)
+
+
+async def verificar_nombre_inventario_libre(db, negocio_id: str, nombre: str) -> None:
+    """Mismo criterio que POST /stock: no puede haber dos ítems activos con el mismo nombre."""
+    existente = await db.inventario.find_one({
+        "negocio_id": negocio_id,
+        "nombre": {"$regex": f"^{re.escape(nombre.strip())}$", "$options": "i"},
+        "activo": {"$ne": False},
+    })
+    if existente:
+        raise HTTPException(
+            409,
+            "Ya existe un producto de inventario con ese nombre. Cambia el nombre del producto "
+            "o desactiva el control de existencias.",
+        )
+
+
+async def crear_item_inventario_producto(
+    db, *, negocio_id: str, producto_id: str, nombre: str, sku: str,
+    unidad: str, costo: float, stock_inicial: float, usuario_id: str,
+) -> dict:
+    """
+    Crea el ítem de inventario ligado a un producto del catálogo.
+    El catálogo público cuenta el stock desde este ítem (por producto_id), así que
+    todo producto con control de existencias debe tenerlo, aunque el stock sea 0.
+    Si hay stock inicial > 0 registra la entrada igual que POST /stock.
+    """
+    now = datetime.now(timezone.utc)
+    doc = {
+        "negocio_id": negocio_id,
+        "producto_id": producto_id,
+        "nombre": nombre.strip(),
+        "sku": sku.strip(),
+        "unidad": unidad or "pza",
+        "stock_actual": stock_inicial,
+        "stock_minimo": 0.0,
+        "stock_maximo": 0.0,
+        "ubicacion": "",
+        "costo_unitario": costo,
+        "activo": True,
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = await db.inventario.insert_one(doc)
+
+    if stock_inicial > 0:
+        await db.inventario_movimientos.insert_one({
+            "negocio_id": negocio_id,
+            "inventario_id": str(result.inserted_id),
+            "producto_nombre": doc["nombre"],
+            "tipo": "entrada",
+            "cantidad": stock_inicial,
+            "stock_anterior": 0.0,
+            "stock_nuevo": stock_inicial,
+            "concepto": "Stock inicial",
+            "referencia": "",
+            "consignatario": "",
+            "fecha": now,
+            "usuario_id": usuario_id,
+        })
+
+    doc["_id"] = result.inserted_id
+    return doc
+
+
+@router.get("/producto/{producto_id}/stock")
+async def stock_de_producto(
+    producto_id: str,
+    negocio_id: str = Query(...),
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Stock del ítem de inventario ligado a un producto del catálogo (0 si no tiene)."""
+    verificar_acceso(user, negocio_id)
+    item = await db.inventario.find_one({
+        "negocio_id": negocio_id,
+        "producto_id": producto_id,
+        "activo": {"$ne": False},
+    })
+    if not item:
+        return {"inventario_id": None, "stock_actual": 0.0, "unidad": None}
+    return {
+        "inventario_id": str(item["_id"]),
+        "stock_actual": float(item.get("stock_actual", 0) or 0),
+        "unidad": item.get("unidad"),
+    }
 
 
 @router.put("/stock/{item_id}")

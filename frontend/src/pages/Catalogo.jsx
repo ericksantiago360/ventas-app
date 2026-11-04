@@ -57,7 +57,8 @@ export default function Catalogo() {
   const [productoVariantes, setProductoVariantes] = useState(null)
   const [subiendoImagen, setSubiendoImagen] = useState(false)
   const [mostrarListas, setMostrarListas] = useState(false)
-
+  // Stock actual del ítem de inventario ligado (solo lectura al editar un producto con control)
+  const [stockActual, setStockActual] = useState(null)
 
   const { defaultsProducto } = useSmartDefaults()
   const [form, setForm] = useState(formularioNuevoProducto)
@@ -124,6 +125,7 @@ export default function Catalogo() {
       iva_pct: 16,
       moneda: 'MXN',
       control_inventario: true,
+      stock_inicial: 0,
       permite_variantes: false,
       especificaciones: {},
       metadata: {},
@@ -236,6 +238,8 @@ export default function Catalogo() {
           form.precio_base === '' ? null : Number(form.precio_base),
         iva_pct: Number(form.iva_pct),
         categoria_id: form.categoria_id || null,
+        // El servidor solo lo usa al crear o al activar el control; en edición lo ignora
+        stock_inicial: Number(form.stock_inicial) || 0,
       }
 
       if (productoEditando) {
@@ -271,8 +275,22 @@ export default function Catalogo() {
     }
   }
 
+  async function cargarStockProducto(productoId) {
+    setStockActual(null)
+    try {
+      const res = await api.get(`/api/inventario/producto/${productoId}/stock`, {
+        params: { negocio_id: negocioId },
+      })
+      setStockActual(res.data?.stock_actual ?? 0)
+    } catch (err) {
+      console.error(err)
+      setStockActual(null)
+    }
+  }
+
   function editarProducto(producto) {
     setProductoEditando(producto)
+    cargarStockProducto(producto._id || producto.id)
 
     setForm({
       codigo: producto.codigo || '',
@@ -297,7 +315,8 @@ export default function Catalogo() {
           : producto.iva_pct,
       moneda: producto.moneda || 'MXN',
       control_inventario:
-        producto.control_inventario !== false,
+        producto.control_inventario === true,
+      stock_inicial: 0,
       permite_variantes:
         producto.permite_variantes === true,
       especificaciones:
@@ -881,20 +900,6 @@ export default function Catalogo() {
                 <label>
                   <input
                     type="checkbox"
-                    checked={form.control_inventario}
-                    onChange={(e) =>
-                      actualizarCampo(
-                        'control_inventario',
-                        e.target.checked
-                      )
-                    }
-                  />{' '}
-                  Control de inventario
-                </label>
-
-                <label>
-                  <input
-                    type="checkbox"
                     checked={form.permite_variantes}
                     onChange={(e) =>
                       actualizarCampo(
@@ -906,6 +911,49 @@ export default function Catalogo() {
                   Permite variantes
                 </label>
               </div>
+
+              <section style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #e2e8f0' }}>
+                <h3 style={{ margin: '0 0 8px', fontSize: 15 }}>Inventario</h3>
+
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={form.control_inventario ?? false}
+                    onChange={(e) =>
+                      actualizarCampo('control_inventario', e.target.checked)
+                    }
+                  />{' '}
+                  Controlar existencias de este producto
+                </label>
+
+                <p style={{ fontSize: '.8rem', color: '#64748b', margin: '4px 0 0' }}>
+                  Si está activo, el producto solo aparece en tienda cuando tiene stock mayor a 0.
+                </p>
+
+                {form.control_inventario && !productoEditando?.control_inventario && (
+                  <div style={{ marginTop: 12 }}>
+                    <label style={styles.label}>Stock inicial</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={form.stock_inicial ?? 0}
+                      onChange={(e) => actualizarCampo('stock_inicial', e.target.value)}
+                      style={styles.input}
+                    />
+                    <p style={{ fontSize: '.8rem', color: '#64748b', margin: '4px 0 0' }}>
+                      Después puedes ajustar existencias desde el módulo de Inventario.
+                    </p>
+                  </div>
+                )}
+
+                {form.control_inventario && productoEditando?.control_inventario && (
+                  <p style={{ fontSize: '.9rem', marginTop: 8 }}>
+                    Stock actual: <strong>{stockActual ?? '—'}</strong> unidades
+                    {' — '}ajústalo desde <a href="/inventario">Inventario</a>
+                  </p>
+                )}
+              </section>
 
               <div style={styles.modalFooter}>
                 <button
