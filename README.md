@@ -33,8 +33,8 @@ make init-db # crear negocios y usuario admin (solo la primera vez)
 
 Accede a: **http://localhost**
 
-- Email: `erick@santal.mx`
-- Password: `cambiar-contrasena`
+- Email: ``
+- Password: ``
 
 > Cambia la contraseña desde el perfil después del primer login.
 
