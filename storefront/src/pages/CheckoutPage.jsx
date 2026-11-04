@@ -3,6 +3,7 @@ import { Link, useNavigate, useOutletContext } from 'react-router-dom'
 import { tiendaApi, dinero } from '../api'
 import { useCarrito } from '../context/CartContext'
 import PagoInstrucciones from '../components/PagoInstrucciones'
+import useNoindex from '../hooks/useNoindex'
 
 const PASOS = ['Tus datos', 'Entrega y pago', 'Confirmación']
 
@@ -32,6 +33,7 @@ function Pasos({ actual }) {
 }
 
 export default function CheckoutPage() {
+  useNoindex()
   const { slug, config } = useOutletContext()
   const { items, total, vaciar } = useCarrito()
   const navigate = useNavigate()

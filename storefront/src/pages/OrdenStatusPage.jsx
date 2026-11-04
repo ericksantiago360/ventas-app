@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import useNoindex from '../hooks/useNoindex'
 import { useOutletContext, useParams } from 'react-router-dom'
 import { tiendaApi, dinero } from '../api'
 
@@ -15,6 +16,7 @@ const ESTADOS = {
 const TIPOS = { producto: 'Producto', servicio: 'Servicio', cotizacion: 'Cotización', contacto: 'Contacto' }
 
 export default function OrdenStatusPage() {
+  useNoindex()
   const { slug, config } = useOutletContext()
   const { folio: folioUrl } = useParams()
   const [folio, setFolio] = useState(folioUrl || '')

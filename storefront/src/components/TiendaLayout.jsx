@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useParams } from 'react-router-dom'
 import { CartProvider, useCarrito } from '../context/CartContext'
 import useTienda from '../hooks/useTienda'
 import WhatsAppButton from './WhatsAppButton'
+import InstallBanner from './InstallBanner'
 
 function Encabezado({ slug, config }) {
   const { piezas } = useCarrito()
@@ -64,6 +65,7 @@ export default function TiendaLayout() {
         {config.politica_devoluciones && <div style={{ marginTop: 6 }}><strong>Devoluciones:</strong> {config.politica_devoluciones}</div>}
       </footer>
       <WhatsAppButton numero={config.whatsapp} />
+      <InstallBanner />
     </CartProvider>
   )
 }

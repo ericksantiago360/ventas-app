@@ -17,7 +17,7 @@ from .modules.carta_porte.routes import cartas_porte as cp_cartas, operadores as
 from .modules.timbrado.routes import csd as timbrado_csd
 from .modules.ecommerce.routes import (
     admin_ordenes as ecommerce_admin_ordenes, catalogo as ecommerce_catalogo,
-    config as ecommerce_config, ordenes as ecommerce_ordenes,
+    config as ecommerce_config, ordenes as ecommerce_ordenes, seo as ecommerce_seo,
 )
 
 
@@ -104,6 +104,7 @@ app.include_router(ecommerce_config.router, prefix="/api")
 app.include_router(ecommerce_catalogo.router, prefix="/api")
 app.include_router(ecommerce_ordenes.router, prefix="/api")
 app.include_router(ecommerce_admin_ordenes.router, prefix="/api")
+app.include_router(ecommerce_seo.router, prefix="/api")
 
 @app.get("/api/health", tags=["system"])
 async def health():
