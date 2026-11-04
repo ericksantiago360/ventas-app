@@ -11,13 +11,14 @@ Un mismo origen no puede tener dos facturas activas.
 """
 from datetime import datetime, timezone, date, timedelta
 from io import BytesIO
-from typing import Optional, Literal, List
+from typing import Literal, List
 import uuid
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel, Field, model_validator
 from pymongo import ReturnDocument
 
 from reportlab.lib import colors
@@ -26,14 +27,20 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable,
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image,
 )
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.negocios import validar_referencia, verificar_acceso
+from app.core.negocios import validar_cliente_unificado, validar_referencia, verificar_acceso
+from app.models.crm import ObjectIdStr
 from app.services.cobros import registrar_cobro, cancelar_cobro
 from app.services.contabilidad_integracion import crear_poliza_cobro
+from app.modules.timbrado.cfdi_ingreso import generar_cfdi_ingreso
+from app.modules.timbrado.qr import qr_png, url_desde_xml
+from app.modules.timbrado.servicio import (
+    cancelacion_aceptada, cancelar_en_sat, emisor_fiscal, estado_sat_de, timbrar_xml,
+)
 
 router = APIRouter(prefix="/facturacion", tags=["Facturación"])
 
@@ -74,13 +81,13 @@ class Concepto(BaseModel):
 
 class FacturaBase(BaseModel):
     receptor:          Receptor = Receptor()
-    cliente_id:        str = ""
+    cliente_id:        ObjectIdStr | None = None
     paciente_id:       str = ""
     conceptos:         List[Concepto] = []
     descuento_general: float = Field(0, ge=0)
     forma_pago:        str = "01"     # 01 efectivo, 03 transferencia, 04 tarjeta...
     metodo_pago:       METODOS = "PUE"
-    moneda:            str = "MXN"
+    moneda:            Literal["MXN", "USD", "EUR"] = "MXN"
     fecha:             str = ""       # YYYY-MM-DD
     dias_credito:      int = Field(0, ge=0, le=365)
     notas:             str = ""
@@ -101,6 +108,18 @@ class PagoCreate(BaseModel):
 
 class CancelarBody(BaseModel):
     motivo: str = ""
+
+
+class CancelarSATBody(BaseModel):
+    """Motivo SAT: 01 con relación (requiere el UUID que sustituye), 02 sin relación, 03 no se llevó a cabo, 04 factura global."""
+    motivo:            Literal["01", "02", "03", "04"] = "02"
+    folio_sustitucion: str = Field("", max_length=36)
+
+    @model_validator(mode="after")
+    def sustitucion_con_motivo_01(self):
+        if self.motivo == "01" and not self.folio_sustitucion:
+            raise ValueError("Con motivo 01 indica el UUID del comprobante que lo sustituye")
+        return self
 
 
 # ── Utilidades ────────────────────────────────────────────────────────────────
@@ -194,7 +213,7 @@ async def validar_origen_libre(db, negocio_id: str, origen_tipo: str, origen_id:
 
 
 async def validar_receptor(db, body: FacturaBase, negocio_id: str):
-    await validar_referencia(db.clientes, body.cliente_id, negocio_id, "Cliente")
+    await validar_cliente_unificado(db.clientes, body.cliente_id, "Cliente")
     await validar_referencia(db.pacientes, body.paciente_id, negocio_id, "Paciente")
 
 
@@ -492,6 +511,8 @@ async def cancelar(
     factura = await obtener_factura(db, id, user)
     if factura["estado"] != "emitida":
         raise HTTPException(400, f"No se puede cancelar una factura {factura['estado']}")
+    if factura.get("uuid"):
+        raise HTTPException(400, "La factura está timbrada: cancélala ante el SAT (cancelar-timbre)")
     if factura.get("pagos"):
         raise HTTPException(400, "La factura tiene pagos registrados; elimínalos antes de cancelar")
     now = datetime.now(timezone.utc)
@@ -510,6 +531,101 @@ async def cancelar(
         return_document=ReturnDocument.AFTER,
     )
     return serializar(actualizada)
+
+
+# ── Timbrado SAT ──────────────────────────────────────────────────────────────
+
+@router.post("/facturas/{id}/timbrar")
+async def timbrar(
+    id: str,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Sella y timbra ante el SAT una factura emitida (CFDI 4.0 de ingreso)."""
+    factura = await obtener_factura(db, id, user)
+    if factura.get("uuid"):
+        raise HTTPException(400, f"La factura ya está timbrada (UUID {factura['uuid']})")
+    if factura["estado"] not in ("emitida", "pagada"):
+        raise HTTPException(400, f"No se puede timbrar una factura {factura['estado']}; emítela primero")
+
+    now = datetime.now(timezone.utc)
+    emisor = await emisor_fiscal(db, factura["negocio_id"])
+    xml = await run_in_threadpool(generar_cfdi_ingreso, factura, emisor, now)
+    resultado = await timbrar_xml(db, factura["negocio_id"], xml)
+
+    # El timbre ya existe ante el SAT: se guarda sin condiciones para no perder el UUID
+    actualizada = await db.facturas.find_one_and_update(
+        {"_id": factura["_id"]},
+        {"$set": {
+            "uuid":               resultado["uuid"],
+            "fecha_timbrado":     resultado["fecha_timbrado"],
+            "sello_sat":          resultado["sello_sat"],
+            "no_certificado_sat": resultado["no_certificado_sat"],
+            "xml_timbrado":       resultado["xml_timbrado"],
+            "pac":                "SW Sapien",
+            "estado_sat":         "Vigente",
+            "updated_at":         now,
+        },
+         "$push": {"historial": {"accion": "timbrada", "fecha": now, "usuario": user.get("nombre", ""),
+                                 "nota": f"UUID {resultado['uuid']}"}}},
+        return_document=ReturnDocument.AFTER,
+    )
+    return serializar(actualizada)
+
+
+@router.post("/facturas/{id}/cancelar-timbre")
+async def cancelar_timbre(
+    id: str,
+    body: CancelarSATBody,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Cancela el CFDI ante el SAT. Si el SAT confirma, la factura queda cancelada; si aún
+    está en proceso, se guarda su estado y la factura sigue como emitida.
+    """
+    factura = await obtener_factura(db, id, user)
+    if not factura.get("uuid"):
+        raise HTTPException(400, "La factura no está timbrada")
+    if factura["estado"] == "cancelada":
+        raise HTTPException(400, "La factura ya está cancelada")
+    if factura.get("pagos"):
+        raise HTTPException(400, "La factura tiene pagos registrados; elimínalos antes de cancelar")
+
+    emisor = await emisor_fiscal(db, factura["negocio_id"])
+    respuesta = await cancelar_en_sat(emisor["rfc"], factura["uuid"], body.motivo, body.folio_sustitucion)
+    now = datetime.now(timezone.utc)
+    aceptada = cancelacion_aceptada(respuesta)
+    cambios = {"estado_sat": estado_sat_de(respuesta), "updated_at": now}
+    if aceptada:
+        cambios.update({
+            "estado":             "cancelada",
+            "motivo_cancelacion": f"Cancelada ante el SAT (motivo {body.motivo})",
+            "cancelada_at":       now,
+            "saldo":              0.0,
+        })
+    nota = f"Cancelación ante el SAT, motivo {body.motivo}: {estado_sat_de(respuesta)}"
+    actualizada = await db.facturas.find_one_and_update(
+        {"_id": factura["_id"]},
+        {"$set": cambios,
+         "$push": {"historial": {"accion": "cancelada" if aceptada else "cancelacion_sat_pendiente",
+                                 "fecha": now, "usuario": user.get("nombre", ""), "nota": nota}}},
+        return_document=ReturnDocument.AFTER,
+    )
+    return serializar(actualizada)
+
+
+@router.get("/facturas/{id}/xml-timbrado")
+async def xml_timbrado(
+    id: str,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    factura = await obtener_factura(db, id, user)
+    if not factura.get("xml_timbrado"):
+        raise HTTPException(404, "La factura no está timbrada")
+    return Response(factura["xml_timbrado"], media_type="application/xml", headers={
+        "Content-Disposition": f'attachment; filename="factura-{factura.get("folio") or "sin-folio"}-timbrada.xml"'})
 
 
 # ── Pagos ─────────────────────────────────────────────────────────────────────
@@ -692,7 +808,7 @@ async def facturar_pedido(
     cliente = {}
     if pedido.get("cliente_id") and ObjectId.is_valid(pedido["cliente_id"]):
         cliente = await db.clientes.find_one(
-            {"_id": ObjectId(pedido["cliente_id"]), "negocio_id": pedido["negocio_id"]}
+            {"_id": ObjectId(pedido["cliente_id"])}
         ) or {}
 
     conceptos = []
@@ -718,7 +834,7 @@ async def facturar_pedido(
             direccion=cliente.get("direccion", ""),
             cp=cliente.get("cp", "") or cliente.get("codigo_postal", ""),
         ),
-        cliente_id=pedido.get("cliente_id", "") or "",
+        cliente_id=str(pedido["cliente_id"]) if pedido.get("cliente_id") else None,
         conceptos=conceptos,
         descuento_general=float(pedido.get("descuento", 0) or 0),
         metodo_pago="PUE" if float(pedido.get("saldo_pendiente", 0) or 0) <= 0 else "PPD",
@@ -771,7 +887,7 @@ async def facturar_orden(
             telefono=paciente.get("telefono", "") or "",
             uso_cfdi="D01",
         ),
-        paciente_id=orden.get("paciente_id", ""),
+        paciente_id=str(orden.get("paciente_id") or ""),
         conceptos=conceptos,
         notas=f"Médico solicitante: {orden['medico_solicitante']}" if orden.get("medico_solicitante") else "",
     )
@@ -890,8 +1006,14 @@ async def pdf_factura(
     if f["estado"] == "cancelada":
         story += [Spacer(1, 10), Paragraph(f"<font color='#b91c1c'><b>FACTURA CANCELADA</b> {f.get('motivo_cancelacion', '')}</font>", sVal)]
 
-    story += [Spacer(1, 18), HRFlowable(width="100%", thickness=0.4, color=colors.HexColor("#cbd5e1"), spaceAfter=4),
-              Paragraph("Comprobante interno sin validez fiscal (no timbrado ante el SAT).", sNote)]
+    story += [Spacer(1, 18), HRFlowable(width="100%", thickness=0.4, color=colors.HexColor("#cbd5e1"), spaceAfter=4)]
+    if f.get("uuid"):
+        qr = Image(BytesIO(qr_png(url_desde_xml(f["xml_timbrado"]))), width=26 * mm, height=26 * mm)
+        datos = Paragraph(f"<b>Folio fiscal (UUID):</b> {f['uuid']}<br/>Fecha de certificación: {f.get('fecha_timbrado', '')}"
+                          "<br/>CFDI de ingreso verificable en el portal del SAT con el código QR.", sVal)
+        story.append(Table([[qr, datos]], colWidths=[30 * mm, 150 * mm], style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+    else:
+        story.append(Paragraph("Comprobante interno sin validez fiscal (no timbrado ante el SAT).", sNote))
 
     doc.build(story)
     buf.seek(0)

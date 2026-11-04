@@ -95,6 +95,19 @@ async def main() -> None:
             },
             "activo": True,
         },
+        {
+            "_id": "consultoria",
+            "nombre": "Consultoría / Desarrollo",
+            "tipo": "consultoria",
+            "prefijo_cotizacion": "CON",
+            "prefijo_pedido": "CO-PED",
+            "config": {
+                "vigencia_cotizacion_dias": 15,
+                "moneda": "MXN",
+            },
+            "etapas_por_estado": {},
+            "activo": True,
+        },
     ]
 
     for neg in negocios:
@@ -104,6 +117,48 @@ async def main() -> None:
             upsert=True,
         )
         print(f"  ✓ Negocio: {neg['nombre']}")
+
+    # ── Pipelines CRM (SPEC §4) ───────────────────────────────────────────
+    # $set y no $setOnInsert: los negocios ya existen y deben recibir el pipeline
+    etapas_terminales = [
+        "Ganado", "Perdido", "Rechazado", "En consignación",
+        "Cerrado", "Expirado", "Entregado", "Cancelado", "Vencido",
+    ]
+    pipelines_crm = {
+        "santal": {
+            "pipeline_crm": ["Prospecto", "Cotización", "Negociación", "Ganado", "Perdido"],
+        },
+        "dulce_tentacion": {
+            "pipeline_crm": ["Prospecto", "Visita con muestras", "Negociación", "En consignación", "Rechazado"],
+        },
+        "bienes_raices": {
+            "pipeline_crm_propietario": [
+                "Prospecto", "Visita de captación", "Contrato de gestión", "En cartera", "Cerrado", "Expirado",
+            ],
+            "pipeline_crm_comprador": [
+                "Prospecto", "Visita", "Oferta", "Negociación", "Cerrado", "Perdido",
+            ],
+        },
+        "diagnostico_plus": {
+            "pipeline_crm": [
+                "Prospecto", "Cotización convenio", "Convenio firmado",
+                "Activo", "Vencido", "Rechazado",
+            ],
+        },
+        "consultoria": {
+            "pipeline_crm": [
+                "Prospecto", "Diagnóstico", "Propuesta", "Contrato firmado",
+                "En desarrollo", "Entregado", "Cancelado",
+            ],
+        },
+    }
+
+    for negocio_id, campos in pipelines_crm.items():
+        await db.config_negocios.update_one(
+            {"_id": negocio_id},
+            {"$set": {**campos, "etapas_terminales": etapas_terminales}},
+        )
+        print(f"  ✓ Pipeline CRM: {negocio_id}")
 
     # ── Usuario admin ─────────────────────────────────────────────────────
     # Importamos hash_password aquí para no depender del módulo completo
@@ -119,7 +174,7 @@ async def main() -> None:
             "nombre":        "Erick Santiago",
             "email":         EMAIL,
             "password_hash": pwd.hash(PASSWORD),
-            "negocios":      ["santal", "dulce_tentacion", "bienes_raices", "diagnostico_plus"],
+            "negocios":      ["santal", "dulce_tentacion", "bienes_raices", "diagnostico_plus", "consultoria"],
             "rol":           "admin",
             "activo":        True,
         })
@@ -127,7 +182,7 @@ async def main() -> None:
     else:
         await db.usuarios.update_one(
             {"email": EMAIL},
-            {"$addToSet": {"negocios": "diagnostico_plus"}},
+            {"$addToSet": {"negocios": {"$each": ["diagnostico_plus", "consultoria"]}}},
         )
         print(f"  - Usuario existente; acceso a Diagnostico Plus verificado: {EMAIL}")
 

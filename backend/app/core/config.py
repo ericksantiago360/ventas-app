@@ -38,5 +38,13 @@ class Settings(BaseSettings):
     # Portal del paciente
     PORTAL_TOKEN_DAYS: int = 30
 
+    # Timbrado ante el SAT: clave Fernet que cifra las llaves privadas (CSD) guardadas en MongoDB
+    CSD_MASTER_KEY: str = ""
+
+    # PAC SW Sapien: sandbox por defecto; en producción SW_URL=https://services.sw.com.mx
+    SW_URL: str = "https://services.test.sw.com.mx"
+    SW_USER: str = ""
+    SW_PASSWORD: str = ""
+
 
 settings = Settings()

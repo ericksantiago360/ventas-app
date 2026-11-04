@@ -2,12 +2,11 @@ import uuid
 
 import pytest
 
-from .conftest import NEGOCIOS, datos, id_de
+from .conftest import NEGOCIOS, datos, id_de, unico
 
 # Endpoints de listado que reciben negocio_id y deben respetar el acceso.
 LISTADOS = [
     "/api/crm/clientes",
-    "/api/crm/leads",
     "/api/catalogo/productos",
     "/api/cotizaciones/",
     "/api/pedidos/",
@@ -54,25 +53,99 @@ def test_negocio_propio_200(client, solo_santal, url):
     assert r.status_code == 200
 
 
+def test_clientes_solo_con_actividad_visible(client, admin, solo_santal):
+    """Clientes unificados: el listado solo muestra los que tienen actividad en negocios del usuario."""
+    marca = unico("Filtro")
+
+    def cliente(sufijo: str) -> str:
+        r = client.post("/api/crm/clientes", headers=admin, json={
+            "empresa": f"{marca} {sufijo}", "telefono": "5550300", "canal_origen": "directo",
+        })
+        return id_de(r.json())
+
+    def oportunidad(cliente_id: str, negocio: str, etapa: str) -> None:
+        r = client.post("/api/crm/oportunidades", headers=admin,
+                        json={"cliente_id": cliente_id, "negocio_id": negocio, "etapa": etapa})
+        assert r.status_code == 201, r.text
+
+    sin_actividad = cliente("sin")
+    de_santal = cliente("santal")
+    de_dulce = cliente("dulce")
+    oportunidad(de_santal, "santal", "Prospecto")
+    oportunidad(de_dulce, "dulce_tentacion", "Prospecto")
+
+    r = client.get("/api/crm/clientes", headers=solo_santal, params={"q": marca, "limit": 100})
+    visibles = {c["_id"] for c in datos(r.json())}
+    assert visibles == {de_santal}
+    assert sin_actividad not in visibles and de_dulce not in visibles
+
+
+def test_creador_accede_a_su_cliente_sin_actividad(client, solo_santal):
+    r = client.post("/api/crm/clientes", headers=solo_santal, json={
+        "empresa": unico("Propio"), "telefono": "5550700", "canal_origen": "directo",
+    })
+    assert r.status_code == 201, r.text
+    cliente = id_de(r.json())
+    base = f"/api/crm/clientes/{cliente}"
+
+    assert client.get(base, headers=solo_santal).status_code == 200
+    assert client.put(base, headers=solo_santal, json={"contacto": "Ana"}).status_code == 200
+    assert client.get(f"{base}/timeline", headers=solo_santal).status_code == 200
+    r = client.patch(f"{base}/estado", headers=solo_santal, json={"activo": False})
+    assert r.status_code == 200 and r.json()["data"]["activo"] is False
+    assert client.delete(base, headers=solo_santal).status_code == 200
+
+
+def test_cliente_ajeno_sin_actividad_no_es_accesible(client, admin, solo_santal):
+    cliente = id_de(client.post("/api/crm/clientes", headers=admin, json={
+        "empresa": unico("Ajeno"), "telefono": "5550800", "canal_origen": "directo",
+    }).json())
+    base = f"/api/crm/clientes/{cliente}"
+
+    assert client.get(base, headers=solo_santal).status_code == 403
+    assert client.put(base, headers=solo_santal, json={"contacto": "x"}).status_code == 403
+    assert client.get(f"{base}/timeline", headers=solo_santal).status_code == 403
+    assert client.patch(f"{base}/estado", headers=solo_santal, json={"activo": False}).status_code == 403
+    assert client.delete(base, headers=solo_santal).status_code == 403
+
+
+def test_duplicado_ajeno_no_revela_datos(client, admin, solo_santal):
+    empresa = unico("Duplicado")
+    original = client.post("/api/crm/clientes", headers=admin, json={
+        "empresa": empresa, "telefono": "5550900", "canal_origen": "directo",
+    })
+    assert original.status_code == 201, original.text
+
+    r = client.post("/api/crm/clientes", headers=solo_santal, json={
+        "empresa": empresa, "telefono": "5550900", "canal_origen": "directo",
+    })
+    assert r.status_code == 200
+    assert r.json() == {"duplicate_warning": True}
+
+
 class TestCRMOtroNegocio:
-    """Un usuario solo-Santal no puede tocar clientes ni leads de otro negocio."""
+    """Un usuario solo-Santal no puede tocar clientes ni oportunidades de otro negocio."""
 
     @pytest.fixture
     def cliente_dt(self, client, admin):
-        r = client.post("/api/crm/clientes", headers=admin,
-                        json={"negocio_id": "dulce_tentacion", "nombre": "Cliente DT"})
+        r = client.post("/api/crm/clientes", headers=admin, json={
+            "empresa": unico("Cliente DT"), "telefono": "5550101", "canal_origen": "directo",
+        })
         return id_de(r.json())
 
     @pytest.fixture
-    def lead_dt(self, client, admin):
-        r = client.post("/api/crm/leads", headers=admin,
-                        json={"negocio_id": "dulce_tentacion", "nombre": "Lead DT"})
+    def oportunidad_dt(self, client, admin, cliente_dt):
+        r = client.post("/api/crm/oportunidades", headers=admin, json={
+            "cliente_id": cliente_dt, "negocio_id": "dulce_tentacion", "etapa": "Prospecto",
+        })
         return id_de(r.json())
 
     def test_crear_cliente(self, client, solo_santal):
-        r = client.post("/api/crm/clientes", headers=solo_santal,
-                        json={"negocio_id": "dulce_tentacion", "nombre": "X"})
-        assert r.status_code == 403
+        # Clientes unificados: el alta no pertenece a un negocio, así que no se bloquea
+        r = client.post("/api/crm/clientes", headers=solo_santal, json={
+            "empresa": unico("X"), "telefono": "5550102", "canal_origen": "directo",
+        })
+        assert r.status_code == 201
 
     def test_ver_cliente(self, client, solo_santal, cliente_dt):
         assert client.get(f"/api/crm/clientes/{cliente_dt}", headers=solo_santal).status_code == 403
@@ -86,13 +159,13 @@ class TestCRMOtroNegocio:
                          json={"activo": False})
         assert r.status_code == 403
 
-    def test_mover_lead(self, client, solo_santal, lead_dt):
-        r = client.patch(f"/api/crm/leads/{lead_dt}/etapa", headers=solo_santal,
-                         json={"etapa": "ganado"})
+    def test_mover_oportunidad(self, client, solo_santal, oportunidad_dt):
+        r = client.put(f"/api/crm/oportunidades/{oportunidad_dt}/etapa", headers=solo_santal,
+                       json={"etapa": "Negociación"})
         assert r.status_code == 403
 
-    def test_borrar_lead(self, client, solo_santal, lead_dt):
-        assert client.delete(f"/api/crm/leads/{lead_dt}", headers=solo_santal).status_code == 403
+    def test_borrar_oportunidad(self, client, solo_santal, oportunidad_dt):
+        assert client.delete(f"/api/crm/oportunidades/{oportunidad_dt}", headers=solo_santal).status_code == 403
 
 
 # Recursos de negocios a los que solo_santal no tiene acceso:

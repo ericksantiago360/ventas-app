@@ -1,9 +1,11 @@
-from datetime import datetime
+from datetime import date, datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.negocios import verificar_acceso
@@ -1232,6 +1234,13 @@ async def balanza_comprobacion(
         pipeline
     ).to_list(length=None)
 
+    # Las líneas automáticas no siempre traen código y nombre; se toman del catálogo
+    ids_cuenta = [ObjectId(m["_id"]) for m in movimientos if ObjectId.is_valid(str(m["_id"]))]
+    catalogo = {
+        str(c["_id"]): c
+        async for c in db.catalogo_cuentas.find({"_id": {"$in": ids_cuenta}}, {"codigo": 1, "nombre": 1})
+    }
+
     cuentas = []
 
     total_debe = 0.0
@@ -1244,11 +1253,12 @@ async def balanza_comprobacion(
         total_debe += debe
         total_haber += haber
 
+        en_catalogo = catalogo.get(str(movimiento["_id"]), {})
         cuentas.append(
             {
                 "cuenta_id": str(movimiento["_id"]),
-                "codigo": movimiento.get("codigo"),
-                "nombre": movimiento.get("nombre"),
+                "codigo": movimiento.get("codigo") or en_catalogo.get("codigo"),
+                "nombre": movimiento.get("nombre") or en_catalogo.get("nombre"),
                 "debe": debe,
                 "haber": haber,
                 "saldo": round(debe - haber, 2),
@@ -1271,6 +1281,88 @@ async def balanza_comprobacion(
 # ============================================================
 # SPRINT 3 — ESTADO DE RESULTADOS
 # ============================================================
+
+@router.get("/reportes/ventas-periodo")
+async def ventas_periodo(
+    negocio_id: str,
+    periodo: str | None = None,
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Movimientos de venta del periodo: ventas de mostrador y pedidos no cancelados.
+    Los días se agrupan en la zona horaria del negocio.
+    """
+    verificar_acceso(current_user, negocio_id)
+
+    zona = ZoneInfo(settings.ZONA_HORARIA)
+    if periodo:
+        anio, mes = (int(p) for p in periodo.split("-"))
+    else:
+        hoy = datetime.now(zona)
+        anio, mes = hoy.year, hoy.month
+        periodo = f"{anio:04d}-{mes:02d}"
+    inicio_local = datetime(anio, mes, 1, tzinfo=zona)
+    fin_local = datetime(anio + (mes // 12), mes % 12 + 1, 1, tzinfo=zona)
+    inicio = inicio_local.astimezone(timezone.utc)
+    fin = fin_local.astimezone(timezone.utc)
+
+    def en_utc(valor) -> datetime | None:
+        # Mongo devuelve datetimes sin zona; algunos pedidos guardan created_at como texto ISO
+        if isinstance(valor, str):
+            valor = datetime.fromisoformat(valor.replace("Z", "+00:00"))
+        if not isinstance(valor, datetime):
+            return None
+        return valor.replace(tzinfo=timezone.utc) if valor.tzinfo is None else valor.astimezone(timezone.utc)
+
+    def dia_local(fecha: datetime) -> date:
+        return fecha.astimezone(zona).date()
+
+    movimientos = []
+    async for v in db.ventas_mostrador.find({"negocio_id": negocio_id, "estado": "completada"}):
+        fecha = en_utc(v.get("fecha"))
+        if fecha is None or not (inicio <= fecha < fin):
+            continue
+        movimientos.append({
+            "canal": "mostrador", "referencia": v["folio"], "fecha": fecha,
+            "total": round(float(v["total"]), 2), "detalle": v["metodo_pago"],
+        })
+    async for p in db.pedidos.find({"negocio_id": negocio_id, "estado": {"$not": {"$regex": "cancel"}}}):
+        fecha = en_utc(p.get("created_at"))
+        if fecha is None or not (inicio <= fecha < fin):
+            continue
+        movimientos.append({
+            "canal": "pedido", "referencia": p.get("numero", ""), "fecha": fecha,
+            "total": round(float(p.get("total") or 0), 2), "detalle": p.get("estado", ""),
+        })
+
+    por_dia: dict[str, dict] = {}
+    por_canal = {"mostrador": 0.0, "pedido": 0.0}
+    for m in movimientos:
+        clave = dia_local(m["fecha"]).isoformat()
+        dia = por_dia.setdefault(clave, {"fecha": clave, "mostrador": 0.0, "pedido": 0.0, "total": 0.0, "cantidad": 0})
+        dia[m["canal"]] = round(dia[m["canal"]] + m["total"], 2)
+        dia["total"] = round(dia["total"] + m["total"], 2)
+        dia["cantidad"] += 1
+        por_canal[m["canal"]] = round(por_canal[m["canal"]] + m["total"], 2)
+
+    total = round(sum(m["total"] for m in movimientos), 2)
+    movimientos.sort(key=lambda m: m["fecha"], reverse=True)
+    return {
+        "negocio_id": negocio_id,
+        "periodo": periodo,
+        "dias": sorted(por_dia.values(), key=lambda d: d["fecha"]),
+        "totales": {
+            "total": total,
+            "cantidad": len(movimientos),
+            "ticket_promedio": round(total / len(movimientos), 2) if movimientos else 0.0,
+            "por_canal": por_canal,
+        },
+        "movimientos": [
+            {**m, "fecha": dia_local(m["fecha"]).isoformat()} for m in movimientos[:1000]
+        ],
+    }
+
 
 @router.get("/reportes/estado-resultados")
 async def estado_resultados(

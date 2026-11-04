@@ -11,7 +11,8 @@ VALORES_QUERY = {"mes": "2026-10", "fecha": "2031-01-01"}
 def _listados():
     for ruta, ops in app.openapi()["paths"].items():
         get = ops.get("get")
-        if not get or "{" in ruta or ruta.startswith("/api/portal") or ruta == "/auth/me":
+        # por-codigo es una búsqueda puntual: 404 si el código no existe; tiene sus propias pruebas
+        if not get or "{" in ruta or ruta.startswith("/api/portal") or ruta in ("/auth/me", "/api/mostrador/productos/por-codigo"):
             continue
         requeridos = [
             p["name"] for p in get.get("parameters", [])

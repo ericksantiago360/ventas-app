@@ -121,7 +121,7 @@ class Mercancia(BaseModel):
     clave_unidad: str = "H87"                # c_ClaveUnidad de la cantidad
     peso_kg: float = Field(ge=0.001)         # PesoEnKg del total de esa línea
     valor_mercancia: Optional[float] = Field(default=None, ge=0)
-    moneda: Literal["MXN", "USD"] = "MXN"
+    moneda: Literal["MXN", "USD", "EUR"] = "MXN"
     material_peligroso: Optional[bool] = None
     cve_material_peligroso: str = ""         # c_MaterialPeligroso
     embalaje: str = ""                       # c_TipoEmbalaje
@@ -207,3 +207,15 @@ class CambioEstado(BaseModel):
 
 class Cancelacion(BaseModel):
     motivo: str = Field(min_length=1, max_length=500)
+
+
+class CancelacionSAT(BaseModel):
+    """Cancelación del CFDI ante el SAT: 01 con relación (requiere folio fiscal que sustituye), 02 sin relación, 03 no se llevó a cabo, 04 nominativa en factura global."""
+    motivo: Literal["01", "02", "03", "04"] = "02"
+    folio_sustitucion: str = Field(default="", max_length=36)
+
+    @model_validator(mode="after")
+    def sustitucion_con_motivo_01(self):
+        if self.motivo == "01" and not self.folio_sustitucion:
+            raise ValueError("Con motivo 01 indica el UUID del comprobante que lo sustituye")
+        return self

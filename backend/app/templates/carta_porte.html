@@ -8,7 +8,7 @@
     size: letter;
     margin: 12mm 12mm 16mm;
     @bottom-left {
-      content: "Carta Porte {{ c.folio }} · Documento interno sin timbre fiscal";
+      content: "{% if timbrado.uuid %}Carta Porte {{ c.folio }} · Folio fiscal {{ timbrado.uuid }}{% else %}Carta Porte {{ c.folio }} · Documento interno sin timbre fiscal{% endif %}";
       font-size: 7pt; color: #94a3b8; font-family: Helvetica, Arial, sans-serif;
     }
     @bottom-right {
@@ -87,7 +87,7 @@
       <div class="dato">Estado: {{ c.estado | replace("_", " ") | capitalize }}</div>
     </div>
   </div>
-  <div class="banner">DOCUMENTO INTERNO — SIN TIMBRE FISCAL</div>
+  {% if not timbrado.uuid %}<div class="banner">DOCUMENTO INTERNO — SIN TIMBRE FISCAL</div>{% endif %}
   {% if c.estado == "cancelado" %}<div class="cancelado">Cancelada: {{ c.motivo_cancelacion }}</div>{% endif %}
 
   <h2>Emisor</h2>
@@ -186,12 +186,23 @@
   {% if c.observaciones %}<h2>Observaciones</h2><div class="caja">{{ c.observaciones }}</div>{% endif %}
 
   <div class="pie">
+    {% if timbrado.uuid %}
+    <div class="qr">{% if qr %}<img src="{{ qr }}" alt="Verificar en el SAT" style="width: 92px; height: 92px;">{% endif %}</div>
+    <div class="leyenda">
+      <b>Comprobante Fiscal Digital por Internet (CFDI) con complemento Carta Porte 3.1.</b><br>
+      <span class="idccp">Folio fiscal (UUID): {{ timbrado.uuid }}</span><br>
+      Fecha de certificación: {{ timbrado.fecha_timbrado }} · Certificado SAT: {{ timbrado.no_certificado_sat }}<br>
+      Verificable en el portal del SAT con el código QR.
+      <span class="idccp">IdCCP {{ c.id_ccp }}</span>
+    </div>
+    {% else %}
     <div class="qr"><div>Código QR del SAT<br>(disponible al timbrar)</div></div>
     <div class="leyenda">
       <b>Este documento es una representación impresa interna.</b><br>
       Para timbrado fiscal ante el SAT se requiere CSD y PAC autorizado. No ampara el traslado como CFDI mientras no tenga folio fiscal (UUID).<br>
       <span class="idccp">IdCCP {{ c.id_ccp }}</span>
     </div>
+    {% endif %}
   </div>
 </body>
 </html>

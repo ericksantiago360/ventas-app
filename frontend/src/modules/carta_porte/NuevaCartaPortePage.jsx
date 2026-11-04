@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useNegocio } from '../../context/NegocioContext'
 import useEsMovil from '../../hooks/useEsMovil'
 import EmisorModal from './EmisorModal'
+import { MONEDAS } from '../../constants/catalogos'
 import {
   req, qs, s, Campo, Chip, ChipVence, useCatalogos, descripcion, DomicilioForm, DOMICILIO_VACIO, textoDomicilio,
   aInputFecha, desdeInputFecha,
@@ -165,7 +166,16 @@ function PasoMercancias({ datos, setDatos, negocioId, cat }) {
               <Campo label="Peso total (kg) *"><input style={s.input} type="number" min={0} step="0.001" inputMode="decimal" value={m.peso_kg} onChange={e => setM(i, { peso_kg: e.target.value })} /></Campo>
               <Campo label="Valor"><input style={s.input} type="number" min={0} step="0.01" inputMode="decimal" value={m.valor_mercancia} onChange={e => setM(i, { valor_mercancia: e.target.value })} /></Campo>
               <Campo label="Moneda">
-                <select style={s.input} value={m.moneda} onChange={e => setM(i, { moneda: e.target.value })}><option>MXN</option><option>USD</option></select>
+                <select style={s.input} value={m.moneda} onChange={e => setM(i, { moneda: e.target.value })}>
+                  {MONEDAS.map(mon => <option key={mon.value} value={mon.value}>{mon.label}</option>)}
+                </select>
+                {m.moneda !== 'MXN' && (
+                  <p style={{fontSize:'.8rem', color:'var(--color-warning, #92400E)', marginTop:4}}>
+                    💱 Tipo de cambio no incluido — el monto se registra en {m.moneda} tal como
+                    se capture. Verifica la paridad al emitir la factura (SAT requiere tipo de cambio
+                    en CFDI con moneda extranjera).
+                  </p>
+                )}
               </Campo>
               {datos.destinos.length > 1 && (
                 <Campo label="Va al destino *">

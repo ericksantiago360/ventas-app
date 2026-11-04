@@ -1,12 +1,14 @@
+import re
 from datetime import date, datetime, timezone
 from typing import Literal, Optional, List
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.database import get_db
 from app.core.negocios import verificar_acceso
+from app.routers.contabilidad import generar_numero_poliza
 from app.core.security import get_current_user, require_admin
 from app.modules.nomina.constants import (
     AGUINALDO_DIAS, PRIMA_VACACIONAL, SALARIO_MINIMO_DIARIO, SBC_TOPE_DIARIO,
@@ -133,7 +135,8 @@ async def recalcular_recibos_pendientes(db, negocio_id: str, empleado_id: Option
 
         for recibo in recibos:
             emp = await db.empleados.find_one({"_id": validar_oid(recibo["empleado_id"])})
-            if not emp:
+            # Empleados dados de baja: su recibo se conserva tal cual, sin recalcular
+            if not emp or not emp.get("activo", True):
                 continue
             auto = calcular_recibo(emp, periodo, prestaciones)
             for tipo in ("percepciones", "deducciones"):
@@ -180,6 +183,27 @@ class LineaConcepto(BaseModel):
     monto: float = Field(ge=0)
 
 
+# Formatos de identificadores fiscales/bancarios. Vacío = no capturado (válido).
+FORMATOS_IDENTIFICADORES = {
+    "rfc":   (re.compile(r"^[A-ZÑ&]{3,4}\d{6}[A-Z\d]{3}$"), "RFC inválido", True),
+    "curp":  (re.compile(r"^[A-Z][AEIOU][A-Z]{2}\d{6}[HM][A-Z]{2}[B-DF-HJ-NP-TV-Z]{3}[A-Z\d]\d$"), "CURP inválida", True),
+    "nss":   (re.compile(r"^\d{11}$"), "NSS debe tener 11 dígitos", False),
+    "clabe": (re.compile(r"^\d{18}$"), "CLABE debe tener 18 dígitos", False),
+}
+
+
+def _validar_identificador(campo: str, valor):
+    if valor is None or valor == "":
+        return valor
+    patron, mensaje, mayusculas = FORMATOS_IDENTIFICADORES[campo]
+    texto = str(valor).strip()
+    if mayusculas:
+        texto = texto.upper()
+    if not patron.match(texto):
+        raise ValueError(mensaje)
+    return texto
+
+
 class EmpleadoCreate(BaseModel):
     negocio_id: str
     nombre: str
@@ -199,6 +223,11 @@ class EmpleadoCreate(BaseModel):
     email: str = ""
     telefono: str = ""
 
+    @field_validator("rfc", "curp", "nss", "clabe", mode="before")
+    @classmethod
+    def _formato_identificador(cls, v, info):
+        return _validar_identificador(info.field_name, v)
+
 
 class EmpleadoUpdate(BaseModel):
     nombre: Optional[str] = None
@@ -217,6 +246,11 @@ class EmpleadoUpdate(BaseModel):
     clabe: Optional[str] = None
     email: Optional[str] = None
     telefono: Optional[str] = None
+
+    @field_validator("rfc", "curp", "nss", "clabe", mode="before")
+    @classmethod
+    def _formato_identificador(cls, v, info):
+        return _validar_identificador(info.field_name, v)
 
 
 class PeriodoCreate(BaseModel):
@@ -256,11 +290,12 @@ async def listar_empleados(
     if solo_activos:
         filtro["activo"] = True
     if busqueda.strip():
+        patron = re.escape(busqueda.strip())
         filtro["$or"] = [
-            {"nombre": {"$regex": busqueda.strip(), "$options": "i"}},
-            {"apellido_paterno": {"$regex": busqueda.strip(), "$options": "i"}},
-            {"puesto": {"$regex": busqueda.strip(), "$options": "i"}},
-            {"departamento": {"$regex": busqueda.strip(), "$options": "i"}},
+            {"nombre": {"$regex": patron, "$options": "i"}},
+            {"apellido_paterno": {"$regex": patron, "$options": "i"}},
+            {"puesto": {"$regex": patron, "$options": "i"}},
+            {"departamento": {"$regex": patron, "$options": "i"}},
         ]
     items = await db.empleados.find(filtro).sort([("apellido_paterno", 1), ("nombre", 1)]).to_list(500)
     return [serializar(i) for i in items]
@@ -311,7 +346,7 @@ async def actualizar_empleado(
 async def desactivar_empleado(
     id: str,
     db=Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_admin),
 ):
     oid = validar_oid(id)
     doc = await db.empleados.find_one({"_id": oid})
@@ -321,6 +356,24 @@ async def desactivar_empleado(
     await db.empleados.update_one(
         {"_id": oid},
         {"$set": {"activo": False, "updated_at": datetime.now(timezone.utc)}},
+    )
+    return {"ok": True}
+
+
+@router.patch("/empleados/{id}/reactivar")
+async def reactivar_empleado(
+    id: str,
+    db=Depends(get_db),
+    user=Depends(require_admin),
+):
+    oid = validar_oid(id)
+    doc = await db.empleados.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(404, "Empleado no encontrado")
+    verificar_acceso(user, doc["negocio_id"])
+    await db.empleados.update_one(
+        {"_id": oid},
+        {"$set": {"activo": True, "updated_at": datetime.now(timezone.utc)}},
     )
     return {"ok": True}
 
@@ -485,12 +538,116 @@ async def reabrir_periodo(
     if not periodo:
         raise HTTPException(404, "Período no encontrado")
     verificar_acceso(user, periodo["negocio_id"])
+    if periodo["estado"] == "borrador":
+        raise HTTPException(400, "El período ya está en borrador")
+    if periodo["estado"] not in ("calculado", "cerrado"):
+        raise HTTPException(400, f"No se puede reabrir un período en estado '{periodo['estado']}'")
     doc = await db.nomina_periodos.find_one_and_update(
         {"_id": oid},
         {"$set": {"estado": "calculado", "updated_at": datetime.now(timezone.utc)}},
         return_document=True,
     )
     return serializar(doc)
+
+
+# ── Póliza contable de nómina ─────────────────────────────────────────────────
+
+# Cuentas del catálogo contable que usa la póliza de nómina
+CUENTA_GASTO_NOMINA  = "6400"  # Nómina (debe)
+CUENTA_RETENCIONES   = "2130"  # Impuestos por pagar: IMSS e ISR retenidos (haber)
+CUENTA_NOMINA_PAGAR  = "2140"  # Nómina por pagar: neto a los empleados (haber)
+
+
+@router.post("/nomina/periodos/{id}/poliza", status_code=201)
+async def generar_poliza_nomina(
+    id: str,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Genera una póliza de diario en borrador con los totales del período de nómina.
+    Queda en borrador para revisarla y contabilizarla en el módulo de Contabilidad.
+    """
+    oid = validar_oid(id)
+    periodo = await db.nomina_periodos.find_one({"_id": oid})
+    if not periodo:
+        raise HTTPException(404, "Período no encontrado")
+    verificar_acceso(user, periodo["negocio_id"])
+    if periodo["estado"] == "borrador":
+        raise HTTPException(400, "Calcula la nómina antes de generar la póliza")
+
+    negocio_id = periodo["negocio_id"]
+    existente = await db.polizas_contables.find_one(
+        {"negocio_id": negocio_id, "referencia_tipo": "nomina", "referencia_id": id}
+    )
+    if existente:
+        raise HTTPException(409, f"Ya existe la póliza {existente['numero']} para este período")
+
+    total_p = round(float(periodo.get("total_percepciones", 0)), 2)
+    total_d = round(float(periodo.get("total_deducciones", 0)), 2)
+    neto    = round(total_p - total_d, 2)
+    if total_p <= 0:
+        raise HTTPException(400, "El período no tiene percepciones que contabilizar")
+
+    # El período contable es el mes de la fecha fin del período de nómina
+    periodo_contable = periodo["fecha_fin"][:7]
+    pc = await db.periodos_contables.find_one({"negocio_id": negocio_id, "periodo": periodo_contable})
+    if not pc:
+        raise HTTPException(400, f"El periodo contable {periodo_contable} no existe")
+    if pc.get("estado") != "abierto":
+        raise HTTPException(400, f"El periodo contable {periodo_contable} está cerrado; ábrelo en Contabilidad para generar la póliza")
+
+    cuentas = {}
+    for codigo in (CUENTA_GASTO_NOMINA, CUENTA_RETENCIONES, CUENTA_NOMINA_PAGAR):
+        cuenta = await db.catalogo_cuentas.find_one({"negocio_id": negocio_id, "codigo": codigo, "activo": True})
+        if not cuenta:
+            raise HTTPException(400, f"Falta la cuenta {codigo} en el catálogo contable")
+        cuentas[codigo] = cuenta
+
+    lineas = [(CUENTA_GASTO_NOMINA, total_p, 0.0), (CUENTA_RETENCIONES, 0.0, total_d), (CUENTA_NOMINA_PAGAR, 0.0, neto)]
+    lineas = [(c, d, h) for c, d, h in lineas if d > 0 or h > 0]
+    total_haber = round(sum(h for _, _, h in lineas), 2)
+
+    numero = await generar_numero_poliza(db, negocio_id, "diario")
+    now = datetime.now(timezone.utc)
+    fecha = datetime.fromisoformat(periodo["fecha_fin"][:10])
+    result = await db.polizas_contables.insert_one({
+        "negocio_id":       negocio_id,
+        "numero":           numero,
+        "tipo":             "diario",
+        "fecha":            fecha,
+        "periodo":          periodo_contable,
+        "concepto":         f"Nómina {periodo['nombre']}",
+        "referencia_tipo":  "nomina",
+        "referencia_id":    id,
+        "estado":           "borrador",
+        "total_debe":       total_p,
+        "total_haber":      total_haber,
+        "usuario_creacion": str(user.get("_id") or user.get("id") or ""),
+        "created_at":       now,
+        "updated_at":       now,
+    })
+    poliza_id = str(result.inserted_id)
+
+    for linea, (codigo, debe, haber) in enumerate(lineas, start=1):
+        cuenta = cuentas[codigo]
+        await db.movimientos_contables.insert_one({
+            "negocio_id":    negocio_id,
+            "poliza_id":     poliza_id,
+            "linea":         linea,
+            "cuenta_id":     str(cuenta["_id"]),
+            "codigo_cuenta": cuenta.get("codigo"),
+            "nombre_cuenta": cuenta.get("nombre"),
+            "concepto":      f"Nómina {periodo['nombre']}",
+            "debe":          debe,
+            "haber":         haber,
+            "created_at":    now,
+        })
+
+    return {
+        "id": poliza_id, "numero": numero, "periodo": periodo_contable,
+        "total_debe": total_p, "total_haber": total_haber,
+    }
 
 
 # ── Recibos de nómina ─────────────────────────────────────────────────────────

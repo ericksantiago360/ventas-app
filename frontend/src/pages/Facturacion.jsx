@@ -199,6 +199,34 @@ export default function Facturacion() {
     accion(`/api/facturacion/facturas/${f.id}/cancelar`, { body: JSON.stringify({ motivo }) }, () => 'Factura cancelada')
   }
 
+  function timbrar(f) {
+    if (!window.confirm(`Timbrar ${f.folio} ante el SAT. Una vez timbrada ya no se puede editar.`)) return
+    accion(`/api/facturacion/facturas/${f.id}/timbrar`, {}, (r) => `Factura ${r.folio} timbrada`)
+  }
+
+  function cancelarSat(f) {
+    const motivo = window.prompt('Motivo de cancelación ante el SAT:\n01 Con relación (la sustituye otro CFDI)\n02 Sin relación\n03 No se llevó a cabo la operación\n04 Operación nominativa en factura global', '02')
+    if (motivo === null) return
+    if (!['01', '02', '03', '04'].includes(motivo.trim())) { setError('El motivo debe ser 01, 02, 03 o 04'); return }
+    let folio = ''
+    if (motivo.trim() === '01') {
+      folio = window.prompt('UUID del CFDI que sustituye a esta factura:') ?? ''
+      if (!folio.trim()) return
+    }
+    accion(`/api/facturacion/facturas/${f.id}/cancelar-timbre`,
+      { body: JSON.stringify({ motivo: motivo.trim(), folio_sustitucion: folio.trim() }) },
+      (r) => r.estado === 'cancelada' ? `Factura ${r.folio} cancelada ante el SAT` : 'Cancelación enviada al SAT; aún no está confirmada')
+  }
+
+  async function descargarXmlTimbrado(f) {
+    const token = localStorage.getItem('token')
+    const res = await fetch(`/api/facturacion/facturas/${f.id}/xml-timbrado`, { headers: { Authorization: `Bearer ${token}` } })
+    if (!res.ok) { setError('No se pudo descargar el XML timbrado'); return }
+    const url = URL.createObjectURL(await res.blob())
+    const a = Object.assign(document.createElement('a'), { href: url, download: `factura-${f.folio}-timbrada.xml` })
+    a.click(); setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  }
+
   async function eliminarBorrador(f) {
     if (!window.confirm('¿Eliminar este borrador?')) return
     try {
@@ -537,7 +565,14 @@ export default function Facturacion() {
                 <button style={{ ...s.btn('ghost'), color: '#b91c1c' }} onClick={() => eliminarBorrador(detalle)}>Eliminar</button>
                 <button style={s.btn()} onClick={() => emitir(detalle)}>Emitir factura</button>
               </>}
-              {detalle.estado === 'emitida' && !detalle.pagos?.length && (
+              {['emitida', 'pagada'].includes(detalle.estado) && !detalle.uuid && (
+                <button style={s.btn()} onClick={() => timbrar(detalle)}>Timbrar ante el SAT</button>
+              )}
+              {detalle.uuid && <button style={s.btn('ghost')} onClick={() => descargarXmlTimbrado(detalle)}>XML timbrado</button>}
+              {detalle.uuid && detalle.estado !== 'cancelada' && (
+                <button style={{ ...s.btn('ghost'), color: '#b91c1c' }} onClick={() => cancelarSat(detalle)}>Cancelar ante el SAT</button>
+              )}
+              {detalle.estado === 'emitida' && !detalle.pagos?.length && !detalle.uuid && (
                 <button style={{ ...s.btn('ghost'), color: '#b91c1c' }} onClick={() => cancelar(detalle)}>Cancelar</button>
               )}
               <button style={s.btn('success')} onClick={() => pdf(detalle.id)}>PDF</button>
@@ -616,6 +651,9 @@ export default function Facturacion() {
               </div>
             </div>
             {detalle.notas && <div style={{ marginTop: 10, fontSize: 13, color: '#475569' }}><b>Notas:</b> {detalle.notas}</div>}
+            {detalle.uuid && <div style={{ fontSize: 13, marginTop: 12, color: '#15803d' }}>
+              Timbrada · Folio fiscal <span style={{ fontFamily: 'monospace' }}>{detalle.uuid}</span> · Estado en el SAT: {detalle.estado_sat}
+            </div>}
             {detalle.estado === 'cancelada' && <div style={{ ...s.err, marginTop: 12, marginBottom: 0 }}>Cancelada{detalle.motivo_cancelacion ? `: ${detalle.motivo_cancelacion}` : ''}</div>}
           </div>
 

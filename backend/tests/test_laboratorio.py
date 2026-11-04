@@ -88,6 +88,13 @@ def test_factura_desde_orden_una_sola_vez(client, admin, orden_validada):
     assert client.post(url, headers=admin).status_code in (400, 409)
 
 
+def test_factura_desde_orden_paciente_id(client, admin, paciente, orden_validada):
+    r = client.post(f"/api/facturacion/desde-orden/{orden_validada}", headers=admin, params={"emitir": True})
+    assert r.status_code == 201, r.text
+    factura = datos(client.get(f"/api/facturacion/facturas/{id_de(r.json())}", headers=admin).json())
+    assert factura["paciente_id"] == paciente
+
+
 def test_portal_del_paciente(client, admin, paciente, orden_validada):
     r = client.post(f"/api/pacientes/pacientes/{paciente}/portal/enlace", headers=admin)
     assert r.status_code == 200, r.text

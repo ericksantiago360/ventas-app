@@ -2,7 +2,7 @@
 XML del CFDI 4.0 de tipo Traslado con complemento Carta Porte 3.1 (traslado propio).
 
 Sin sello, certificado ni timbre: Sello, NoCertificado y Certificado van vacíos y se
-llenan al integrar CSD y PAC (pac_stub.py). Estructura y tipos siguen los XSD oficiales
+llenan al timbrar (app/modules/timbrado). Estructura y tipos siguen los XSD oficiales
 (cfdv40.xsd y CartaPorte31.xsd); tests/test_carta_porte.py valida contra ellos.
 
 Traslado propio: el negocio es emisor y receptor (UsoCFDI S01, sin efectos fiscales) y

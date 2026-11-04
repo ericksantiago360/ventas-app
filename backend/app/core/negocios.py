@@ -69,3 +69,21 @@ async def validar_referencia(coleccion, ref_id, negocio_id: str, nombre: str) ->
     if not doc:
         raise HTTPException(404, f"{nombre}: no existe en este negocio")
     return doc
+
+
+async def validar_cliente_unificado(coleccion, ref_id, nombre: str) -> dict | None:
+    """
+    Cliente unificado (SPEC §9): el documento del cliente no tiene negocio_id.
+    El negocio lo aporta el documento que lo referencia (cotización, pedido, ...),
+    así que aquí solo se valida que el cliente exista (404) y no esté dado de baja (422).
+    """
+    if not ref_id:
+        return None
+    if not ObjectId.is_valid(str(ref_id)):
+        raise HTTPException(400, f"{nombre}: ID inválido")
+    doc = await coleccion.find_one({"_id": ObjectId(str(ref_id))})
+    if not doc:
+        raise HTTPException(404, f"{nombre}: no existe")
+    if not doc.get("activo", True):
+        raise HTTPException(422, f"{nombre}: está dado de baja y no se puede referenciar")
+    return doc

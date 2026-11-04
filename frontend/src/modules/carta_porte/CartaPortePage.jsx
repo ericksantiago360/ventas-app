@@ -71,7 +71,7 @@ export default function CartaPortePage() {
           <button style={{ ...s.btn(), whiteSpace: 'nowrap' }} onClick={() => navigate('/carta-porte/nueva')}>+ Nueva carta porte</button>
         </div>
       </div>
-      <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>Traslado propio de mercancía. Documentos internos, sin timbre fiscal.</div>
+      <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>Traslado propio de mercancía. Se timbran ante el SAT cuando están listas para salir.</div>
 
       {emisor && !emisor.configurado && (
         <div style={{ ...s.err, display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>

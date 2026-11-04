@@ -74,6 +74,40 @@ export default function CartaPorteDetalle() {
     a.click(); setTimeout(() => URL.revokeObjectURL(url), 10_000)
   }
 
+  async function timbrar() {
+    if (!window.confirm(`Timbrar ${c.folio} ante el SAT. Una vez timbrada ya no se puede editar.`)) return
+    setOcupado(true); setError('')
+    try { setC(await req(`/api/carta-porte/${id}/timbrar`, { method: 'POST' })) }
+    catch (e) { setError(e.message) }
+    finally { setOcupado(false) }
+  }
+
+  async function cancelarSat() {
+    const motivo = window.prompt('Motivo de cancelación ante el SAT:\n01 Con relación (la sustituye otro CFDI)\n02 Sin relación\n03 No se llevó a cabo la operación\n04 Operación nominativa en factura global', '02')
+    if (motivo === null) return
+    if (!['01', '02', '03', '04'].includes(motivo.trim())) { setError('El motivo debe ser 01, 02, 03 o 04'); return }
+    let folio = ''
+    if (motivo.trim() === '01') {
+      folio = window.prompt('UUID del CFDI que sustituye a este:') ?? ''
+      if (!folio.trim()) return
+    }
+    setOcupado(true); setError('')
+    try {
+      setC(await req(`/api/carta-porte/${id}/cancelar-timbre`, {
+        method: 'POST', body: JSON.stringify({ motivo: motivo.trim(), folio_sustitucion: folio.trim() }),
+      }))
+    } catch (e) { setError(e.message) }
+    finally { setOcupado(false) }
+  }
+
+  async function descargarXmlTimbrado() {
+    const res = await fetch(`/api/carta-porte/${id}/xml-timbrado`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+    if (!res.ok) { setError('No se pudo descargar el XML timbrado'); return }
+    const url = URL.createObjectURL(await res.blob())
+    const a = Object.assign(document.createElement('a'), { href: url, download: `carta-porte-${c.folio}-timbrada.xml` })
+    a.click(); setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  }
+
   if (!c) return <div style={{ color: error ? '#b91c1c' : '#94a3b8' }}>{error || 'Cargando…'}</div>
   const v = c.vehiculo_snapshot
   const caja = { ...s.card, padding: esMovil ? 14 : '16px 20px' }
@@ -96,7 +130,7 @@ export default function CartaPorteDetalle() {
           {(SIGUIENTE[c.estado] || []).map(([estado, texto, variante]) => (
             <button key={estado} style={s.btn(variante)} disabled={ocupado} onClick={() => cambiar(estado)}>{texto}</button>
           ))}
-          {!['entregado', 'cancelado'].includes(c.estado) && (
+          {!['entregado', 'cancelado'].includes(c.estado) && !c.timbrado?.uuid && (
             <button style={{ ...s.btn('ghost'), color: '#b91c1c' }} disabled={ocupado} onClick={cancelar}>Cancelar</button>
           )}
         </div>
@@ -176,13 +210,26 @@ export default function CartaPorteDetalle() {
           </div>
         </div>
 
-        <div style={{ ...caja, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', background: '#f8fafc' }}>
+        <div style={{ ...caja, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', background: c.timbrado?.uuid ? '#f0fdf4' : '#f8fafc' }}>
           <div style={{ flex: 1, minWidth: 220 }}>
             <div style={{ ...s.sect, marginTop: 0 }}>Timbrado SAT</div>
-            <div style={{ fontSize: 13 }}><b>Pendiente — requiere PAC.</b> El XML y el PDF son internos, sin sello ni folio fiscal.</div>
-            <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Para timbrar se necesitan el CSD del negocio y un contrato con un PAC autorizado.</div>
+            {c.timbrado?.uuid ? (<>
+              <div style={{ fontSize: 13 }}><b>Timbrada.</b> Folio fiscal <span style={{ fontFamily: 'monospace' }}>{c.timbrado.uuid}</span></div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Timbrada {fechaHora(c.timbrado.fecha_timbrado)} · Estado en el SAT: {c.timbrado.estado_sat}</div>
+            </>) : c.estado === 'listo' ? (
+              <div style={{ fontSize: 13 }}><b>Lista para timbrar.</b> Se firma con el CSD del negocio y se registra ante el SAT.</div>
+            ) : (
+              <div style={{ fontSize: 13 }}>Se timbra cuando la carta porte esté <b>lista</b> para salir.</div>
+            )}
           </div>
-          <button style={s.btn()} disabled title="Disponible cuando se integre un PAC">Timbrar</button>
+          {c.timbrado?.uuid ? (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button style={s.btn('ghost')} onClick={descargarXmlTimbrado}>XML timbrado</button>
+              {c.estado !== 'cancelado' && <button style={{ ...s.btn('ghost'), color: '#b91c1c' }} disabled={ocupado} onClick={cancelarSat}>Cancelar ante el SAT</button>}
+            </div>
+          ) : c.estado === 'listo' && (
+            <button style={s.btn()} disabled={ocupado} onClick={timbrar}>Timbrar ante el SAT</button>
+          )}
         </div>
 
         {c.historial?.length > 0 && (

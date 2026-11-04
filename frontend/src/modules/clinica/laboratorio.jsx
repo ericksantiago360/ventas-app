@@ -232,6 +232,7 @@ function RangoModal({ negocioId, parametro, cerrar, onGuardado }) {
   const celda = { ...s.input, padding: '6px 8px' }
   return (
     <ModalFormulario titulo={parametro ? `Editar ${parametro.parametro}` : 'Nuevo parámetro'}
+      editando={Boolean(parametro)} entidad={parametro ? `el parámetro ${parametro.parametro}` : undefined}
       subtitulo="Los cambios aplican a órdenes nuevas; las ya creadas conservan su rango"
       ancho={860} error={error} cerrar={cerrar} onSubmit={guardar} guardando={guardando} textoGuardar="Guardar">
       <div style={s.grid(200)}>

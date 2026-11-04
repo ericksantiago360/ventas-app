@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import VariantesProducto from '../components/VariantesProducto'
+import GaleriaProducto from '../components/GaleriaProducto'
+import ListasPrecios from '../components/ListasPrecios'
 import Categorias from '../components/Categorias'
 import { useNegocio } from '../context/NegocioContext'
+import { AvisoEdicion, BadgeEdicion, estiloCabeceraEdicion, estiloPanelEdicion } from '../components/ModoEdicion'
+import { useSmartDefaults, elegirClaves, setLastUsed } from '../hooks/useSmartDefaults'
+import { MONEDAS } from '../constants/catalogos'
 
 const api = axios.create({
   baseURL: '',
@@ -50,27 +55,13 @@ export default function Catalogo() {
   const [mostrarFormulario, setMostrarFormulario] = useState(false)
   const [productoEditando, setProductoEditando] = useState(null)
   const [productoVariantes, setProductoVariantes] = useState(null)
+  const [subiendoImagen, setSubiendoImagen] = useState(false)
+  const [mostrarListas, setMostrarListas] = useState(false)
+  // Stock actual del ítem de inventario ligado (solo lectura al editar un producto con control)
+  const [stockActual, setStockActual] = useState(null)
 
-
-  const [form, setForm] = useState({
-    codigo: '',
-    sku: '',
-    nombre: '',
-    descripcion: '',
-    tipo: 'producto',
-    categoria_id: '',
-    unidad: 'pieza',
-    activo: true,
-    costo: '',
-    precio_base: '',
-    iva_aplicable: true,
-    iva_pct: 16,
-    moneda: 'MXN',
-    control_inventario: true,
-    permite_variantes: false,
-    especificaciones: {},
-    metadata: {},
-  })
+  const { defaultsProducto } = useSmartDefaults()
+  const [form, setForm] = useState(formularioNuevoProducto)
 
   useEffect(() => {
     cargarCatalogo()
@@ -116,11 +107,122 @@ export default function Catalogo() {
     )
   }, [productos, busqueda])
 
+  // Formulario de alta: valores base + sugerencias (último tipo y categoría usados).
+  // La categoría sugerida solo se usa si todavía existe en el catálogo.
+  function formularioNuevoProducto() {
+    const base = {
+      codigo: '',
+      sku: '',
+      nombre: '',
+      descripcion: '',
+      tipo: 'producto',
+      categoria_id: '',
+      unidad: 'pieza',
+      activo: true,
+      costo: '',
+      precio_base: '',
+      iva_aplicable: true,
+      iva_pct: 16,
+      moneda: 'MXN',
+      control_inventario: true,
+      stock_inicial: 0,
+      permite_variantes: false,
+      especificaciones: {},
+      metadata: {},
+    }
+    const sugeridos = elegirClaves(defaultsProducto(), Object.keys(base))
+    if (sugeridos.categoria_id && !categorias.some(c => (c._id || c.id) === sugeridos.categoria_id)) {
+      sugeridos.categoria_id = ''
+    }
+    return { ...base, ...sugeridos }
+  }
+
   function actualizarCampo(campo, valor) {
     setForm((actual) => ({
       ...actual,
       [campo]: valor,
     }))
+  }
+
+  // Galería: `medios` es la lista ordenada (imágenes y videos); el primero es el principal
+  const mediosDe = (p) => {
+    if (p?.medios) return p.medios
+    if (p?.imagenes) return p.imagenes.map((u, i) => ({ id: `img-${i}`, tipo: 'imagen', url: u }))
+    return p?.imagen ? [{ id: 'img-0', tipo: 'imagen', url: p.imagen }] : []
+  }
+
+  async function agregarYoutubeProducto(url) {
+    const productoId = productoEditando._id || productoEditando.id
+    const res = await api.post(
+      `/api/catalogo/productos/${productoId}/medios/youtube?negocio_id=${encodeURIComponent(negocioId)}`,
+      { url }
+    )
+    setProductoEditando(prev => ({ ...prev, imagen: res.data.data.imagen, medios: res.data.data.medios }))
+    await cargarCatalogo()
+  }
+
+  async function subirImagenesProducto(archivos) {
+    if (!archivos?.length || !productoEditando) return
+
+    const productoId = productoEditando._id || productoEditando.id
+
+    try {
+      setError('')
+      setSubiendoImagen(true)
+
+      for (const archivo of archivos) {
+        const datos = new FormData()
+        datos.append('archivo', archivo)
+
+        const res = await api.post(
+          `/api/catalogo/productos/${productoId}/imagenes?negocio_id=${encodeURIComponent(negocioId)}`,
+          datos
+        )
+
+        setProductoEditando(prev => ({
+          ...prev,
+          imagen: res.data.data.imagen,
+          medios: res.data.data.medios,
+        }))
+      }
+
+      await cargarCatalogo()
+    } catch (err) {
+      console.error(err)
+      setError(
+        err?.response?.data?.detail ||
+        'No fue posible subir la imagen.'
+      )
+    } finally {
+      setSubiendoImagen(false)
+    }
+  }
+
+  // Sirve para reordenar y para quitar: el servidor borra las imágenes que ya no están en la lista
+  async function guardarGaleria(nuevos) {
+    if (!productoEditando) return
+
+    const productoId = productoEditando._id || productoEditando.id
+    const anteriores = mediosDe(productoEditando)
+
+    setError('')
+    setProductoEditando(prev => ({ ...prev, medios: nuevos, imagen: nuevos.find(m => m.tipo === 'imagen')?.url || '' }))
+
+    try {
+      const res = await api.put(
+        `/api/catalogo/productos/${productoId}/medios?negocio_id=${encodeURIComponent(negocioId)}`,
+        { ids: nuevos.map(m => m.id) }
+      )
+      setProductoEditando(prev => ({ ...prev, medios: res.data.data.medios, imagen: res.data.data.imagen }))
+      await cargarCatalogo()
+    } catch (err) {
+      console.error(err)
+      setProductoEditando(prev => ({ ...prev, medios: anteriores, imagen: anteriores.find(m => m.tipo === 'imagen')?.url || '' }))
+      setError(
+        err?.response?.data?.detail ||
+        'No fue posible guardar la galería de imágenes.'
+      )
+    }
   }
 
   async function guardarProducto(e) {
@@ -136,6 +238,8 @@ export default function Catalogo() {
           form.precio_base === '' ? null : Number(form.precio_base),
         iva_pct: Number(form.iva_pct),
         categoria_id: form.categoria_id || null,
+        // El servidor solo lo usa al crear o al activar el control; en edición lo ignora
+        stock_inicial: Number(form.stock_inicial) || 0,
       }
 
       if (productoEditando) {
@@ -153,28 +257,13 @@ export default function Catalogo() {
         )
       }
 
+      setLastUsed('producto_tipo', form.tipo)
+      setLastUsed('producto_categoria', form.categoria_id || null)
+
       setMostrarFormulario(false)
       setProductoEditando(null)
 
-      setForm({
-        codigo: '',
-        sku: '',
-        nombre: '',
-        descripcion: '',
-        tipo: 'producto',
-        categoria_id: '',
-        unidad: 'pieza',
-        activo: true,
-        costo: '',
-        precio_base: '',
-        iva_aplicable: true,
-        iva_pct: 16,
-        moneda: 'MXN',
-        control_inventario: true,
-        permite_variantes: false,
-        especificaciones: {},
-        metadata: {},
-      })
+      setForm(formularioNuevoProducto())
 
       await cargarCatalogo()
     } catch (err) {
@@ -186,8 +275,22 @@ export default function Catalogo() {
     }
   }
 
+  async function cargarStockProducto(productoId) {
+    setStockActual(null)
+    try {
+      const res = await api.get(`/api/inventario/producto/${productoId}/stock`, {
+        params: { negocio_id: negocioId },
+      })
+      setStockActual(res.data?.stock_actual ?? 0)
+    } catch (err) {
+      console.error(err)
+      setStockActual(null)
+    }
+  }
+
   function editarProducto(producto) {
     setProductoEditando(producto)
+    cargarStockProducto(producto._id || producto.id)
 
     setForm({
       codigo: producto.codigo || '',
@@ -212,7 +315,8 @@ export default function Catalogo() {
           : producto.iva_pct,
       moneda: producto.moneda || 'MXN',
       control_inventario:
-        producto.control_inventario !== false,
+        producto.control_inventario === true,
+      stock_inicial: 0,
       permite_variantes:
         producto.permite_variantes === true,
       especificaciones:
@@ -284,35 +388,30 @@ export default function Catalogo() {
           <button
             onClick={() => {
               setProductoEditando(null)
-
-              setForm({
-                codigo: '',
-                sku: '',
-                nombre: '',
-                descripcion: '',
-                tipo: 'producto',
-                categoria_id: '',
-                unidad: 'pieza',
-                activo: true,
-                costo: '',
-                precio_base: '',
-                iva_aplicable: true,
-                iva_pct: 16,
-                moneda: 'MXN',
-                control_inventario: true,
-                permite_variantes: false,
-                especificaciones: {},
-                metadata: {},
-              })
-
+              setForm(formularioNuevoProducto())
               setMostrarFormulario(true)
             }}
             style={styles.primaryButton}
           >
             + Nuevo producto
           </button>
+
+          <button
+            onClick={() => setMostrarListas(true)}
+            style={{ ...styles.primaryButton, background: '#fff', color: '#0f172a', border: '1px solid #cbd5e1' }}
+          >
+            Listas de precios
+          </button>
         </div>
       </div>
+
+      {mostrarListas && (
+        <ListasPrecios
+          negocioId={negocioId}
+          categorias={categorias}
+          onCerrar={() => setMostrarListas(false)}
+        />
+      )}
 
       {error && (
         <div style={styles.error}>
@@ -372,7 +471,11 @@ export default function Catalogo() {
             </div>
 
             <button
-              onClick={() => setMostrarFormulario(true)}
+              onClick={() => {
+                setProductoEditando(null)
+                setForm(formularioNuevoProducto())
+                setMostrarFormulario(true)
+              }}
               style={styles.primaryButton}
             >
               Crear primer producto
@@ -406,7 +509,19 @@ export default function Catalogo() {
                     </td>
 
                     <td style={styles.td}>
-                      <strong>{producto.nombre}</strong>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {producto.imagen ? (
+                          <img
+                            src={producto.imagen}
+                            alt=""
+                            loading="lazy"
+                            style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0', flexShrink: 0 }}
+                          />
+                        ) : (
+                          <div style={{ width: 36, height: 36, borderRadius: 6, border: '1px dashed #cbd5e1', flexShrink: 0 }} />
+                        )}
+                        <strong>{producto.nombre}</strong>
+                      </div>
                     </td>
 
                     <td style={styles.td}>
@@ -510,9 +625,10 @@ export default function Catalogo() {
 
       {mostrarFormulario && (
         <div style={styles.overlay}>
-          <div style={styles.modal}>
-            <div style={styles.modalHeader}>
+          <div style={estiloPanelEdicion(Boolean(productoEditando), styles.modal)}>
+            <div style={estiloCabeceraEdicion(Boolean(productoEditando), styles.modalHeader)}>
               <div>
+                {productoEditando && <BadgeEdicion />}
                 <h2 style={styles.modalTitle}>
                   {productoEditando
                     ? 'Actualizar producto'
@@ -531,6 +647,10 @@ export default function Catalogo() {
                 ×
               </button>
             </div>
+
+            {productoEditando && (
+              <AvisoEdicion entidad={`el producto ${productoEditando.nombre || ''}`.trim()} />
+            )}
 
             <form onSubmit={guardarProducto}>
               <div style={styles.formGrid}>
@@ -586,6 +706,30 @@ export default function Catalogo() {
                     style={styles.textarea}
                     rows={3}
                   />
+                </div>
+
+                <div style={styles.full}>
+                  <label style={styles.label}>Imágenes</label>
+
+                  {productoEditando ? (
+                    <>
+                      <GaleriaProducto
+                        medios={mediosDe(productoEditando)}
+                        subiendo={subiendoImagen}
+                        onReordenar={guardarGaleria}
+                        onQuitar={(id) => guardarGaleria(mediosDe(productoEditando).filter(m => m.id !== id))}
+                        onSubir={subirImagenesProducto}
+                        onAgregarYoutube={agregarYoutubeProducto}
+                      />
+                      <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 12 }}>
+                        {subiendoImagen ? 'Subiendo...' : 'JPG, PNG o WebP. Máximo 5 MB por imagen.'}
+                      </p>
+                    </>
+                  ) : (
+                    <p style={{ margin: 0, color: '#64748b', fontSize: 13 }}>
+                      Guarda el producto primero; después podrás subir su imagen.
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -658,16 +802,25 @@ export default function Catalogo() {
                     Moneda
                   </label>
 
-                  <input
+                  <select
+                    name="moneda"
                     value={form.moneda}
                     onChange={(e) =>
-                      actualizarCampo(
-                        'moneda',
-                        e.target.value.toUpperCase()
-                      )
+                      actualizarCampo('moneda', e.target.value)
                     }
                     style={styles.input}
-                  />
+                  >
+                    {MONEDAS.map(m => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+                  {form.moneda !== 'MXN' && (
+                    <p style={{fontSize:'.8rem', color:'var(--color-warning, #92400E)', marginTop:4}}>
+                      💱 Tipo de cambio no incluido — el monto se registra en {form.moneda} tal como
+                      se capture. Verifica la paridad al emitir la factura (SAT requiere tipo de cambio
+                      en CFDI con moneda extranjera).
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -747,20 +900,6 @@ export default function Catalogo() {
                 <label>
                   <input
                     type="checkbox"
-                    checked={form.control_inventario}
-                    onChange={(e) =>
-                      actualizarCampo(
-                        'control_inventario',
-                        e.target.checked
-                      )
-                    }
-                  />{' '}
-                  Control de inventario
-                </label>
-
-                <label>
-                  <input
-                    type="checkbox"
                     checked={form.permite_variantes}
                     onChange={(e) =>
                       actualizarCampo(
@@ -772,6 +911,49 @@ export default function Catalogo() {
                   Permite variantes
                 </label>
               </div>
+
+              <section style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #e2e8f0' }}>
+                <h3 style={{ margin: '0 0 8px', fontSize: 15 }}>Inventario</h3>
+
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={form.control_inventario ?? false}
+                    onChange={(e) =>
+                      actualizarCampo('control_inventario', e.target.checked)
+                    }
+                  />{' '}
+                  Controlar existencias de este producto
+                </label>
+
+                <p style={{ fontSize: '.8rem', color: '#64748b', margin: '4px 0 0' }}>
+                  Si está activo, el producto solo aparece en tienda cuando tiene stock mayor a 0.
+                </p>
+
+                {form.control_inventario && !productoEditando?.control_inventario && (
+                  <div style={{ marginTop: 12 }}>
+                    <label style={styles.label}>Stock inicial</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={form.stock_inicial ?? 0}
+                      onChange={(e) => actualizarCampo('stock_inicial', e.target.value)}
+                      style={styles.input}
+                    />
+                    <p style={{ fontSize: '.8rem', color: '#64748b', margin: '4px 0 0' }}>
+                      Después puedes ajustar existencias desde el módulo de Inventario.
+                    </p>
+                  </div>
+                )}
+
+                {form.control_inventario && productoEditando?.control_inventario && (
+                  <p style={{ fontSize: '.9rem', marginTop: 8 }}>
+                    Stock actual: <strong>{stockActual ?? '—'}</strong> unidades
+                    {' — '}ajústalo desde <a href="/inventario">Inventario</a>
+                  </p>
+                )}
+              </section>
 
               <div style={styles.modalFooter}>
                 <button

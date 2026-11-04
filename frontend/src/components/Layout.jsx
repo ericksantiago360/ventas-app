@@ -4,6 +4,7 @@ import { useNegocio } from '../context/NegocioContext'
 import { req, qs } from '../modules/clinica/comun'
 import { PermisosProvider, usePermisosClinica } from '../modules/clinica/permisos'
 import useEsMovil from '../hooks/useEsMovil'
+import BuscadorGlobal from './BuscadorGlobal'
 
 // Subtítulo del menú según el giro del negocio (config_negocios.tipo)
 const GIROS = {
@@ -53,7 +54,16 @@ const NAV_GROUPS = [
       { to: '/catalogo',     label: 'Catálogo'     },
       { to: '/cotizaciones', label: 'Cotizaciones' },
       { to: '/pedidos',      label: 'Pedidos'      },
+      { to: '/mostrador',    label: 'Mostrador'    },
       { to: '/facturacion',  label: 'Facturación'  },
+    ],
+  },
+  {
+    label: 'Tienda en línea',
+    items: [
+      { to: '/tienda',           label: 'Configuración', end: true },
+      { to: '/tienda/productos', label: 'Productos' },
+      { to: '/ecommerce/ordenes', label: 'Órdenes' },
     ],
   },
   {
@@ -62,6 +72,8 @@ const NAV_GROUPS = [
       { to: '/finanzas',     label: 'Finanzas'     },
       { to: '/contabilidad', label: 'Contabilidad' },
       { to: '/inventario',   label: 'Inventario'   },
+      { to: '/fabricacion',  label: 'Fabricación'  },
+      { to: '/compras',      label: 'Compras'      },
       { to: '/personal',     label: 'Personal'     },
       { to: '/negocios',     label: 'Negocios', soloAdmin: true },
       { to: '/usuarios',     label: 'Usuarios', soloAdmin: true },
@@ -381,7 +393,10 @@ export default function Layout() {
           ) : !negocioActual ? (
             <div style={{ color: '#64748b' }}>Tu usuario no tiene negocios asignados.</div>
           ) : (
-            <Outlet />
+            <>
+              <BuscadorGlobal negocioId={negocio} />
+              <Outlet />
+            </>
           )}
         </div>
       </main>

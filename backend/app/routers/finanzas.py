@@ -10,7 +10,7 @@ from ..services.cobros import registrar_cobro
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.negocios import negocio_autorizado, validar_referencia, verificar_acceso
+from app.core.negocios import negocio_autorizado, validar_cliente_unificado, validar_referencia, verificar_acceso
 
 
 router = APIRouter(
@@ -56,7 +56,7 @@ class CuentaCreate(BaseModel):
     negocio_id: str
     nombre: str
     tipo: Literal["efectivo", "banco", "wallet", "otro"] = "otro"
-    moneda: str = "MXN"
+    moneda: Literal["MXN", "USD", "EUR"] = "MXN"
     saldo_inicial: float = 0.0
     activo: bool = True
 
@@ -64,7 +64,8 @@ class CuentaCreate(BaseModel):
 class CuentaUpdate(BaseModel):
     nombre: Optional[str] = None
     tipo: Optional[Literal["efectivo", "banco", "wallet", "otro"]] = None
-    moneda: Optional[str] = None
+    moneda: Optional[Literal["MXN", "USD", "EUR"]] = None
+    saldo_inicial: Optional[float] = None
     activo: Optional[bool] = None
 
 
@@ -78,6 +79,15 @@ class MovimientoCreate(BaseModel):
     referencia_tipo: Optional[str] = None
     referencia_id: Optional[str] = None
     fecha: datetime = Field(default_factory=datetime.utcnow)
+
+
+class MovimientoUpdate(BaseModel):
+    cuenta_id: Optional[str] = None
+    tipo: Optional[TipoMovimiento] = None
+    categoria: Optional[str] = None
+    importe: Optional[float] = Field(default=None, gt=0)
+    concepto: Optional[str] = None
+    fecha: Optional[datetime] = None
 
 
 class MetodoPagoCreate(BaseModel):
@@ -177,6 +187,15 @@ async def editar_cuenta(
     verificar_acceso(user, negocio_id)
 
     cambios = datos.model_dump(exclude_unset=True)
+    if "nombre" in cambios:
+        cambios["nombre"] = cambios["nombre"].strip()
+        duplicada = await db.cuentas_financieras.find_one({
+            "negocio_id": negocio_id,
+            "nombre": cambios["nombre"],
+            "_id": {"$ne": oid},
+        })
+        if duplicada:
+            raise HTTPException(status_code=409, detail="Ya existe una cuenta con ese nombre")
     cambios["updated_at"] = datetime.utcnow()
 
     cuenta_actualizada = await db.cuentas_financieras.find_one_and_update(
@@ -259,6 +278,63 @@ async def crear_movimiento(
     result = await db.movimientos_financieros.insert_one(movimiento)
     movimiento["_id"] = result.inserted_id
     return serializar(movimiento)
+
+
+async def movimiento_manual(db, id: str, user) -> dict:
+    """Movimiento que se puede editar o borrar a mano. Los de cobro se cambian anulando el cobro."""
+    movimiento = await db.movimientos_financieros.find_one({"_id": validar_object_id(id)})
+    if not movimiento:
+        raise HTTPException(status_code=404, detail="Movimiento no encontrado")
+
+    verificar_acceso(user, movimiento["negocio_id"])
+
+    if movimiento.get("referencia_tipo"):
+        raise HTTPException(
+            status_code=409,
+            detail="Este movimiento viene de un cobro. Anula el cobro para cambiarlo.",
+        )
+    return movimiento
+
+
+@router.put("/movimientos/{id}")
+async def editar_movimiento(
+    id: str,
+    datos: MovimientoUpdate,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    movimiento = await movimiento_manual(db, id, user)
+
+    cambios = datos.model_dump(exclude_unset=True)
+    if "cuenta_id" in cambios:
+        cuenta = await db.cuentas_financieras.find_one({
+            "_id": validar_object_id(cambios["cuenta_id"]),
+            "negocio_id": movimiento["negocio_id"],
+            "activo": True,
+        })
+        if not cuenta:
+            raise HTTPException(status_code=404, detail="Cuenta financiera no encontrada")
+    if "tipo" in cambios:
+        cambios["tipo"] = cambios["tipo"].value
+    cambios["updated_at"] = datetime.utcnow()
+
+    actualizado = await db.movimientos_financieros.find_one_and_update(
+        {"_id": movimiento["_id"]},
+        {"$set": cambios},
+        return_document=ReturnDocument.AFTER,
+    )
+    return serializar(actualizado)
+
+
+@router.delete("/movimientos/{id}")
+async def eliminar_movimiento(
+    id: str,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    movimiento = await movimiento_manual(db, id, user)
+    await db.movimientos_financieros.delete_one({"_id": movimiento["_id"]})
+    return {"ok": True, "message": "Movimiento eliminado correctamente"}
 
 
 # ============================================================
@@ -344,7 +420,7 @@ async def crear_cobro(
     if not cuenta:
         raise HTTPException(status_code=404, detail="Cuenta financiera no encontrada")
     await validar_referencia(db.pedidos, datos.pedido_id, datos.negocio_id, "Pedido")
-    await validar_referencia(db.clientes, datos.cliente_id, datos.negocio_id, "Cliente")
+    await validar_cliente_unificado(db.clientes, datos.cliente_id, "Cliente")
 
     cobro = await registrar_cobro(
         db,

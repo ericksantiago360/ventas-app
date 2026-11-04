@@ -2,7 +2,8 @@
 Referencias entre negocios: un registro no puede apuntar a otro de un negocio distinto.
 
 Se usa el admin, que tiene acceso a todos los negocios: aun así, un pedido de
-Santal no puede enlazar un cliente de Dulce Tentación.
+Santal no puede enlazar una cotización, paciente o categoría de otro negocio.
+Los clientes son compartidos entre negocios (SPEC §9), así que sí se pueden enlazar.
 """
 import pytest
 
@@ -15,7 +16,8 @@ L = {"negocio_id": "diagnostico_plus"}
 
 @pytest.fixture
 def cliente_ajeno(client, admin):
-    r = client.post("/api/crm/clientes", headers=admin, json={**DT, "nombre": unico("Cliente DT")})
+    r = client.post("/api/crm/clientes", headers=admin,
+                    json={"empresa": unico("Cliente DT"), "telefono": "5550400", "canal_origen": "directo"})
     assert r.status_code == 201, r.text
     return id_de(r.json())
 
@@ -75,21 +77,22 @@ class TestOrdenLaboratorio:
 
 
 class TestCotizacionesYPedidos:
-    def test_cotizacion_con_cliente_ajeno(self, client, admin, cliente_ajeno, cliente_santal):
+    def test_cotizacion_con_cliente_compartido(self, client, admin, cliente_ajeno, cliente_santal):
+        # Cliente unificado: una cotización de Santal puede usar un cliente creado sin negocio
         r = client.post("/api/cotizaciones/", headers=admin, json={**S, "cliente_id": cliente_ajeno})
-        assert r.status_code == 404
+        assert r.status_code == 201, r.text
 
         r = client.post("/api/cotizaciones/", headers=admin, json={**S, "cliente_id": cliente_santal})
         assert r.status_code == 201, r.text
         cotizacion = id_de(r.json())
         r = client.put(f"/api/cotizaciones/{cotizacion}", headers=admin, json={"cliente_id": cliente_ajeno})
-        assert r.status_code == 404
+        assert r.status_code == 200, r.text
 
-    def test_pedido_con_cliente_ajeno(self, client, admin, cliente_ajeno, pedido_santal):
+    def test_pedido_con_cliente_compartido(self, client, admin, cliente_ajeno, pedido_santal):
         r = client.post("/api/pedidos/", headers=admin, json={**S, "cliente_id": cliente_ajeno, "total": 0})
-        assert r.status_code == 404
+        assert r.status_code == 201, r.text
         r = client.put(f"/api/pedidos/{pedido_santal}", headers=admin, json={"cliente_id": cliente_ajeno})
-        assert r.status_code == 404
+        assert r.status_code == 200, r.text
 
     def test_pedido_con_cotizacion_ajena(self, client, admin):
         r = client.post("/api/cotizaciones/", headers=admin, json={**DT})
@@ -103,25 +106,25 @@ class TestCotizacionesYPedidos:
 
 
 class TestFacturacionYFinanzas:
-    def test_factura_manual_con_cliente_o_paciente_ajeno(self, client, admin, cliente_ajeno, paciente_ajeno):
+    def test_factura_manual_con_paciente_ajeno(self, client, admin, cliente_ajeno, paciente_ajeno):
         base = {"receptor": {"nombre": "Receptor"}, "conceptos": [{"descripcion": "Servicio", "precio_unitario": 100}]}
-        r = client.post("/api/facturacion/facturas", headers=admin, json={**S, **base, "cliente_id": cliente_ajeno})
-        assert r.status_code == 404
+        # El paciente sí es de un negocio: una factura de Santal no puede usar el de laboratorio
         r = client.post("/api/facturacion/facturas", headers=admin, json={**L, **base, "paciente_id": paciente_ajeno})
         assert r.status_code == 404
 
-        r = client.post("/api/facturacion/facturas", headers=admin, json={**S, **base})
+        r = client.post("/api/facturacion/facturas", headers=admin, json={**S, **base, "cliente_id": cliente_ajeno})
         assert r.status_code == 201, r.text
         factura = id_de(r.json())
         r = client.put(f"/api/facturacion/facturas/{factura}", headers=admin, json={**base, "cliente_id": cliente_ajeno})
-        assert r.status_code == 404
+        assert r.status_code == 200, r.text
 
-    def test_cobro_con_pedido_o_cliente_ajeno(self, client, admin, cuenta_santal, cliente_ajeno):
+    def test_cobro_con_pedido_ajeno(self, client, admin, cuenta_santal, cliente_ajeno):
         r = client.post("/api/pedidos/", headers=admin, json={**DT, "cliente_nombre": "X", "total": 0})
         pedido_ajeno = id_de(r.json())
         base = {**S, "cuenta_id": cuenta_santal, "importe": 100}
         assert client.post("/api/finanzas/cobros", headers=admin, json={**base, "pedido_id": pedido_ajeno}).status_code == 404
-        assert client.post("/api/finanzas/cobros", headers=admin, json={**base, "cliente_id": cliente_ajeno}).status_code == 404
+        # El cobro por cliente compartido sí se acepta
+        assert client.post("/api/finanzas/cobros", headers=admin, json={**base, "cliente_id": cliente_ajeno}).status_code == 200
 
 
 class TestCatalogoEInventario:

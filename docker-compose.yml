@@ -32,16 +32,24 @@ services:
     networks:
       - app_net
 
+  # Tienda en línea pública (React), servida por Nginx en /tienda/
+  storefront:
+    build: ./storefront
+    restart: unless-stopped
+    networks:
+      - app_net
+
   nginx:
     image: nginx:alpine
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "8080:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - backend
       - frontend
+      - storefront
     networks:
       - app_net
 

@@ -127,6 +127,7 @@ export default function NuevoExpedienteModal({ negocioId, expediente, cerrar, on
   return (
     <ModalFormulario
       titulo={editando ? `Editar expediente ${expediente.folio}` : 'Nuevo paciente'}
+      editando={editando} entidad={editando ? `el expediente ${expediente.folio}` : undefined}
       subtitulo={`Paso ${paso + 1} de ${PASOS.length}: ${PASOS[paso]}`}
       ancho={720}
       error={error}
