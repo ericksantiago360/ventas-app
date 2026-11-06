@@ -209,9 +209,11 @@ export default function Compras() {
     setError('')
     try {
       const { data } = await api.post(url, body)
-      setOrdenActiva(data)
+      // La respuesta del POST no trae el egreso vinculado: se vuelve a leer el detalle completo
+      const { data: detalle } = await api.get(`/api/compras/ordenes/${data.id}`)
+      setOrdenActiva(detalle)
       await cargarTodo()
-      return data
+      return detalle
     } catch (err) {
       setError(mensajeError(err, mensaje))
       return null
@@ -524,6 +526,12 @@ export default function Compras() {
               Subtotal {money(ordenActiva.subtotal)} · Impuestos {money(ordenActiva.impuestos)} ·{' '}
               <strong style={{ color: '#0f172a' }}>Total {money(ordenActiva.total)}</strong>
             </div>
+            {ordenActiva.egreso && ordenActiva.egreso.estado !== 'anulado' && (
+              <div style={{ textAlign: 'right', marginTop: 6, fontSize: 13 }}>
+                <span style={{ color: '#475569' }}>💸 Registrado en Finanzas · </span>
+                <a href={`/finanzas?ref=${ordenActiva.egreso.id}`} style={{ color: '#0d9488', fontWeight: 600 }}>Ver →</a>
+              </div>
+            )}
             {ordenActiva.notas && <p style={{ ...s.muted, marginTop: 10 }}>Notas: {ordenActiva.notas}</p>}
 
             <div style={s.modalFooter}>

@@ -205,3 +205,47 @@ def test_usuario_sin_el_negocio_recibe_403(client, admin, solo_santal, proveedor
         "negocio_id": "diagnostico_plus", "proveedor_id": proveedor, "items": [{"inventario_id": insumo["id"], "cantidad": 1}],
     })
     assert r.status_code == 403
+
+
+# ── Egreso en Finanzas ────────────────────────────────────────────────────────
+
+def egresos_de(client, admin, orden_id) -> list[dict]:
+    movimientos = client.get("/api/finanzas/movimientos", headers=admin,
+                             params={"negocio_id": NEG, "tipo": "egreso", "limit": 500}).json()
+    return [m for m in movimientos if m.get("referencia_id") == orden_id]
+
+
+def test_recepcion_total_genera_un_egreso_pendiente_y_la_parcial_no(client, admin, proveedor, insumo):
+    orden = orden_nueva(client, admin, proveedor, [(insumo, 4, 25)], impuestos=10)   # subtotal 100 + 10
+    oid = orden["id"]
+    assert client.post(f"{URL}/ordenes/{oid}/enviar", headers=admin).status_code == 200
+
+    # Recepción parcial: no genera egreso
+    assert recibir(client, admin, oid, [(insumo["id"], 2)]).status_code == 200
+    assert egresos_de(client, admin, oid) == []
+    assert client.get(f"{URL}/ordenes/{oid}", headers=admin).json()["egreso"] is None
+
+    # Recepción que completa la orden: un solo egreso por el total, sin cuenta, pendiente de pago
+    r = recibir(client, admin, oid, [(insumo["id"], 2)])
+    assert r.status_code == 200 and r.json()["estado"] == "recibida"
+    egresos = egresos_de(client, admin, oid)
+    assert len(egresos) == 1
+    e = egresos[0]
+    assert e["importe"] == 110.0
+    assert e["estado"] == "pendiente" and e["cuenta_id"] is None
+    assert e["tipo"] == "egreso" and e["categoria"] == "compra_proveedor"
+    assert e["referencia_tipo"] == "ordenes_compra" and e["negocio_id"] == NEG
+    assert e["concepto"].startswith(f"OC {orden['numero']}")
+
+    detalle = client.get(f"{URL}/ordenes/{oid}", headers=admin).json()
+    assert detalle["egreso"] == {"id": e["id"], "estado": "pendiente"}
+
+
+def test_orden_recibida_no_duplica_el_egreso(client, admin, proveedor, insumo):
+    orden = orden_nueva(client, admin, proveedor, [(insumo, 2, 50)])
+    oid = orden["id"]
+    assert client.post(f"{URL}/ordenes/{oid}/enviar", headers=admin).status_code == 200
+    assert recibir(client, admin, oid, [(insumo["id"], 2)]).status_code == 200
+    # Una segunda recepción sobre una orden ya recibida se rechaza y no crea nada
+    assert recibir(client, admin, oid, [(insumo["id"], 1)]).status_code == 400
+    assert len(egresos_de(client, admin, oid)) == 1

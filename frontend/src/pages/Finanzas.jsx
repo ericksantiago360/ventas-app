@@ -78,6 +78,13 @@ export default function Finanzas() {
   const [dashboard, setDashboard] = useState(null)
   const [cuentas, setCuentas] = useState([])
   const [movimientos, setMovimientos] = useState([])
+  // ?ref=<id de movimiento>: viene desde Compras; se resalta y se lleva a la vista
+  const [refMovimiento] = useState(() => new URLSearchParams(window.location.search).get('ref'))
+
+  useEffect(() => {
+    if (!refMovimiento || movimientos.length === 0) return
+    document.getElementById(`mov-${refMovimiento}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [refMovimiento, movimientos])
   const [guardandoCobro, setGuardandoCobro] = useState(false)
 
   const [cargando, setCargando] = useState(true)
@@ -511,6 +518,8 @@ export default function Finanzas() {
   }
 
   const cuentaNombre = (cuentaId) => {
+    // Egresos de compras pendientes de pago no tienen cuenta todavía
+    if (!cuentaId) return 'Sin cuenta (pendiente de pago)'
     // FIX: comparar contra item.id, no item._id
     const cuenta = cuentas.find(
       (item) => item.id === cuentaId
@@ -1064,15 +1073,18 @@ export default function Finanzas() {
                         key={
                           movimiento.id
                         }
+                        id={`mov-${movimiento.id}`}
                         title={
-                          movimiento.estado === 'cancelado'
+                          movimiento.estado === 'cancelado' || movimiento.estado === 'anulado'
                             ? 'Movimiento cancelado: no suma al saldo'
                             : undefined
                         }
                         style={
-                          movimiento.estado === 'cancelado'
+                          movimiento.estado === 'cancelado' || movimiento.estado === 'anulado'
                             ? { opacity: 0.45, textDecoration: 'line-through' }
-                            : undefined
+                            : movimiento.id === refMovimiento
+                              ? { background: '#fef9c3', outline: '2px solid #facc15' }
+                              : undefined
                         }
                       >
                         <td

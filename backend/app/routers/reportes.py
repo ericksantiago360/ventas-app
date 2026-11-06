@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime, timezone, date
 
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.database import get_db
@@ -32,6 +33,24 @@ def rango_mes(mes: str):
     return inicio_dt, fin_dt, inicio_str_prefix, fin_str_prefix
 
 
+async def ventas_mostrador_rango(db, negocio_id: str, inicio_dt, fin_dt) -> list[dict]:
+    """Ventas de mostrador completadas en el rango. Se cobran al momento, así que cuentan como cobradas."""
+    return await db.ventas_mostrador.find({
+        "negocio_id": negocio_id,
+        "estado": "completada",
+        "fecha": {"$gte": inicio_dt, "$lt": fin_dt},
+    }, {"total": 1, "items": 1, "cliente_id": 1}).to_list(5000)
+
+
+async def nombres_clientes(db, ids: set) -> dict[str, str]:
+    """Nombre o razón social por id de cliente (las ventas de mostrador guardan solo el id)."""
+    oids = [ObjectId(i) for i in ids if i and ObjectId.is_valid(i)]
+    if not oids:
+        return {}
+    docs = await db.clientes.find({"_id": {"$in": oids}}, {"nombre": 1, "razon_social": 1}).to_list(len(oids))
+    return {str(d["_id"]): (d.get("razon_social") or d.get("nombre") or "") for d in docs}
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # RESUMEN
 # ──────────────────────────────────────────────────────────────────────────────
@@ -52,6 +71,7 @@ async def resumen(
         "created_at": {"$gte": inicio_str, "$lt": fin_str},
     }
     filtro_mes_activos = {**filtro_mes, "estado": {"$ne": "cancelado"}}
+    mostrador_mes = await ventas_mostrador_rango(db, negocio_id, inicio_dt, fin_dt)
 
     # ── Paralelo ──────────────────────────────────────────────────────────────
     (
@@ -74,8 +94,8 @@ async def resumen(
                 "importe": {"$sum": {"$multiply": ["$items.cantidad", "$items.precio_unitario"]}},
             }},
             {"$sort": {"importe": -1}},
-            {"$limit": 8},
-        ]).to_list(8),
+            {"$limit": 50},   # margen: se mezcla con mostrador antes de quedarse con 8
+        ]).to_list(50),
 
         db.pedidos.aggregate([
             {"$match": filtro_mes_activos},
@@ -85,8 +105,8 @@ async def resumen(
                 "total": {"$sum": "$total"},
             }},
             {"$sort": {"total": -1}},
-            {"$limit": 8},
-        ]).to_list(8),
+            {"$limit": 50},
+        ]).to_list(50),
 
         db.movimientos_financieros.find({
             "negocio_id": negocio_id,
@@ -124,41 +144,54 @@ async def resumen(
         if estado == "cobrado":
             cobrado_mes += float(p.get("total") or 0)
 
+    # ── Ventas de mostrador: se suman a las de pedidos ────────────────────────
+    nombres = await nombres_clientes(db, {str(v.get("cliente_id") or "") for v in mostrador_mes})
+    productos = {r["_id"] or "Sin nombre": [float(r.get("cantidad") or 0), float(r.get("importe") or 0)]
+                 for r in top_productos_raw}
+    clientes = {r["_id"] or "Sin nombre": [int(r.get("pedidos") or 0), float(r.get("total") or 0)]
+                for r in top_clientes_raw}
+    for v in mostrador_mes:
+        total = float(v.get("total") or 0)
+        ventas_total += total
+        cobrado_mes += total   # el cobro se registra al momento de la venta
+        for it in v.get("items") or []:
+            p = productos.setdefault(it.get("nombre") or "Sin nombre", [0.0, 0.0])
+            cantidad = float(it.get("cantidad") or 0)
+            p[0] += cantidad
+            p[1] += cantidad * float(it.get("precio_unitario") or 0)
+        c = clientes.setdefault(nombres.get(str(v.get("cliente_id") or ""), "") or "Mostrador (público general)", [0, 0.0])
+        c[0] += 1
+        c[1] += total
+
     saldo_pendiente_total = sum(float(d.get("saldo_pendiente") or 0) for d in saldo_docs)
 
     # ── Finanzas ──────────────────────────────────────────────────────────────
+    movimientos_vigentes = [m for m in movimientos_mes if m.get("estado") != "anulado"]
     ingresos_mes = sum(
         float(m.get("importe") or 0)
-        for m in movimientos_mes if m.get("tipo") == "ingreso"
+        for m in movimientos_vigentes if m.get("tipo") == "ingreso"
     )
     egresos_mes = sum(
         float(m.get("importe") or 0)
-        for m in movimientos_mes if m.get("tipo") == "egreso"
+        for m in movimientos_vigentes if m.get("tipo") == "egreso"
     )
 
     return {
         "mes": mes,
         "negocio_id": negocio_id,
         "pedidos_total": len(pedidos_mes),
+        "ventas_mostrador_total": len(mostrador_mes),
         "ventas_total": round(ventas_total, 2),
         "cobrado_mes": round(cobrado_mes, 2),
         "saldo_pendiente_total": round(saldo_pendiente_total, 2),
         "pedidos_por_estado": estados_count,
         "top_productos": [
-            {
-                "nombre": r["_id"] or "Sin nombre",
-                "cantidad": round(float(r.get("cantidad") or 0), 2),
-                "importe": round(float(r.get("importe") or 0), 2),
-            }
-            for r in top_productos_raw
+            {"nombre": nombre, "cantidad": round(cant, 2), "importe": round(imp, 2)}
+            for nombre, (cant, imp) in sorted(productos.items(), key=lambda kv: kv[1][1], reverse=True)[:8]
         ],
         "top_clientes": [
-            {
-                "nombre": r["_id"] or "Sin nombre",
-                "pedidos": int(r.get("pedidos") or 0),
-                "total": round(float(r.get("total") or 0), 2),
-            }
-            for r in top_clientes_raw
+            {"nombre": nombre, "pedidos": n, "total": round(tot, 2)}
+            for nombre, (n, tot) in sorted(clientes.items(), key=lambda kv: kv[1][1], reverse=True)[:8]
         ],
         "ingresos_mes": round(ingresos_mes, 2),
         "egresos_mes": round(egresos_mes, 2),
@@ -188,10 +221,10 @@ async def evolucion(
         month_val = ((mes_offset - 1) % 12) + 1
         label = f"{MESES_ES[month_val - 1]} {str(year_val)[2:]}"
         mes_str = f"{year_val}-{month_val:02d}"
-        _idt, _fdt, inicio_s, fin_s = rango_mes(mes_str)
-        rangos.append((mes_str, label, inicio_s, fin_s))
+        idt, fdt, inicio_s, fin_s = rango_mes(mes_str)
+        rangos.append((mes_str, label, inicio_s, fin_s, idt, fdt))
 
-    async def stats_mes(inicio_str, fin_str):
+    async def stats_mes(inicio_str, fin_str, inicio_dt, fin_dt):
         docs = await db.pedidos.find(
             {
                 "negocio_id": negocio_id,
@@ -200,19 +233,22 @@ async def evolucion(
             },
             {"total": 1, "estado": 1},
         ).to_list(2000)
-        ventas = sum(float(d.get("total") or 0) for d in docs)
+        mostrador = await ventas_mostrador_rango(db, negocio_id, inicio_dt, fin_dt)
+        ventas = sum(float(d.get("total") or 0) for d in docs) + sum(float(v.get("total") or 0) for v in mostrador)
         cobrado = sum(float(d.get("total") or 0) for d in docs if d.get("estado") == "cobrado")
-        return len(docs), round(ventas, 2), round(cobrado, 2)
+        cobrado += sum(float(v.get("total") or 0) for v in mostrador)   # se cobran al momento
+        return len(docs), len(mostrador), round(ventas, 2), round(cobrado, 2)
 
-    resultados = await asyncio.gather(*[stats_mes(r[2], r[3]) for r in rangos])
+    resultados = await asyncio.gather(*[stats_mes(r[2], r[3], r[4], r[5]) for r in rangos])
 
     return [
         {
             "mes": rangos[i][0],
             "label": rangos[i][1],
             "pedidos": resultados[i][0],
-            "ventas": resultados[i][1],
-            "cobrado": resultados[i][2],
+            "ventas_mostrador": resultados[i][1],
+            "ventas": resultados[i][2],
+            "cobrado": resultados[i][3],
         }
         for i in range(len(rangos))
     ]
