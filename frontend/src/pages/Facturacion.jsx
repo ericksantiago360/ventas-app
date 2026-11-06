@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNegocio } from '../context/NegocioContext'
 import useEsMovil from '../hooks/useEsMovil'
+import { USOS_CFDI } from '../constants/catalogos'
 
 async function req(url, opts = {}) {
   const token = localStorage.getItem('token')
@@ -38,12 +39,6 @@ const ORIGEN = { manual: 'Manual', pedido: 'Pedido', orden_lab: 'Orden lab' }
 const FORMAS_PAGO = [
   ['01', 'Efectivo'], ['03', 'Transferencia'], ['04', 'Tarjeta de crédito'],
   ['28', 'Tarjeta de débito'], ['02', 'Cheque'], ['99', 'Por definir'],
-]
-
-const USOS_CFDI = [
-  ['S01', 'S01 · Sin efectos fiscales'], ['G03', 'G03 · Gastos en general'],
-  ['D01', 'D01 · Honorarios médicos y gastos hospitalarios'], ['G01', 'G01 · Adquisición de mercancías'],
-  ['CP01', 'CP01 · Pagos'],
 ]
 
 const IVAS = [[0.16, '16%'], [0.08, '8%'], [0, '0% / Exento']]
@@ -803,7 +798,7 @@ export default function Facturacion() {
               <div style={s.fg}>
                 <label style={s.lbl}>Uso CFDI</label>
                 <select style={s.input} value={form.receptor.uso_cfdi} onChange={(e) => setR('uso_cfdi', e.target.value)}>
-                  {USOS_CFDI.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                  {USOS_CFDI.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
                 </select>
               </div>
             </div>

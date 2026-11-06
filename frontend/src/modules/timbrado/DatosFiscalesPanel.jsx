@@ -1,12 +1,6 @@
 import { useEffect, useState } from 'react'
 import { req, s, Campo, useCatalogos } from '../carta_porte/comun'
-
-// Mismos usos que el selector de Facturación (pages/Facturacion.jsx); no hay catálogo CFDI en el backend.
-const USOS_CFDI = [
-  ['S01', 'Sin efectos fiscales'], ['G03', 'Gastos en general'],
-  ['D01', 'Honorarios médicos y gastos hospitalarios'], ['G01', 'Adquisición de mercancías'],
-  ['CP01', 'Pagos'],
-]
+import { USOS_CFDI } from '../../constants/catalogos'
 
 // Datos fiscales del negocio: emisor de todas sus facturas y cartas porte. Solo admin los edita.
 export default function DatosFiscalesPanel({ negocioId }) {
@@ -81,7 +75,7 @@ export default function DatosFiscalesPanel({ negocioId }) {
           </Campo>
           <Campo label="Uso CFDI para clientes nuevos">
             <select style={s.input} value={d.uso_cfdi_default} onChange={x => set('uso_cfdi_default', x.target.value)}>
-              {USOS_CFDI.map(([clave, desc]) => <option key={clave} value={clave}>{clave} · {desc}</option>)}
+              {USOS_CFDI.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
             </select>
           </Campo>
         </div>
