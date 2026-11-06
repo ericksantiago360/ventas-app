@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { negociosApi } from '../api/client'
 import { useNegocio } from '../context/NegocioContext'
 import CSDPanel from '../modules/timbrado/CSDPanel'
+import DatosFiscalesPanel from '../modules/timbrado/DatosFiscalesPanel'
 
 const GIROS = [
   ['distribucion',        'Distribución'],
@@ -227,7 +228,10 @@ export default function Negocios() {
         )}
       </div>
 
-      {editando && <div style={{ marginTop: 20 }}><CSDPanel negocioId={editando.id} /></div>}
+      {editando && <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <DatosFiscalesPanel negocioId={editando.id} />
+        <CSDPanel negocioId={editando.id} />
+      </div>}
     </div>
   )
 }

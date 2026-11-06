@@ -911,8 +911,10 @@ async def pdf_factura(
 ):
     f = await obtener_factura(db, id, user)
     config = await db.config_negocios.find_one({"_id": f["negocio_id"]}) or {}
+    fiscal   = config.get("carta_porte_emisor") or {}   # RFC y razón social fiscal, los mismos que usa el CFDI
     emisor   = config.get("nombre", "")
-    rfc_em   = config.get("rfc", "")
+    rfc_em   = fiscal.get("rfc", "")
+    razon_em = fiscal.get("nombre", "")
     dir_em   = "  ·  ".join(p for p in [config.get("direccion", ""), config.get("colonia", ""), config.get("ciudad", ""),
                                          f"C.P. {config['cp']}" if config.get("cp") else ""] if p)
     contacto = "  ·  ".join(p for p in [f"Tel: {config['telefono']}" if config.get("telefono") else "",
@@ -942,7 +944,7 @@ async def pdf_factura(
         Paragraph(emisor or "Emisor", sEm),
         Paragraph("FACTURA", sTit),
     ], [
-        Paragraph("<br/>".join(p for p in [f"RFC: {rfc_em}" if rfc_em else "", dir_em, contacto] if p), sSm),
+        Paragraph("<br/>".join(p for p in [razon_em, f"RFC: {rfc_em}" if rfc_em else "", dir_em, contacto] if p), sSm),
         Paragraph(f"<b>Folio:</b> {folio}<br/><b>Fecha:</b> {f['fecha']}<br/>"
                   f"<b>Vence:</b> {f['fecha_vencimiento']}<br/><b>Estado:</b> {estado_txt}", sFol),
     ]], colWidths=["60%", "40%"])
