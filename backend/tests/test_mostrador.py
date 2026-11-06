@@ -1,4 +1,6 @@
 """Mostrador: venta de caja con precio de catálogo, stock, cobro en finanzas y cancelación."""
+from datetime import datetime, timezone
+
 import pytest
 
 from .conftest import id_de, unico
@@ -458,3 +460,25 @@ def test_venta_con_sucursal_de_baja_o_ajena_404(client, admin, cuenta_santal, pr
         "items": [{"producto_id": producto_stock, "cantidad": 1}], "sucursal_id": sucursal["id"],
     })
     assert r.status_code == 404, r.text
+
+
+def test_reportes_suman_las_ventas_de_mostrador(client, admin, cuenta_santal, producto_stock):
+    """Una venta de mostrador completada cuenta en ventas, cobrado y evolución del mes en curso."""
+    mes = datetime.now(timezone.utc).strftime("%Y-%m")
+    antes = client.get("/api/reportes/resumen", headers=admin, params={"negocio_id": NEG, "mes": mes}).json()
+    evo_antes = next(m for m in client.get("/api/reportes/evolucion", headers=admin, params={"negocio_id": NEG}).json()
+                     if m["mes"] == mes)
+
+    venta = vender(client, admin, cuenta_santal, producto_stock, cantidad=2, recibido=232).json()
+    assert venta["total"] == 232.0
+
+    despues = client.get("/api/reportes/resumen", headers=admin, params={"negocio_id": NEG, "mes": mes}).json()
+    assert despues["ventas_mostrador_total"] == antes["ventas_mostrador_total"] + 1
+    assert despues["pedidos_total"] == antes["pedidos_total"]          # los pedidos no cambian
+    assert round(despues["ventas_total"] - antes["ventas_total"], 2) == 232.0
+    assert round(despues["cobrado_mes"] - antes["cobrado_mes"], 2) == 232.0
+
+    evo = next(m for m in client.get("/api/reportes/evolucion", headers=admin, params={"negocio_id": NEG}).json()
+               if m["mes"] == mes)
+    assert evo["ventas_mostrador"] == evo_antes["ventas_mostrador"] + 1
+    assert round(evo["ventas"] - evo_antes["ventas"], 2) == 232.0

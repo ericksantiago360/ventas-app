@@ -33,6 +33,46 @@ def validar_oid(id: str) -> ObjectId:
         raise HTTPException(status_code=400, detail="ID inválido")
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Egreso en Finanzas: una orden recibida completa genera un egreso pendiente de pago.
+# Es el único punto que crea o anula egresos de compras.
+# ──────────────────────────────────────────────────────────────────────────────
+
+async def egreso_de_orden(db, orden_id) -> dict | None:
+    return await db.movimientos_financieros.find_one({
+        "referencia_tipo": "ordenes_compra",
+        "referencia_id": str(orden_id),
+        "estado": {"$ne": "anulado"},
+    })
+
+
+async def registrar_egreso_compra(orden: dict, db) -> None:
+    """Egreso pendiente por el total de la orden, sin cuenta: se asigna al registrar el pago. Idempotente."""
+    if await egreso_de_orden(db, orden["_id"]):
+        return
+    now = datetime.now(timezone.utc)
+    await db.movimientos_financieros.insert_one({
+        "negocio_id":      orden["negocio_id"],
+        "tipo":            "egreso",
+        "categoria":       "compra_proveedor",
+        "concepto":        f"OC {orden['numero']} — {orden.get('proveedor_nombre', '')}".strip(),
+        "importe":         orden["total"],
+        "cuenta_id":       None,
+        "referencia_tipo": "ordenes_compra",
+        "referencia_id":   str(orden["_id"]),
+        "fecha":           orden.get("fecha_recepcion") or now,
+        "estado":          "pendiente",
+        "created_at":      now,
+    })
+
+
+async def anular_egreso_compra(db, orden_id) -> None:
+    await db.movimientos_financieros.update_many(
+        {"referencia_tipo": "ordenes_compra", "referencia_id": str(orden_id), "estado": {"$ne": "anulado"}},
+        {"$set": {"estado": "anulado", "anulado_at": datetime.now(timezone.utc)}},
+    )
+
+
 def _calcular_totales(items: list[dict], impuestos: float) -> dict:
     subtotal = round(sum(i["importe"] for i in items), 2)
     return {"subtotal": subtotal, "impuestos": round(impuestos, 2), "total": round(subtotal + impuestos, 2)}
@@ -281,7 +321,11 @@ async def detalle_orden(
     user=Depends(get_current_user),
 ):
     orden = await obtener_del_negocio(db.ordenes_compra, orden_id, user, "Orden de compra")
-    return serializar(orden)
+    egreso = await egreso_de_orden(db, orden["_id"])
+    return {
+        **serializar(orden),
+        "egreso": {"id": str(egreso["_id"]), "estado": egreso["estado"]} if egreso else None,
+    }
 
 
 @router.put("/ordenes/{orden_id}")
@@ -428,6 +472,10 @@ async def registrar_recepcion(
             "usuario_id": str(user["_id"]),
         })
 
+    # Solo al cerrar la orden completa; las recepciones parciales no generan egreso
+    if nuevo_estado == "recibida":
+        await registrar_egreso_compra(doc, db)
+
     return serializar(doc)
 
 
@@ -455,4 +503,5 @@ async def cancelar_orden(
     )
     if not doc:
         raise HTTPException(409, "La orden cambió de estado; recarga antes de cancelar")
+    await anular_egreso_compra(db, orden["_id"])   # no-op hoy: solo se cancela antes de recibir
     return serializar(doc)
