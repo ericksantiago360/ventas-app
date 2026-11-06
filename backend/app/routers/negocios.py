@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.core.database import get_db
 from app.core.negocios import negocios_del_usuario, verificar_acceso
 from app.core.security import get_current_user, require_admin
+from app.modules.carta_porte.models.carta_porte import Emisor
 from app.services.catalogo_contable import abrir_periodo_actual, sembrar_catalogo_cuentas
 
 router = APIRouter(prefix="/negocios", tags=["Negocios"])
@@ -29,6 +30,16 @@ class NegocioUpdate(BaseModel):
     tipo:    Optional[GIROS] = None
     prefijo: Optional[str] = Field(default=None, pattern=r"^[A-Z0-9]{2,6}$")
     activo:  Optional[bool] = None
+
+
+class DatosFiscalesBody(Emisor):
+    """
+    Datos fiscales del negocio: el emisor de toda factura y carta porte se toma de aquí.
+    Los campos de Emisor (RFC, razón social, régimen, CP) se guardan en carta_porte_emisor,
+    que ya leen el timbrado y la carta porte. Los folios se llevan con counters, no aquí.
+    """
+    serie_factura:    str = Field("F", pattern=r"^[A-Z0-9]{1,10}$")
+    uso_cfdi_default: str = Field("G03", pattern=r"^[A-Z]\d{2}$")   # uso CFDI sugerido para clientes nuevos
 
 
 CAMPOS_LISTA = {"nombre": 1, "tipo": 1, "prefijo_cotizacion": 1, "activo": 1}
@@ -140,3 +151,52 @@ async def actualizar_negocio(
 
     await db.config_negocios.update_one({"_id": id}, {"$set": campos})
     return a_respuesta({**negocio, **campos})
+
+
+CAMPOS_EMISOR = ("rfc", "nombre", "regimen_fiscal", "codigo_postal")
+
+
+@router.get("/{id}/datos-fiscales")
+async def obtener_datos_fiscales(
+    id: str,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Datos fiscales del negocio. Cualquiera con acceso al negocio puede consultarlos."""
+    verificar_acceso(user, id)
+    config = await db.config_negocios.find_one({"_id": id}, {"carta_porte_emisor": 1, "serie_factura": 1, "uso_cfdi_default": 1})
+    if not config:
+        raise HTTPException(404, "Negocio no encontrado")
+    emisor = config.get("carta_porte_emisor") or {}
+    return {
+        **{k: emisor.get(k, "") for k in CAMPOS_EMISOR},
+        "configurado":       bool(emisor),
+        "serie_factura":     config.get("serie_factura") or "F",
+        "uso_cfdi_default":  config.get("uso_cfdi_default") or "G03",
+    }
+
+
+@router.put("/{id}/datos-fiscales")
+async def guardar_datos_fiscales(
+    id: str,
+    body: DatosFiscalesBody,
+    db=Depends(get_db),
+    user=Depends(require_admin),
+):
+    """
+    Guarda RFC, razón social, régimen, CP, serie y uso CFDI del negocio. Un RFC mal
+    formado o un régimen que no aplica al tipo de persona se rechaza antes de guardar.
+    El domicilio de salida (bodega) se conserva: lo administra Carta Porte.
+    """
+    verificar_acceso(user, id)
+    if not await db.config_negocios.find_one({"_id": id}, {"_id": 1}):
+        raise HTTPException(404, "Negocio no encontrado")
+
+    campos = {f"carta_porte_emisor.{k}": getattr(body, k) for k in CAMPOS_EMISOR}
+    campos.update({
+        "serie_factura":    body.serie_factura,
+        "uso_cfdi_default": body.uso_cfdi_default,
+        "updated_at":       datetime.now(timezone.utc),
+    })
+    await db.config_negocios.update_one({"_id": id}, {"$set": campos})
+    return await obtener_datos_fiscales(id, db=db, user=user)

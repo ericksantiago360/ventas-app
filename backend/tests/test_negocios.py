@@ -150,3 +150,45 @@ def test_inactivos_ocultos_para_no_administradores(client, admin):
     assert client.put(f"/api/negocios/{negocio}", headers=admin, json={"activo": False}).status_code == 200
     r = client.get("/api/negocios", headers=vendedor, params={"incluir_inactivos": True})
     assert negocio not in {n["id"] for n in r.json()}
+
+
+def test_datos_fiscales_se_guardan_y_se_consultan(client, admin):
+    negocio = nuevo_id()
+    assert client.post("/api/negocios", headers=admin, json={"id": negocio, "nombre": "Fiscal", "prefijo": "FIS"}).status_code == 201
+    url = f"/api/negocios/{negocio}/datos-fiscales"
+
+    # Sin configurar: la consulta responde, pero marca que falta
+    antes = client.get(url, headers=admin).json()
+    assert antes["configurado"] is False and antes["serie_factura"] == "F" and antes["uso_cfdi_default"] == "G03"
+
+    r = client.put(url, headers=admin, json={
+        "rfc": "SMA850101AB1", "nombre": "Santal Machinery SA de CV", "regimen_fiscal": "601",
+        "codigo_postal": "44100", "serie_factura": "B", "uso_cfdi_default": "D01",
+    })
+    assert r.status_code == 200, r.text
+    dato = r.json()
+    assert dato["configurado"] is True
+    assert dato["rfc"] == "SMA850101AB1"
+    assert dato["nombre"] == "SANTAL MACHINERY SA DE CV"        # razón social en mayúsculas, sin normalizar de más
+    assert dato["serie_factura"] == "B" and dato["uso_cfdi_default"] == "D01"
+    assert client.get(url, headers=admin).json()["rfc"] == "SMA850101AB1"
+
+
+def test_datos_fiscales_rechazan_regimen_que_no_aplica(client, admin):
+    negocio = nuevo_id()
+    assert client.post("/api/negocios", headers=admin, json={"id": negocio, "nombre": "Régimen", "prefijo": "REG"}).status_code == 201
+    # RFC de persona moral (12 caracteres) con régimen de persona física
+    r = client.put(f"/api/negocios/{negocio}/datos-fiscales", headers=admin, json={
+        "rfc": "SMA850101AB1", "nombre": "Empresa", "regimen_fiscal": "612", "codigo_postal": "44100",
+    })
+    assert r.status_code == 422, r.text
+
+
+def test_datos_fiscales_permisos(client, admin, solo_santal):
+    negocio = nuevo_id()
+    assert client.post("/api/negocios", headers=admin, json={"id": negocio, "nombre": "Permisos", "prefijo": "PER"}).status_code == 201
+    cuerpo = {"rfc": "SMA850101AB1", "nombre": "Empresa", "regimen_fiscal": "601", "codigo_postal": "44100"}
+
+    # Solo un administrador edita; alguien sin acceso al negocio no lo ve
+    assert client.put(f"/api/negocios/{negocio}/datos-fiscales", headers=solo_santal, json=cuerpo).status_code == 403
+    assert client.get(f"/api/negocios/{negocio}/datos-fiscales", headers=solo_santal).status_code == 403

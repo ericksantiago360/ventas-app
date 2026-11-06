@@ -109,6 +109,17 @@ export default function Facturacion() {
   const [editandoId, setEditandoId] = useState(null)
   const [form, setForm] = useState(FORM_VACIO)
   const [guardando, setGuardando] = useState(false)
+  // Datos fiscales del negocio activo (Negocios → Datos fiscales). El emisor lo fija el servidor, no el usuario.
+  const [fiscal, setFiscal] = useState(null)
+  const usoDefault = fiscal?.uso_cfdi_default || FORM_VACIO.receptor.uso_cfdi
+
+  useEffect(() => {
+    if (!negocioId) return
+    setFiscal(null)
+    req(`/api/negocios/${encodeURIComponent(negocioId)}/datos-fiscales`)
+      .then(setFiscal)
+      .catch(() => setFiscal({ configurado: false }))
+  }, [negocioId])
 
   // ── Loaders ────────────────────────────────────────────────────────────────
 
@@ -267,7 +278,7 @@ export default function Facturacion() {
 
   function abrirNueva() {
     setEditandoId(null)
-    setForm({ ...FORM_VACIO, receptor: { ...FORM_VACIO.receptor }, conceptos: [{ ...CONCEPTO_VACIO }], fecha: hoy() })
+    setForm({ ...FORM_VACIO, receptor: { ...FORM_VACIO.receptor, uso_cfdi: usoDefault }, conceptos: [{ ...CONCEPTO_VACIO }], fecha: hoy() })
     setError(''); setModal(true)
   }
 
@@ -356,8 +367,27 @@ export default function Facturacion() {
     <div style={s.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <h1 style={s.h1}>Facturación</h1>
-        {!detalle && <button style={s.btn()} onClick={abrirNueva}>+ Nueva factura</button>}
+        {!detalle && fiscal && (fiscal.configurado
+          ? <button style={s.btn()} onClick={abrirNueva}>+ Nueva factura</button>
+          : null)}
       </div>
+
+      {fiscal && (
+        <div style={{ fontSize: 13, color: '#64748b', margin: '4px 0 16px' }}>
+          {fiscal.configurado ? (
+            <>Emisor: <strong>{fiscal.nombre}</strong> · RFC: <strong>{fiscal.rfc}</strong> · Régimen: <strong>{fiscal.regimen_fiscal}</strong></>
+          ) : null}
+        </div>
+      )}
+
+      {fiscal && !fiscal.configurado && (
+        <div style={{ padding: '14px 18px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontSize: 14, marginBottom: 16 }}>
+          <strong>Configura los datos fiscales antes de facturar.</strong>
+          <div style={{ fontSize: 13, marginTop: 4 }}>
+            Ve a <a href="/negocios" style={{ color: '#92400e', fontWeight: 600 }}>Negocios → Datos fiscales</a> y agrega el RFC de este negocio.
+          </div>
+        </div>
+      )}
 
       {!detalle && (
         <div style={s.tabs}>
