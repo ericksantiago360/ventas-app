@@ -15,6 +15,7 @@ from ..email_service import enviar_aviso_interno, enviar_orden_recibida
 from ..models.orden import CheckoutBody
 from ..services import (
     TIPOS_CON_PAGO,
+    aplicar_envio,
     ahora,
     calcular_totales,
     cargar_lineas,
@@ -36,6 +37,7 @@ router = APIRouter()
 async def checkout(slug: str, body: CheckoutBody, db=Depends(get_db)):
     config = await config_por_slug(db, slug)
     negocio_id = config["negocio_id"]
+    frontera = bool(config.get("iva_frontera", False))
 
     # Primero se resuelven las líneas para saber el tipo de orden
     lineas = await cargar_lineas(db, negocio_id, body.partidas, config)
@@ -45,14 +47,14 @@ async def checkout(slug: str, body: CheckoutBody, db=Depends(get_db)):
     if cotizar:
         for linea in lineas:
             linea["precio_unitario"] = 0.0
-        totales = {"subtotal": 0.0, "iva": 0.0, "total": 0.0}
+        totales = {"subtotal": 0.0, "ieps": 0.0, "iva": 0.0, "total": 0.0, "iva_por_tasa": {}, "modo_inclusivo": False}
     else:
         if not body.metodo_pago:
             raise HTTPException(422, "Elige un método de pago")
         if not any(m.get("tipo") == body.metodo_pago for m in config.get("metodos_pago", [])):
             raise HTTPException(422, "Ese método de pago no está disponible en esta tienda")
         await validar_stock(db, negocio_id, lineas)
-        totales = calcular_totales(lineas, config.get("iva_incluido", False))
+        totales = calcular_totales(lineas, config.get("iva_incluido", False), frontera)
 
     con_pago = not cotizar
     envio = 0.0
@@ -63,7 +65,7 @@ async def checkout(slug: str, body: CheckoutBody, db=Depends(get_db)):
         if not disponible:
             raise HTTPException(422, "Esa opción de entrega no está disponible en esta tienda")
         envio = costo_envio_checkout(config, body.entrega, totales["total"])
-        totales["total"] = round(totales["total"] + envio, 2)
+        totales = aplicar_envio(totales, envio, frontera)
 
     folio = await siguiente_folio(db)
     referencia = generar_referencia(folio, totales["total"]) if con_pago else None
@@ -77,7 +79,9 @@ async def checkout(slug: str, body: CheckoutBody, db=Depends(get_db)):
         "cliente": cliente,
         "partidas": lineas,
         "subtotal": totales["subtotal"],
+        "ieps": totales["ieps"],
         "iva": totales["iva"],
+        "iva_por_tasa": totales["iva_por_tasa"],
         "total": totales["total"],
         "entrega": body.entrega if con_pago else None,
         "costo_envio": envio,
@@ -144,7 +148,9 @@ async def estado_orden(
             for p in orden["partidas"]
         ],
         "subtotal": orden["subtotal"],
+        "ieps": orden.get("ieps", 0),
         "iva": orden["iva"],
+        "costo_envio": orden.get("costo_envio", 0),
         "total": orden["total"],
         "metodo_pago": metodo,
         "referencia_pago": orden.get("referencia_pago"),

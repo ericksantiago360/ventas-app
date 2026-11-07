@@ -71,6 +71,10 @@ export default function OrdenStatusPage() {
 
           {orden.total > 0 && (
             <>
+              {orden.subtotal > 0 && <div className="resumen"><span className="muted">Subtotal sin impuestos</span><span>{dinero(orden.subtotal)}</span></div>}
+              {orden.ieps > 0 && <div className="resumen"><span className="muted">IEPS</span><span>{dinero(orden.ieps)}</span></div>}
+              {orden.iva > 0 && <div className="resumen"><span className="muted">IVA</span><span>{dinero(orden.iva)}</span></div>}
+              {orden.costo_envio > 0 && <div className="resumen"><span className="muted">Envío</span><span>{dinero(orden.costo_envio)}</span></div>}
               <div className="resumen total"><span>Total</span><span>{dinero(orden.total)}</span></div>
             </>
           )}

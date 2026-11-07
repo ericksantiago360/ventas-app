@@ -7,7 +7,7 @@ import Categorias from '../components/Categorias'
 import { useNegocio } from '../context/NegocioContext'
 import { AvisoEdicion, BadgeEdicion, estiloCabeceraEdicion, estiloPanelEdicion } from '../components/ModoEdicion'
 import { useSmartDefaults, elegirClaves, setLastUsed } from '../hooks/useSmartDefaults'
-import { MONEDAS } from '../constants/catalogos'
+import { MONEDAS, PERFILES_FISCALES } from '../constants/catalogos'
 
 const api = axios.create({
   baseURL: '',
@@ -123,6 +123,10 @@ export default function Catalogo() {
       precio_base: '',
       iva_aplicable: true,
       iva_pct: 16,
+      tax_profile: '',
+      ieps_units: 0,
+      sat_product_key: '',
+      sat_unit_key: 'H87',
       moneda: 'MXN',
       control_inventario: true,
       stock_inicial: 0,
@@ -237,6 +241,7 @@ export default function Catalogo() {
         precio_base:
           form.precio_base === '' ? null : Number(form.precio_base),
         iva_pct: Number(form.iva_pct),
+        ieps_units: Number(form.ieps_units) || 0,
         categoria_id: form.categoria_id || null,
         // El servidor solo lo usa al crear o al activar el control; en edición lo ignora
         stock_inicial: Number(form.stock_inicial) || 0,
@@ -313,6 +318,10 @@ export default function Catalogo() {
         producto.iva_pct == null
           ? 16
           : producto.iva_pct,
+      tax_profile: producto.tax_profile || '',
+      ieps_units: producto.ieps_units ?? 0,
+      sat_product_key: producto.sat_product_key || '',
+      sat_unit_key: producto.sat_unit_key || 'H87',
       moneda: producto.moneda || 'MXN',
       control_inventario:
         producto.control_inventario === true,
@@ -881,6 +890,55 @@ export default function Catalogo() {
                 </div>
 
               </div>
+
+              <div>
+                <label style={styles.label}>
+                  Desglose fiscal (IVA / IEPS 2026)
+                </label>
+                <select
+                  value={form.tax_profile}
+                  onChange={(e) => actualizarCampo('tax_profile', e.target.value)}
+                  style={styles.input}
+                >
+                  {PERFILES_FISCALES.map((p) => (
+                    <option key={p.value} value={p.value}>{p.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {form.tax_profile && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                  <div>
+                    <label style={styles.label}>Unidades IEPS (litros o cigarros por pieza)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={form.ieps_units}
+                      onChange={(e) => actualizarCampo('ieps_units', e.target.value)}
+                      style={styles.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.label}>Clave SAT producto (8 dígitos)</label>
+                    <input
+                      type="text"
+                      maxLength={8}
+                      value={form.sat_product_key}
+                      onChange={(e) => actualizarCampo('sat_product_key', e.target.value)}
+                      style={styles.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.label}>Clave SAT unidad</label>
+                    <input
+                      type="text"
+                      value={form.sat_unit_key}
+                      onChange={(e) => actualizarCampo('sat_unit_key', e.target.value)}
+                      style={styles.input}
+                    />
+                  </div>
+                </div>
+              )}
 
               <div style={styles.checks}>
                 <label>

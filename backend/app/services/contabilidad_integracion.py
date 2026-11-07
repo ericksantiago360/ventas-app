@@ -145,6 +145,12 @@ async def crear_poliza_venta_pedido(
         pedido.get("iva", 0) or 0
     )
 
+    # IEPS (pedidos de tienda con desglose): sin cuenta propia por ahora,
+    # se acredita a ventas para que la póliza cuadre con el total.
+    ieps = float(
+        pedido.get("ieps", 0) or 0
+    )
+
     if total <= 0:
         return None
 
@@ -153,6 +159,7 @@ async def crear_poliza_venta_pedido(
     if subtotal <= 0:
         subtotal = total
         iva = 0
+        ieps = 0
 
     # -----------------------------------------------------
     # CUENTAS
@@ -279,7 +286,7 @@ async def crear_poliza_venta_pedido(
                 f"Venta {pedido.get('numero', pedido_id)}"
             ),
             "debe": 0.0,
-            "haber": subtotal,
+            "haber": round(subtotal + ieps, 2),
             "created_at": ahora,
             "automatico": True,
         },

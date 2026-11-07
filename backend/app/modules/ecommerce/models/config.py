@@ -64,6 +64,7 @@ class TiendaConfigUpdate(BaseModel):
     mostrar_precio: Optional[bool] = None
     modo: Optional[MODOS_TIENDA] = None
     iva_incluido: Optional[bool] = None
+    iva_frontera: Optional[bool] = None   # región fronteriza: IVA general 8% en productos con desglose
 
     # Moneda y precios
     moneda: Optional[MONEDAS] = None
@@ -118,6 +119,7 @@ DEFAULTS_TIENDA = {
     "mostrar_precio": True,
     "modo": "catalogo",
     "iva_incluido": False,
+    "iva_frontera": False,
     "moneda": "MXN",
     "monto_minimo": 0,
     "monto_envio_gratis": 0,

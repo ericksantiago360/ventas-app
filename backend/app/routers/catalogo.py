@@ -14,6 +14,7 @@ from ..core.database import get_db
 from ..core.security import get_current_user
 from ..core.negocios import negocio_autorizado, validar_referencia, verificar_acceso
 from ..models.base import serialize_list
+from ..modules.ecommerce.impuestos import CAMPOS_FISCALES_DEFAULT, campos_fiscales
 from .inventario import crear_item_inventario_producto, verificar_nombre_inventario_libre
 
 
@@ -26,6 +27,14 @@ router = APIRouter()
 
 def now():
     return datetime.now(timezone.utc)
+
+
+def _fiscales_o_422(body: dict) -> dict:
+    """Campos fiscales (IVA/IEPS/SAT) validados; error 422 con mensaje legible."""
+    try:
+        return campos_fiscales(body)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 def stock_inicial_de(body: dict) -> float:
@@ -353,6 +362,7 @@ async def crear_producto(
     body = clean_body(body)
     negocio_id = ensure_business(body, user)
     stock_inicial = stock_inicial_de(body)
+    fiscales = {**CAMPOS_FISCALES_DEFAULT, **_fiscales_o_422(body)}
     await validar_referencia(db.categorias, body.get("categoria_id"), negocio_id, "Categoría")
 
     codigo = str(body.get("codigo", "")).strip()
@@ -423,6 +433,8 @@ async def crear_producto(
 
         "iva_aplicable": bool(body.get("iva_aplicable", True)),
         "iva_pct": float(body.get("iva_pct", 16) or 0),
+
+        **fiscales,
 
         "moneda": body.get("moneda", "MXN"),
 
@@ -569,6 +581,8 @@ async def editar_producto(
     for field in ("costo", "precio_base", "iva_pct"):
         if field in body:
             body[field] = float(body[field] or 0)
+
+    body.update(_fiscales_o_422(body))
 
     body["updated_at"] = now()
 

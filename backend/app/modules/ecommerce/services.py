@@ -17,6 +17,7 @@ from app.routers.crm import config_crm
 from app.routers.pedidos import generar_numero_pedido
 from app.services.contabilidad_integracion import crear_poliza_venta_pedido
 
+from .impuestos import breakdown_line, breakdown_order
 from .models.config import DEFAULTS_TIENDA
 
 IVA_DEFAULT_PCT = 16.0
@@ -110,17 +111,27 @@ async def cargar_lineas(db, negocio_id: str, partidas: list, config: dict) -> li
             "iva_tasa": tasa_iva(producto),
             "control_inventario": bool(producto.get("control_inventario", False)),
             "tipo_producto": producto.get("tipo", "producto"),
+            # Perfil fiscal IVA/IEPS (None = producto sin desglose, cálculo anterior)
+            "tax_profile": producto.get("tax_profile") or None,
+            "ieps_units": float(producto.get("ieps_units") or 0),
         })
     return lineas
 
 
-def calcular_totales(lineas: list[dict], iva_incluido: bool) -> dict:
+def calcular_totales(lineas: list[dict], iva_incluido: bool, frontera: bool = False) -> dict:
     """
-    Subtotal, IVA y total. Con iva_incluido el precio ya trae el IVA dentro;
-    si no, el IVA se suma encima.
+    Subtotal, IEPS, IVA y total.
+
+    - Partidas con tax_profile: precio con impuestos incluidos, desglose IVA/IEPS
+      (ver impuestos.py). Siempre inclusivo.
+    - Partidas sin tax_profile: cálculo anterior. Con iva_incluido el precio ya
+      trae el IVA dentro; si no, el IVA se suma encima.
     """
+    sin_perfil = [l for l in lineas if not l.get("tax_profile")]
+    con_perfil = [l for l in lineas if l.get("tax_profile")]
+
     subtotal = iva = total = 0.0
-    for linea in lineas:
+    for linea in sin_perfil:
         importe = linea["precio_unitario"] * linea["cantidad"]
         tasa = linea["iva_tasa"]
         if iva_incluido:
@@ -134,11 +145,49 @@ def calcular_totales(lineas: list[dict], iva_incluido: bool) -> dict:
             iva += importe * tasa
         linea["subtotal"] = redondear(importe)
     total = total if iva_incluido else subtotal + iva
+
+    ieps = 0.0
+    iva_por_tasa: dict[str, float] = {}
+    if con_perfil:
+        desglose = breakdown_order(con_perfil, 0, frontera)
+        for linea, ld in zip(con_perfil, desglose["lineas"]):
+            linea["iva_tasa"] = ld["iva_rate"]
+            linea["base_amount"] = ld["base"]
+            linea["ieps_amount"] = ld["ieps"]
+            linea["iva_amount"] = ld["iva"]
+            linea["subtotal"] = ld["total"]
+        subtotal += desglose["subtotal"]
+        iva += desglose["iva"]
+        ieps += desglose["ieps"]
+        total += desglose["total"]
+        iva_por_tasa = desglose["iva_por_tasa"]
+
     return {
         "subtotal": redondear(subtotal),
+        "ieps": redondear(ieps),
         "iva": redondear(iva),
         "total": redondear(total),
+        "iva_por_tasa": iva_por_tasa,
+        "modo_inclusivo": bool(con_perfil),
     }
+
+
+def aplicar_envio(totales: dict, envio: float, frontera: bool = False) -> dict:
+    """
+    Suma el envío al total. Si hay productos con desglose, el envío causa IVA
+    general (incluido) y entra al subtotal e IVA; si no, se suma tal cual.
+    """
+    totales["envio"] = redondear(envio)
+    if not envio:
+        return totales
+    if totales.get("modo_inclusivo"):
+        d = breakdown_line(envio, 1, "general", 0, frontera)
+        totales["subtotal"] = redondear(totales["subtotal"] + d["base"])
+        totales["iva"] = redondear(totales["iva"] + d["iva"])
+        clave = f"{d['iva_rate'] * 100:g}"
+        totales["iva_por_tasa"][clave] = redondear(totales["iva_por_tasa"].get(clave, 0) + d["iva"])
+    totales["total"] = redondear(totales["total"] + envio)
+    return totales
 
 
 def costo_envio_checkout(config: dict, entrega: str, total: float) -> float:
@@ -398,6 +447,7 @@ async def crear_pedido_desde_orden(db, orden: dict, usuario_id: str) -> str:
             for p in orden["partidas"]
         ],
         "subtotal": orden["subtotal"],
+        "ieps": orden.get("ieps", 0),
         "iva": orden["iva"],
         "total": total,
         "estado": "confirmado",

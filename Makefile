@@ -1,4 +1,4 @@
-.PHONY: up down build logs init-db init-contabilidad shell-backend shell-mongo dev-backend dev-frontend test
+.PHONY: up down build logs init-db init-contabilidad seed-tienda shell-backend shell-mongo dev-backend dev-frontend test
 
 up:
 	docker compose up -d
@@ -18,6 +18,10 @@ init-db:
 # Catálogo de cuentas y periodo del mes para todos los negocios (idempotente)
 init-contabilidad:
 	docker compose exec backend python init_contabilidad.py
+
+# Seed de prueba: tienda de conveniencia (idempotente). Ej: make seed-tienda NEGOCIO=santal
+seed-tienda:
+	docker compose exec backend python scripts/seed_tienda_conveniencia.py $(or $(NEGOCIO),dulce_tentacion)
 
 shell-backend:
 	docker compose exec backend bash
